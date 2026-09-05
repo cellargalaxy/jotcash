@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 .idea/
 .vscode/
+
+# 运行期与测试期产生的日志（go_common/util 按相对工作目录落 log/<服务名>/log.log）
+# 只忽略仓库根的运行期日志目录与日志文件本身，不能写成 log/，
+# 否则会连 internal/base/log 这个源码包一起忽略掉
+/log/
+*.log
