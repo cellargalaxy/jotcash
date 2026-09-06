@@ -36,3 +36,10 @@ go.work.sum
 # 否则会连 internal/base/log 这个源码包一起忽略掉
 /log/
 *.log
+
+# 真实配置文件（含令牌密钥，绝不入库）。样例 configs/jotcash.example.yaml 随仓库提交，
+# 复制为 configs/jotcash.yaml 后填写。不能写成 /configs/ —— 那会连样例一起忽略掉
+/configs/jotcash.yaml
+
+# 运行期 SQLite 数据文件（默认 data/jotcash.db）。WAL 模式下同目录还有 -wal / -shm 两个副产品
+/data/
