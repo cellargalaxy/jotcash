@@ -2,6 +2,7 @@ package decimal
 
 import (
 	"fmt"
+	"math"
 )
 
 // RoundMode 是舍入方式，即承载中 round(值, 位数, 舍入方式) 的第三个参数。
@@ -91,7 +92,20 @@ func (d Decimal) RoundRate() Decimal {
 // 约 1.7 秒——设界本身反而成了拒绝服务的入口。改为一次 String 转换后线性扫描，
 // 同一输入降到约 1.2 毫秒（实测提速 226~1374 倍，输入越长差距越大）。
 func (d Decimal) Scale() int32 {
-	exp := d.v.Exponent()
+	scale := d.scale64()
+	if scale > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(scale)
+}
+
+// scale64 以 int64 计算有效小数位数，是 Scale 的实现体，也是 checkMagnitude 的判据。
+//
+// 必须用 int64：底层库允许的指数下界即 int32 下界（实测 1e-2147483648 解析成功），
+// 而 -exp 在 int32 下会回绕成负数——原先 Scale() 对 1e-2147483648 得出 0 位，
+// 使「小数位数越界」判定对该输入完全失效。取 int64 后 -exp 恒可表示，判定不再有盲区。
+func (d Decimal) scale64() int64 {
+	exp := int64(d.v.Exponent())
 	if exp >= 0 {
 		return 0
 	}
@@ -102,7 +116,7 @@ func (d Decimal) Scale() int32 {
 	}
 	//十进制文本的尾随零个数即可剥掉的位数；负号只可能出现在首位，不影响从尾部计数
 	text := coefficient.String()
-	zeros := int32(0)
+	zeros := int64(0)
 	for i := len(text) - 1; i >= 0 && text[i] == '0'; i-- {
 		zeros++
 	}

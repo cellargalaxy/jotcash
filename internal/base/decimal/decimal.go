@@ -203,6 +203,10 @@ func wrap(v sdecimal.Decimal) Decimal {
 // 其后任何一次舍入都会产出百万位数字、耗掉数十毫秒 CPU 与数 MB 内存
 // （实测 64ms / 约 8MB），构成一条不需要任何权限的拒绝服务路径。
 //
+// 校验必须先于规范化，且量级判定一律以 int64 计算（见 checkMagnitude）：
+// 底层库接受的指数上界恰为 int32 上界，用 int32 算「系数位数 + 指数」会回绕成
+// 负数，反而恰好放行危害最大的那一档输入。
+//
 // 校验通过后把值**规范化**（剥掉尾随零）再返回。这一步同样是安全相关的：
 // 量级校验看的是「有效位数」，于是「0.1 后接 12 万个 0」这类文本有效位数只有 1 位、
 // 能合法通过校验，却在内部留下 12 万位的系数——此后每一次 Scale / FitsScale /
@@ -272,11 +276,17 @@ func Sum(list ...Decimal) Decimal {
 }
 
 // checkMagnitude 校验整数位数与小数位数是否落在入口允许的量级内。
+//
+// 两项判据一律以 int64 计算（scale64 / intDigits64），**不能用 int32**：
+// 底层库允许的指数上界即 int32 上界（实测 1e2147483647 解析成功、1e2147483648 被拒），
+// 而「系数位数 + 指数」在 int32 下会回绕成负数，使量级校验对这类值全部放行——
+// 1e2147483647 曾因此得出「整数位数 1 位」而通过校验，随后 normalize 会去计算
+// 10^2147483648（约 850MB 的大整数），正是本校验要拦的那条拒绝服务路径。
 func (d Decimal) checkMagnitude() error {
-	if scale := d.Scale(); scale > MaxScale {
+	if scale := d.scale64(); scale > MaxScale {
 		return fmt.Errorf("%w: %d 位, 上限 %d 位", ErrScaleExceeded, scale, MaxScale)
 	}
-	if intDigits := d.intDigits(); intDigits > MaxIntDigits {
+	if intDigits := d.intDigits64(); intDigits > MaxIntDigits {
 		return fmt.Errorf("%w: %d 位, 上限 %d 位", ErrIntDigitsExceeded, intDigits, MaxIntDigits)
 	}
 	return nil
@@ -300,14 +310,18 @@ func (d Decimal) normalize() Decimal {
 	return wrap(d.v.Round(scale))
 }
 
-// intDigits 返回整数部分的位数；0 与纯小数一律记为 1 位。
-func (d Decimal) intDigits() int32 {
+// intDigits64 以 int64 计算整数部分位数，0 与纯小数一律记为 1 位。
+//
+// 必须用 int64 而非 int32：系数位数与指数各自都可接近 int32 上界
+// （底层库允许的指数上界即 int32 上界，实测 1e2147483647 解析成功），
+// 二者相加在 int32 下会回绕成负数，让「整数位数越界」判定对最极端的输入失效。
+func (d Decimal) intDigits64() int64 {
 	if d.IsZero() {
 		return 1
 	}
 	//系数总位数加指数即整数部分位数：1.5 存为系数 15、指数 -1，2 + (-1) = 1 位；
 	//1e3 存为系数 1、指数 3，1 + 3 = 4 位（即 1000）。两种方向同一个式子。
-	n := int32(d.v.NumDigits()) + d.v.Exponent()
+	n := int64(d.v.NumDigits()) + int64(d.v.Exponent())
 	if n < 1 {
 		return 1
 	}

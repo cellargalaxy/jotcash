@@ -85,6 +85,51 @@ func TestParseMagnitudeLimit(t *testing.T) {
 	}
 }
 
+// TestParseExtremeExponentMagnitude 锁死量级设界在**极端指数**下同样生效。
+//
+// 这是一条回归用例，防的是位数计算的整型回绕：底层库允许的指数上界恰为 int32
+// 上界（实测 1e2147483647 解析成功、1e2147483648 才被拒），而「系数位数 + 指数」
+// 若用 int32 相加会回绕成负数——1e2147483647 曾因此被算成「整数位数 1 位」而
+// 通过校验，随后 normalize 会去计算 10^2147483648（约 850MB 的大整数）。
+// 同理 -exp 在 int32 下也会回绕，使 1e-2147483648 被算成「小数位数 0 位」。
+//
+// 于是设界形同虚设，且恰好放行了危害最大的那一档输入，构成一条不需要任何权限的
+// 拒绝服务路径（同一代码路径实测：exp=1e7 时 normalize 已耗时约 0.67 秒）。
+// 判定改以 int64 计算后这两类输入均被拒。
+//
+// 本用例只断言「被拒」，不触发展开，因此自身耗时可忽略。
+func TestParseExtremeExponentMagnitude(t *testing.T) {
+	cases := []struct {
+		text string
+		want error
+	}{
+		//正向极端指数：整数位数越界
+		{"1e2147483647", ErrIntDigitsExceeded},
+		{"12e2147483646", ErrIntDigitsExceeded},
+		{"1234567890e2147483640", ErrIntDigitsExceeded},
+		{"1.5e2147483647", ErrIntDigitsExceeded},
+		{"-1e2147483647", ErrIntDigitsExceeded},
+		//负向极端指数：小数位数越界
+		{"1e-2147483647", ErrScaleExceeded},
+		{"1e-2147483648", ErrScaleExceeded},
+	}
+	for _, c := range cases {
+		if _, err := Parse(c.text); !errors.Is(err, c.want) {
+			t.Errorf("Parse(%q) 期望 %v, 实际 %v", c.text, c.want, err)
+		}
+		//JSON 入口与 Parse 共用同一道校验，不得存在绕过
+		var d Decimal
+		if err := d.UnmarshalJSON([]byte(`"` + c.text + `"`)); !errors.Is(err, c.want) {
+			t.Errorf("UnmarshalJSON(%q) 期望 %v, 实际 %v", c.text, c.want, err)
+		}
+	}
+
+	//指数超出 int32 时由底层库判为语法错误，同样不得放行
+	if _, err := Parse("1e2147483648"); err == nil {
+		t.Errorf("Parse(1e2147483648) 不应成功")
+	}
+}
+
 // TestParseNormalizesRepresentation 锁死入口规范化：通过量级校验的值不得残留冗长表示。
 //
 // 这是量级设界能否真正生效的前提。设界看的是「有效位数」，于是「0.1 后接 12 万个 0」

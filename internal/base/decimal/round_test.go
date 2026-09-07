@@ -2,8 +2,11 @@ package decimal
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
+
+	sdecimal "github.com/shopspring/decimal"
 )
 
 // TestRoundHalfUp 验证四舍五入，重点是**负数对称**。
@@ -247,6 +250,18 @@ func TestScale(t *testing.T) {
 	//同一数值的不同写法必须得到相同位数
 	if MustParse("1.5").Scale() != MustParse("1.50").Scale() {
 		t.Error("1.5 与 1.50 的有效位数应相同")
+	}
+
+	//公开的 Scale 返回 int32，而实际位数以 int64 计算（见 scale64）：位数超过 int32
+	//上界时必须钳位，不得回绕成负数——负位数会让 FitsScale / Units 之类的下游判断
+	//全部失真。这类值只在量级校验拒绝它之前的瞬间存在（Parse 不会放行），因此这里
+	//绕过 Parse 直接构造。
+	huge := wrap(sdecimal.New(1, math.MinInt32)) //1e-2147483648，即 2147483648 位小数
+	if got := huge.scale64(); got != 2147483648 {
+		t.Errorf("scale64 = %d, 期望 2147483648", got)
+	}
+	if got := huge.Scale(); got != math.MaxInt32 {
+		t.Errorf("Scale 未钳位, = %d, 期望 %d", got, int32(math.MaxInt32))
 	}
 }
 

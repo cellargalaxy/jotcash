@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	cloud.google.com/go v0.123.0
+	github.com/bojanz/currency v1.5.0
 	github.com/cellargalaxy/go_common v0.0.0-20260905162556-500c0b32bf4e
 	github.com/pkg/errors v0.9.1
 	github.com/shopspring/decimal v1.4.0
@@ -18,6 +19,7 @@ require (
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/cockroachdb/apd/v3 v3.2.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/gin-gonic/gin v1.12.0 // indirect
