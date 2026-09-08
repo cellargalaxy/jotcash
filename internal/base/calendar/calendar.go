@@ -98,9 +98,21 @@ var (
 // 这是本包与带时区时间类型的唯一接触点。调用方须自行明确 t 的时区含义，
 // 例如按东八区取「今天」应写作 DateOf(time.Now().In(loc))，
 // 由调用点显式表达时区选择，本包不代为决定。
-func DateOf(t time.Time) Date {
+//
+// 与 NewDate / ParseDate 一样**返回错误而非静默产出非法值**：time.Time 的年份
+// 取值域远宽于本包的 [MinYear, MaxYear]，越界返回 ErrYearRange。这道校验不是
+// 冗余——它是「非零值必合法」与「文本形态定长」两条全局性质的守门人之一，
+// 少了它 DateOf 就成了唯一能造出非法 Date 的构造函数：10000 年会产出 11 字符的
+// "10000-03-05"（破坏定长，令 store/sqlite 依赖的「字典序 = 时间序」失效，
+// 且 Value 写得进库、Scan 读不回来），0 年则退化成 IsZero 的「未指定」，
+// 把一个真实日期静默当成无值。
+func DateOf(t time.Time) (Date, error) {
 	// civil.DateOf 取的是 t 所在时区的年月日，本身不做换算，与前提 7 一致。
-	return Date{d: civil.DateOf(t)}
+	d := civil.DateOf(t)
+	if err := checkYear(d.Year); err != nil {
+		return Date{}, err
+	}
+	return Date{d: d}, nil
 }
 
 // checkYear 校验年份是否落在 [MinYear, MaxYear]。

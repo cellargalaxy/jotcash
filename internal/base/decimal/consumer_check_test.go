@@ -286,18 +286,40 @@ func TestConsumerDedupFourFactors(t *testing.T) {
 
 	//归一化的 map 键形态（供批量判重时建索引）：
 	//同一金额的不同写法必须得到同一个键
+	//
+	//键必须用 String() 而非 StringFixed(BaseAmountStoreScale)：
+	//8.3 的「支出金额」是**原币**金额，小数位数随支出币种而定——KWD 是 3 位，
+	//而 BaseAmountStoreScale 是**本位币**的存储位数（2 位）。用后者建键时，
+	//KWD 记的账会直接撞上 ErrPrecisionLoss（「值 0.001 需 3 位, 目标 2 位」），
+	//judgement 键根本生成不出来。String() 已剥掉尾随零，对任意位数都成立。
 	key := func(amount Decimal) string {
-		text, err := amount.StringFixed(BaseAmountStoreScale)
-		if err != nil {
-			t.Fatalf("生成判重键报错: %v", err)
-		}
-		return text
+		return amount.String()
 	}
 	if key(MustParse("100.50")) != key(MustParse("100.5")) {
 		t.Error("100.50 与 100.5 应生成同一个判重键")
 	}
 	if key(MustParse("-0")) != key(MustParse("0")) {
 		t.Error("-0 与 0 应生成同一个判重键")
+	}
+	//3 位小数的原币金额（KWD 这类币种）必须能建键，且同值不同写法同键
+	if key(MustParse("0.001")) != key(MustParse("0.00100")) {
+		t.Error("0.001 与 0.00100 应生成同一个判重键")
+	}
+	//反向确认上面那段理由属实：按本位币 2 位定点建键时，3 位小数金额会失败
+	if _, err := MustParse("0.001").StringFixed(BaseAmountStoreScale); err == nil {
+		t.Error("前提已变：3 位小数金额竟能被 2 位定点无损容纳，" +
+			"若如此则判重键的位数口径需重新评估")
+	}
+	//键必须与 Equal 同进同退——这是下游 rule/dedup 用 map 索引判重的前提
+	//（那里有穷举交叉验证，此处只钉住本包这一侧的契约）
+	for _, pair := range [][2]string{
+		{"100.50", "100.5"}, {"0", "-0"}, {"1e3", "1000"}, {"0.001", "0.00100"},
+	} {
+		a, b := MustParse(pair[0]), MustParse(pair[1])
+		if a.Equal(b) != (key(a) == key(b)) {
+			t.Errorf("%s 与 %s: Equal=%t 但键相等=%t，判重键与 Equal 必须同进同退",
+				pair[0], pair[1], a.Equal(b), key(a) == key(b))
+		}
 	}
 }
 

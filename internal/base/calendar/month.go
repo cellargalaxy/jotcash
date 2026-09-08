@@ -237,7 +237,11 @@ func (m *Month) Scan(src any) error {
 		*m = month
 		return nil
 	case time.Time:
-		*m = DateOf(v).ToMonth()
+		date, err := DateOf(v)
+		if err != nil {
+			return err
+		}
+		*m = date.ToMonth()
 		return nil
 	default:
 		return fmt.Errorf("%w: %T", ErrScanType, src)

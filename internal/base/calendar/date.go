@@ -232,7 +232,11 @@ func (d *Date) Scan(src any) error {
 		*d = date
 		return nil
 	case time.Time:
-		*d = DateOf(v)
+		date, err := DateOf(v)
+		if err != nil {
+			return err
+		}
+		*d = date
 		return nil
 	default:
 		return fmt.Errorf("%w: %T", ErrScanType, src)

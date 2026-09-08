@@ -369,10 +369,77 @@ func TestDateOfKeepsOwnZone(t *testing.T) {
 		{time.FixedZone("MIT", -11*3600), "2026-09-06", "UTC-11"},
 	}
 	for _, c := range cases {
-		got := DateOf(instant.In(c.loc))
+		got, err := DateOf(instant.In(c.loc))
+		if err != nil {
+			t.Errorf("DateOf(%s) 返回错误 = %v, 期望成功", c.desc, err)
+			continue
+		}
 		if got.String() != c.want {
 			t.Errorf("DateOf(%s) = %s, 期望 %s", c.desc, got, c.want)
 		}
+	}
+}
+
+// TestDateOfRejectsYearRange 校验 DateOf 与 NewDate / ParseDate 同口径拦下越界年份。
+//
+// DateOf 收的是 time.Time，其年份取值域远宽于本包的 [MinYear, MaxYear]。放行会
+// 同时破坏两条全局性质：10000 年产出 11 字符文本（定长失效，令 store/sqlite 依赖
+// 的「字典序 = 时间序」出错——"10000-01-01" 按字符串比较反而小于 "2026-01-01"），
+// 且 Value 写得进库、Scan 读不回来；0 年则退化成 IsZero 的「未指定」，把真实日期
+// 静默当成无值。故它必须是「非零值必合法」的守门人，而非唯一的缺口。
+func TestDateOfRejectsYearRange(t *testing.T) {
+	cases := []struct {
+		in   time.Time
+		desc string
+	}{
+		{time.Date(10000, 3, 5, 0, 0, 0, 0, time.UTC), "上界外：10000 年，文本变 11 字符"},
+		{time.Date(0, 3, 5, 0, 0, 0, 0, time.UTC), "下界外：0 年，会退化为 IsZero"},
+		{time.Date(-1, 3, 5, 0, 0, 0, 0, time.UTC), "下界外：公元前"},
+	}
+	for _, c := range cases {
+		got, err := DateOf(c.in)
+		if !errors.Is(err, ErrYearRange) {
+			t.Errorf("DateOf(%s) 错误 = %v, 期望 ErrYearRange", c.desc, err)
+		}
+		if !got.IsZero() {
+			t.Errorf("DateOf(%s) 越界时返回值 = %q, 期望零值", c.desc, got)
+		}
+	}
+
+	// 边界内两端必须放行，避免校验写成误拒。
+	for _, c := range []struct {
+		in   time.Time
+		want string
+	}{
+		{time.Date(MinYear, 1, 1, 0, 0, 0, 0, time.UTC), "0001-01-01"},
+		{time.Date(MaxYear, 12, 31, 0, 0, 0, 0, time.UTC), "9999-12-31"},
+	} {
+		got, err := DateOf(c.in)
+		if err != nil || got.String() != c.want {
+			t.Errorf("DateOf(%s) = (%q, %v), 期望 (%q, nil)", c.want, got, err, c.want)
+		}
+	}
+}
+
+// TestScanTimeRejectsYearRange 校验 Date.Scan / Month.Scan 接到越界 time.Time 时
+// 返回错误而非静默写入非法值——这是 DateOf 校验对驱动侧入口的延伸。
+func TestScanTimeRejectsYearRange(t *testing.T) {
+	out := time.Date(10000, 3, 5, 0, 0, 0, 0, time.UTC)
+
+	var d Date
+	if err := d.Scan(out); !errors.Is(err, ErrYearRange) {
+		t.Errorf("Date.Scan(越界 time.Time) 错误 = %v, 期望 ErrYearRange", err)
+	}
+	if !d.IsZero() {
+		t.Errorf("Date.Scan 越界后目标值 = %q, 期望保持零值", d)
+	}
+
+	var m Month
+	if err := m.Scan(out); !errors.Is(err, ErrYearRange) {
+		t.Errorf("Month.Scan(越界 time.Time) 错误 = %v, 期望 ErrYearRange", err)
+	}
+	if !m.IsZero() {
+		t.Errorf("Month.Scan 越界后目标值 = %q, 期望保持零值", m)
 	}
 }
 
