@@ -6,10 +6,13 @@ require (
 	cloud.google.com/go v0.123.0
 	github.com/bojanz/currency v1.5.0
 	github.com/cellargalaxy/go_common v0.0.0-20260905162556-500c0b32bf4e
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/nicksnyder/go-i18n/v2 v2.6.1
 	github.com/pkg/errors v0.9.1
 	github.com/shopspring/decimal v1.4.0
 	github.com/sirupsen/logrus v1.10.2
 	golang.org/x/crypto v0.55.0
+	golang.org/x/text v0.41.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -65,7 +68,6 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gorm.io/gorm v1.31.2 // indirect
 )
