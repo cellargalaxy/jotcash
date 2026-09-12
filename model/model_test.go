@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/ncruces/go-sqlite3/gormlite"
 	"github.com/ncruces/go-sqlite3/vfs/memdb"
@@ -16,25 +17,24 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// openTestDB 用与生产计划一致的 SQLite 驱动（github.com/ncruces/go-sqlite3，见需求文档前提2）
-// 打开一个独立的内存库，并执行 model.AutoMigrate 建表，验证“服务首次启动自动建表”这条诉求。
+// openTestDB 打开一个独立的内存库并执行 db.AutoMigrate 建表，供各测试用例复用。
 func openTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := memdb.TestDB(t)
-	db, err := gorm.Open(gormlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	gormDB, err := gorm.Open(gormlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
-	if err := model.AutoMigrate(db); err != nil {
+	if err := db.AutoMigrate(gormDB); err != nil {
 		t.Fatalf("自动建表失败: %v", err)
 	}
-	return db
+	return gormDB
 }
 
 // TestExpenseRoundTrip 验证 Expense 全字段（尤其是 decimal 金额/汇率、int64 ID、日期、软删除）
 // 经 gorm 写入 SQLite 再读回后精度/取值不失真。
 func TestExpenseRoundTrip(t *testing.T) {
-	db := openTestDB(t)
+	gormDB := openTestDB(t)
 
 	expenseDate := time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)
 	startMonth := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
@@ -61,12 +61,12 @@ func TestExpenseRoundTrip(t *testing.T) {
 		Version:                1,
 	}
 
-	if err := db.Create(&origin).Error; err != nil {
+	if err := gormDB.Create(&origin).Error; err != nil {
 		t.Fatalf("写入Expense失败: %v", err)
 	}
 
 	var loaded model.Expense
-	if err := db.First(&loaded, origin.Id).Error; err != nil {
+	if err := gormDB.First(&loaded, origin.Id).Error; err != nil {
 		t.Fatalf("读取Expense失败: %v", err)
 	}
 
@@ -96,16 +96,16 @@ func TestExpenseRoundTrip(t *testing.T) {
 	}
 
 	// 软删除：默认查询应自动过滤，Unscoped 才能看到
-	if err := db.Delete(&loaded).Error; err != nil {
+	if err := gormDB.Delete(&loaded).Error; err != nil {
 		t.Fatalf("软删除失败: %v", err)
 	}
 	var afterDelete model.Expense
-	err := db.First(&afterDelete, origin.Id).Error
+	err := gormDB.First(&afterDelete, origin.Id).Error
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("软删除后默认查询应返回ErrRecordNotFound，实际: %v", err)
 	}
 	var unscoped model.Expense
-	if err := db.Unscoped().First(&unscoped, origin.Id).Error; err != nil {
+	if err := gormDB.Unscoped().First(&unscoped, origin.Id).Error; err != nil {
 		t.Fatalf("Unscoped查询应能读到软删除记录: %v", err)
 	}
 	if !unscoped.DeletedAt.Valid {
@@ -115,7 +115,7 @@ func TestExpenseRoundTrip(t *testing.T) {
 
 // TestAuditLogRoundTrip 验证 AuditLog 用 CreatedAt 承载“操作时间”后，gorm 约定的自动填充与读写正确。
 func TestAuditLogRoundTrip(t *testing.T) {
-	db := openTestDB(t)
+	gormDB := openTestDB(t)
 
 	origin := model.AuditLog{
 		Id:         util.GenId(),
@@ -126,7 +126,7 @@ func TestAuditLogRoundTrip(t *testing.T) {
 		Changes:    "",
 		Result:     model.ResultSuccess,
 	}
-	if err := db.Create(&origin).Error; err != nil {
+	if err := gormDB.Create(&origin).Error; err != nil {
 		t.Fatalf("写入AuditLog失败: %v", err)
 	}
 	if origin.CreatedAt.IsZero() {
@@ -134,7 +134,7 @@ func TestAuditLogRoundTrip(t *testing.T) {
 	}
 
 	var loaded model.AuditLog
-	if err := db.First(&loaded, origin.Id).Error; err != nil {
+	if err := gormDB.First(&loaded, origin.Id).Error; err != nil {
 		t.Fatalf("读取AuditLog失败: %v", err)
 	}
 	if loaded.ActionType != model.ActionTypeDataEntry || loaded.Result != model.ResultSuccess {
@@ -145,12 +145,12 @@ func TestAuditLogRoundTrip(t *testing.T) {
 	}
 }
 
-// TestFileMetaAndFileBlobRoundTrip 验证 FileMeta/FileBlob 的int64 ID、Purpose枚举、二进制内容读写正确。
+// TestFileMetaAndFileBlobRoundTrip 验证 FileMeta/FileBlob 的int64 ID、二进制内容读写正确。
 func TestFileMetaAndFileBlobRoundTrip(t *testing.T) {
-	db := openTestDB(t)
+	gormDB := openTestDB(t)
 
 	blob := model.FileBlob{ContentHash: "deadbeefcafebabe", Content: []byte{0x00, 0x01, 0xFF, 0x10}}
-	if err := db.Create(&blob).Error; err != nil {
+	if err := gormDB.Create(&blob).Error; err != nil {
 		t.Fatalf("写入FileBlob失败: %v", err)
 	}
 
@@ -158,27 +158,23 @@ func TestFileMetaAndFileBlobRoundTrip(t *testing.T) {
 		Id:          util.GenId(),
 		ContentHash: blob.ContentHash,
 		FileName:    "2609.csv",
-		Purpose:     model.PurposeEntrySnapshot,
 		FileSize:    int64(len(blob.Content)),
 		AuditId:     util.GenId(),
 	}
-	if err := db.Create(&meta).Error; err != nil {
+	if err := gormDB.Create(&meta).Error; err != nil {
 		t.Fatalf("写入FileMeta失败: %v", err)
 	}
 
 	var loadedMeta model.FileMeta
-	if err := db.First(&loadedMeta, meta.Id).Error; err != nil {
+	if err := gormDB.First(&loadedMeta, meta.Id).Error; err != nil {
 		t.Fatalf("读取FileMeta失败: %v", err)
-	}
-	if loadedMeta.Purpose != model.PurposeEntrySnapshot {
-		t.Errorf("Purpose读写不一致: got=%s want=%s", loadedMeta.Purpose, model.PurposeEntrySnapshot)
 	}
 	if loadedMeta.FileSize != meta.FileSize {
 		t.Errorf("FileSize读写不一致: got=%d want=%d", loadedMeta.FileSize, meta.FileSize)
 	}
 
 	var loadedBlob model.FileBlob
-	if err := db.First(&loadedBlob, "content_hash = ?", blob.ContentHash).Error; err != nil {
+	if err := gormDB.First(&loadedBlob, "content_hash = ?", blob.ContentHash).Error; err != nil {
 		t.Fatalf("读取FileBlob失败: %v", err)
 	}
 	if string(loadedBlob.Content) != string(blob.Content) {
