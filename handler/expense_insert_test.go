@@ -121,20 +121,9 @@ func TestInsertExpenseArchive(t *testing.T) {
 	if files.Data.Count != 2 {
 		t.Fatalf("应存档原件与快照两份: %+v", files.Data)
 	}
-	var origin, snapshot *model.FileMeta
-	for _, one := range files.Data.Object {
-		if strings.Contains(one.FileName, "snapshot") {
-			snapshot = one
-		} else {
-			origin = one
-		}
-	}
-	if origin == nil || snapshot == nil {
-		t.Fatalf("原件与快照都应存在: %+v", files.Data.Object)
-	}
-	//D-2：两份内容不同（快照把自动获取到的汇率填进去了），所以是两个哈希
-	if origin.FileHash == snapshot.FileHash {
-		t.Errorf("这个用例里原件与快照内容应不同: %s", origin.FileHash)
+	//D-2：这个用例的原件没填汇率、快照把自动获取到的值填了进去，两份内容不同所以是两个哈希
+	if files.Data.Object[0].FileHash == files.Data.Object[1].FileHash {
+		t.Errorf("这个用例里原件与快照内容应不同: %+v", files.Data.Object)
 	}
 
 	//§四.1：明细的审计ID指向本次入库，文件ID指向快照
@@ -145,8 +134,20 @@ func TestInsertExpenseArchive(t *testing.T) {
 	if list.Data.Object[0].OperationId != logs.Data.Object[0].Id {
 		t.Errorf("明细的审计ID应指向本次入库: %+v", list.Data.Object[0])
 	}
-	if list.Data.Object[0].FileId != snapshot.Id {
-		t.Errorf("明细的文件ID应指向快照: got=%d want=%d", list.Data.Object[0].FileId, snapshot.Id)
+	snapshot := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{Id: []int64{list.Data.Object[0].FileId}})
+	if snapshot.Data.Count != 1 {
+		t.Fatalf("明细的文件ID应指向一条存档: %+v", snapshot.Data)
+	}
+	//指向的那份必须是快照：内容能解析回CSV，且汇率列已经填上了实际采用值
+	if snapshot.Data.Object[0].FileSize == 0 {
+		t.Errorf("快照不应为空: %+v", snapshot.Data.Object[0])
+	}
+	blobs, _, err := db.SelectFileBlob(newTokenCtx(clientToken), model.FileBlobInquiry{FileHash: []string{snapshot.Data.Object[0].FileHash}})
+	if err != nil || len(blobs) != 1 {
+		t.Fatalf("取快照内容异常: err=%+v len=%d", err, len(blobs))
+	}
+	if !strings.Contains(string(blobs[0].FileData), "1") || strings.Contains(string(blobs[0].FileData), ",,购物") {
+		t.Errorf("快照的折算汇率列应已填上实际采用值: %s", blobs[0].FileData)
 	}
 }
 
