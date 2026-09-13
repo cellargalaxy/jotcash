@@ -1,12 +1,20 @@
 package tool_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/tool"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	//model包init会调util.Init，日志落在相对路径下，测试产物不留在仓库里
+	os.RemoveAll("log")
+	os.Exit(code)
+}
 
 // 生成的口令要满足A-6强度，且每次都不一样
 func TestGenToken(t *testing.T) {

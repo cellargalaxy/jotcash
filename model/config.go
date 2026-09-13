@@ -4,6 +4,12 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 )
 
+const DefaultServerName = "jotcash"
+
+func init() {
+	util.Init(DefaultServerName)
+}
+
 type Config struct {
 	ServerToken string `json:"-" yaml:"server_token"` //后端口令
 }

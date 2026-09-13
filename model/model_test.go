@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -9,6 +10,13 @@ import (
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/shopspring/decimal"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	//model包init会调util.Init，日志落在相对路径下，测试产物不留在仓库里
+	os.RemoveAll("log")
+	os.Exit(code)
+}
 
 // 表名是db层拼SQL与打日志的依据，改名即改表，钉死避免误改
 func TestTableName(t *testing.T) {
@@ -66,7 +74,7 @@ func TestFileBlobJson(t *testing.T) {
 	}
 }
 
-// ClientToken打了json:"-"：既不进String()/日志，也不会随json.Marshal进jwt载荷
+// 口令要随jwt载荷走，所以json.Marshal必须带上它；但String()（日志用）必须抹掉
 func TestClaimsJson(t *testing.T) {
 	claims := model.Claims{ClientToken: "secret-client-token"}
 	claims.LogId = 123
@@ -75,14 +83,18 @@ func TestClaimsJson(t *testing.T) {
 	if err != nil {
 		t.Fatalf("序列化异常: %+v", err)
 	}
-	if strings.Contains(string(data), "secret-client-token") {
-		t.Errorf("ClientToken不应出现在序列化结果中: %s", string(data))
+	if !strings.Contains(string(data), "secret-client-token") {
+		t.Errorf("jwt载荷要带上ClientToken: %s", string(data))
 	}
-	if !strings.Contains(string(data), "123") {
-		t.Errorf("其余字段应正常序列化: %s", string(data))
+	var loaded model.Claims
+	if err = json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("反序列化异常: %+v", err)
+	}
+	if loaded.ClientToken != claims.ClientToken || loaded.LogId != claims.LogId {
+		t.Errorf("往返不一致: %+v", loaded)
 	}
 	if strings.Contains(claims.String(), "secret-client-token") {
-		t.Errorf("ClientToken不应出现在String()中: %s", claims.String())
+		t.Errorf("ClientToken不应出现在String()里: %s", claims.String())
 	}
 }
 
