@@ -6,7 +6,7 @@ import (
 
 type Config struct {
 	DbPath      string `json:"db_path" yaml:"db_path"`
-	ServerToken string `json:"-" yaml:"db_path"` //后端口令
+	ServerToken string `json:"-" yaml:"server_token"` //后端口令
 }
 
 func (this Config) String() string {
