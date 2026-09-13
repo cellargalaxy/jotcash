@@ -41,6 +41,7 @@ func NewFileBlobUpdateHandler(object *model.FileBlob) *util.UpdateHandler[model.
 }
 
 func NewFileBlobDeleteHandler(inquiry model.FileBlobInquiry) *util.DeleteHandler[model.FileBlob] {
+	inquiry.Page, inquiry.PageSize = 0, 0
 	handler := util.NewDeleteHandler[model.FileBlob](model.FileBlob{}.TableName(), FileBlobInquiry(inquiry))
 	return handler
 }

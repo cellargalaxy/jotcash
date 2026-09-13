@@ -64,6 +64,7 @@ func NewOperationLogUpdateHandler(object *model.OperationLog) *util.UpdateHandle
 }
 
 func NewOperationLogDeleteHandler(inquiry model.OperationLogInquiry) *util.DeleteHandler[model.OperationLog] {
+	inquiry.Page, inquiry.PageSize = 0, 0
 	handler := util.NewDeleteHandler[model.OperationLog](model.OperationLog{}.TableName(), OperationLogInquiry(inquiry))
 	return handler
 }

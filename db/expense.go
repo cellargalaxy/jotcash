@@ -121,7 +121,7 @@ func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) 
 	object.Version = this.Object.Version + 1
 	result := tx.Model(&model.Expense{}).
 		Where("id = ? and version = ?", this.Object.Id, this.Object.Version).
-		Select("*").Omit("id", "created_at").Updates(&object)
+		Select("*").Omit("id", "created_at", "deleted_at").Updates(&object)
 	this.Count = result.RowsAffected
 	err := result.Error
 	if err != nil {
@@ -139,6 +139,7 @@ func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) 
 
 func NewExpenseDeleteHandler(inquiry model.ExpenseInquiry) *util.DeleteHandler[model.Expense] {
 	inquiry.Deleted = model.DeletedNo
+	inquiry.Page, inquiry.PageSize = 0, 0
 	handler := util.NewDeleteHandler[model.Expense](model.Expense{}.TableName(), ExpenseInquiry(inquiry))
 	return handler
 }

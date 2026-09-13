@@ -63,6 +63,7 @@ func NewFileMetaUpdateHandler(object *model.FileMeta) *util.UpdateHandler[model.
 }
 
 func NewFileMetaDeleteHandler(inquiry model.FileMetaInquiry) *util.DeleteHandler[model.FileMeta] {
+	inquiry.Page, inquiry.PageSize = 0, 0
 	handler := util.NewDeleteHandler[model.FileMeta](model.FileMeta{}.TableName(), FileMetaInquiry(inquiry))
 	return handler
 }
