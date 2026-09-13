@@ -21,11 +21,7 @@ var configService *util.ConfigService
 func init() {
 	ctx := util.GenCtx()
 	configService = util.NewConfigService(new(ConfigHandler))
-	err := configService.LoadConfig(ctx)
-	if err != nil {
-		panic(err)
-	}
-	err = configService.Start(ctx)
+	err := configService.Start(ctx)
 	if err != nil {
 		panic(err)
 	}
