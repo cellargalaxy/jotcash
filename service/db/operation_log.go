@@ -49,7 +49,7 @@ func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInq
 			return inquiry, errors.Errorf("查询审计，操作结果非法: %s", one)
 		}
 	}
-	err := checkCreatedAt(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
+	err := checkTimeRange(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
 	if err != nil {
 		return inquiry, err
 	}

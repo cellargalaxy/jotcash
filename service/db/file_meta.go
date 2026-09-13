@@ -18,7 +18,7 @@ func SelectFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) ([]*mode
 }
 
 func checkFileMetaInquiry(ctx context.Context, inquiry model.FileMetaInquiry) (model.FileMetaInquiry, error) {
-	err := checkCreatedAt(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
+	err := checkTimeRange(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
 	if err != nil {
 		return inquiry, err
 	}
