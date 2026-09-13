@@ -1,0 +1,60 @@
+package db
+
+import (
+	"context"
+
+	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/model"
+	"gorm.io/gorm"
+)
+
+type FileBlobInquiry model.FileBlobInquiry
+
+func (this FileBlobInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
+	if len(this.FileHash) > 0 {
+		tx = tx.Where("file_hash in (?)", this.FileHash)
+	}
+	return tx
+}
+func (this FileBlobInquiry) Order(ctx context.Context, tx *gorm.DB) *gorm.DB {
+	tx = tx.Order("file_hash")
+	return tx
+}
+func (this FileBlobInquiry) Limit(ctx context.Context, tx *gorm.DB) *gorm.DB {
+	if this.PageSize <= 0 {
+		return tx
+	}
+	offset := (this.Page - 1) * this.PageSize
+	tx = tx.Offset(offset).Limit(this.PageSize)
+	return tx
+}
+
+func NewFileBlobInsertHandler(object ...*model.FileBlob) *util.InsertHandler[model.FileBlob] {
+	handler := util.NewInsertHandler[model.FileBlob](model.FileBlob{}.TableName(), object...)
+	return handler
+}
+
+func NewFileBlobUpdateHandler(object *model.FileBlob) *util.UpdateHandler[model.FileBlob] {
+	handler := util.NewUpdateHandler[model.FileBlob](model.FileBlob{}.TableName(), object)
+	return handler
+}
+
+func NewFileBlobDeleteHandler(inquiry model.FileBlobInquiry) *util.DeleteHandler[model.FileBlob] {
+	handler := util.NewDeleteHandler[model.FileBlob](model.FileBlob{}.TableName(), FileBlobInquiry(inquiry))
+	return handler
+}
+
+func NewFileBlobSelectHandler(inquiry model.FileBlobInquiry) *util.SelectHandler[model.FileBlob] {
+	handler := util.NewSelectHandler[model.FileBlob](model.FileBlob{}.TableName(), FileBlobInquiry(inquiry))
+	return handler
+}
+
+func SelectFileBlob(ctx context.Context, inquiry model.FileBlobInquiry) ([]*model.FileBlob, int64, error) {
+	handler := NewFileBlobSelectHandler(inquiry)
+	var tx *gorm.DB //todo
+	err := util.Transaction(ctx, tx, handler)
+	if err != nil {
+		return nil, 0, err
+	}
+	return handler.Object, handler.Count, nil
+}

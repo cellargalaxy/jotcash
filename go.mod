@@ -3,7 +3,7 @@ module github.com/cellargalaxy/jotcash
 go 1.27.0
 
 require (
-	github.com/cellargalaxy/go_common v0.0.0-20260910085024-0d0e7ae58479
+	github.com/cellargalaxy/go_common v0.0.0-20260913021950-37b361cb8195
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
 	github.com/shopspring/decimal v1.4.0

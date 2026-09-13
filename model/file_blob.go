@@ -1,15 +1,27 @@
 package model
 
-import "encoding/json"
+import (
+	"github.com/cellargalaxy/go_common/util"
+)
 
-// FileBlob 文件内容：全模型唯一的内容寻址表，主键即内容哈希。
 type FileBlob struct {
-	ContentHash string `json:"content_hash" gorm:"column:content_hash;type:varchar(64);primaryKey"`
-
-	Content []byte `json:"-" gorm:"column:content;type:blob"` // 不进JSON，避免日志/响应中出现二进制内容
+	FileHash string `json:"file_hash"`
+	FileData []byte `json:"-"`
 }
 
 func (this FileBlob) String() string {
-	data, _ := json.Marshal(this)
-	return string(data)
+	return util.JsonStruct2Str(this)
+}
+func (this FileBlob) TableName() string {
+	return "" //todo
+}
+
+type FileBlobInquiry struct {
+	FileHash []string `json:"file_hash"`
+	Page     int      `json:"page"`
+	PageSize int      `json:"page_size"`
+}
+
+func (this FileBlobInquiry) String() string {
+	return util.JsonStruct2Str(this)
 }
