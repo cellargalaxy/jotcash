@@ -7,6 +7,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/static"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -42,5 +43,5 @@ func staticCache(c *gin.Context) {
 }
 
 func validate(ctx *gin.Context) {
-	util.ValidateGin(ctx, config.GetConfig().ServerToken)
+	util.ValidateGin(ctx, config.GetConfig().ServerToken, new(model.Claims))
 }
