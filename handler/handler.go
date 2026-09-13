@@ -14,6 +14,16 @@ import (
 )
 
 func Init(ctx context.Context) error {
+	engine := NewEngine(ctx)
+	err := engine.Run(config.ListenAddress)
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("API启动，异常")
+		return errors.Errorf("API启动，异常: %+v", err)
+	}
+	return nil
+}
+
+func NewEngine(ctx context.Context) *gin.Engine {
 	engine := gin.Default()
 	engine.Use(util.GinLog)
 
@@ -22,13 +32,7 @@ func Init(ctx context.Context) error {
 
 	engine.Use(staticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))
-
-	err := engine.Run(config.ListenAddress)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("API启动，异常")
-		return errors.Errorf("API启动，异常: %+v", err)
-	}
-	return nil
+	return engine
 }
 
 func staticCache(c *gin.Context) {
