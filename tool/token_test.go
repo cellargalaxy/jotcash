@@ -11,12 +11,10 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	//model包init会调util.Init，日志落在相对路径下，测试产物不留在仓库里
 	os.RemoveAll("log")
 	os.Exit(code)
 }
 
-// 生成的口令要满足A-6强度，且每次都不一样
 func TestGenToken(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -38,7 +36,6 @@ func TestGenToken(t *testing.T) {
 		tokens[token] = true
 	}
 
-	//长度低于下限时按下限生成，不能生成出一个弱口令
 	token, err := tool.GenToken(ctx, 1)
 	if err != nil {
 		t.Fatalf("生成口令异常: %+v", err)
@@ -48,7 +45,6 @@ func TestGenToken(t *testing.T) {
 	}
 }
 
-// A-6：长度不少于12，且不能是纯数字或纯字母
 func TestCheckToken(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -67,7 +63,6 @@ func TestCheckToken(t *testing.T) {
 	if err := tool.CheckToken(ctx, "abcdefghijk1"); err != nil {
 		t.Errorf("12位字母加数字应通过: %+v", err)
 	}
-	//中文/符号算“非数字”，与字母同等看待
 	if err := tool.CheckToken(ctx, "口令口令口令口令口令口1"); err != nil {
 		t.Errorf("非纯数字应通过: %+v", err)
 	}

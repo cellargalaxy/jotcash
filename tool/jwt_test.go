@@ -12,7 +12,6 @@ import (
 
 const testServerToken = "test-server-token-1"
 
-// 前端口令装在jwt载荷里传回来：签发→校验之后，db层才能从Claims里拿到口令开库
 func TestJwtClientToken(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -29,7 +28,6 @@ func TestJwtClientToken(t *testing.T) {
 	}
 }
 
-// 后端口令就是jwt密钥：换一把密钥签的jwt必须验不过，空密钥直接拒绝
 func TestJwtServerToken(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -51,7 +49,6 @@ func TestJwtServerToken(t *testing.T) {
 	}
 }
 
-// 过期的jwt要被拒，否则口令会在前端关掉标签页之后继续可用
 func TestJwtExpire(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -64,7 +61,6 @@ func TestJwtExpire(t *testing.T) {
 	}
 }
 
-// 口令能进jwt，但不能进日志
 func TestJwtClaimsLog(t *testing.T) {
 	claims := model.Claims{ClientToken: "secret-client-token"}
 	claims.LogId = 123

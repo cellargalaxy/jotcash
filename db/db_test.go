@@ -19,13 +19,11 @@ const testClientToken = "test-client-token"
 func TestMain(m *testing.M) {
 	logrus.SetLevel(logrus.WarnLevel)
 	code := m.Run()
-	//config包init会把默认配置、model包init会把日志落到相对路径下，测试产物不留在仓库里
 	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)
 }
 
-// 库路径是常量，靠切工作目录给每个用例一个独立的库
 func newTestDb(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
@@ -39,17 +37,15 @@ func newTokenCtx(clientToken string) context.Context {
 	return tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
 }
 
-// Open只认已存在的库文件，所以这里显式create把测试库建出来
 func newTestCtx(t *testing.T) context.Context {
 	t.Helper()
 	newTestDb(t)
 
 	ctx := newTokenCtx(testClientToken)
-	gormDb, err := open(ctx, config.DbPath, testClientToken, true)
+	gormDb, err := create(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
-	//空文件是0字节，任何口令都能"打开"，得先建表把库写实
 	if err = autoMigrate(ctx, gormDb); err != nil {
 		t.Fatalf("建测试表异常: %+v", err)
 	}
@@ -57,43 +53,47 @@ func newTestCtx(t *testing.T) context.Context {
 	return ctx
 }
 
-func catchToken(t *testing.T) *bytes.Buffer {
+func catchLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buffer := new(bytes.Buffer)
-	origin := tokenWriter
-	tokenWriter = buffer
-	t.Cleanup(func() { tokenWriter = origin })
+	origin := logrus.StandardLogger().Out
+	logrus.SetOutput(buffer)
+	t.Cleanup(func() { logrus.SetOutput(origin) })
 	return buffer
 }
 
-func findToken(text, prefix string) string {
-	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimPrefix(line, prefix)
-		}
+func findLogField(text, key string) string {
+	index := strings.Index(text, "["+key+":")
+	if index < 0 {
+		return ""
 	}
-	return ""
+	text = text[index+len(key)+2:]
+	index = strings.Index(text, "]")
+	if index < 0 {
+		return ""
+	}
+	return text[:index]
 }
 
 func TestInit(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
-	origin := config.Config.ServerToken
-	t.Cleanup(func() { config.Config.ServerToken = origin })
+	originToken := config.Config.ServerToken
+	t.Cleanup(func() { config.Config.ServerToken = originToken })
 	config.Config.ServerToken = "test-server-token"
 
-	buffer := catchToken(t)
+	buffer := catchLog(t)
 	if err := Init(ctx); err != nil {
 		t.Fatalf("初始化异常: %+v", err)
 	}
 	if util.GetPathInfo(ctx, config.DbPath) == nil {
 		t.Fatalf("初始化后库文件应存在: %s", config.DbPath)
 	}
-	clientToken := findToken(buffer.String(), "系统初始化，前端口令: ")
+	clientToken := findLogField(buffer.String(), "clientToken")
 	if clientToken == "" {
 		t.Fatalf("初始前端口令没有打印: %s", buffer.String())
 	}
-	if findToken(buffer.String(), "系统初始化，后端口令: ") != "test-server-token" {
+	if findLogField(buffer.String(), "serverToken") != "test-server-token" {
 		t.Errorf("初始后端口令没有打印: %s", buffer.String())
 	}
 	if err := tool.CheckToken(ctx, clientToken); err != nil {
@@ -119,12 +119,11 @@ func TestInit(t *testing.T) {
 		t.Errorf("系统初始化审计不符: count=%d %+v", count, objects)
 	}
 
-	//A-2 库已存在就是重启，不重新生成也不重新打印
-	buffer2 := catchToken(t)
+	buffer2 := catchLog(t)
 	if err = Init(ctx); err != nil {
 		t.Fatalf("重复初始化异常: %+v", err)
 	}
-	if buffer2.String() != "" {
+	if findLogField(buffer2.String(), "clientToken") != "" {
 		t.Errorf("库已存在时不应再打印初始口令: %s", buffer2.String())
 	}
 	if _, count, _ = SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
@@ -132,7 +131,26 @@ func TestInit(t *testing.T) {
 	}
 }
 
-// 库文件不存在时其余入口一律报错，不能拿请求的口令悄悄建一个空库
+func TestCreate(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if _, err := create(ctx, config.DbPath, testClientToken); err == nil {
+		t.Errorf("库文件已存在时创建应报错")
+	}
+	util.RemoveFile(ctx, config.DbPath)
+	gormDb, err := create(ctx, config.DbPath, testClientToken)
+	if err != nil {
+		t.Fatalf("创建数据库异常: %+v", err)
+	}
+	Close(ctx, gormDb)
+	if util.GetPathInfo(ctx, config.DbPath) == nil {
+		t.Errorf("创建后库文件应存在")
+	}
+	if _, err = create(ctx, config.DbPath, ""); err == nil {
+		t.Errorf("口令为空时创建应报错")
+	}
+}
+
 func TestOpenWithoutDbFile(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -205,6 +223,13 @@ func TestOpenClientToken(t *testing.T) {
 	if _, _, err = SelectExpense(newTokenCtx("wrong-client-token"), model.ExpenseInquiry{}); err == nil {
 		t.Errorf("错误口令查询应报错")
 	}
+
+	if err = util.WriteData2File(ctx, []byte("我不是数据库"), config.DbPath); err != nil {
+		t.Fatalf("写坏库文件异常: %+v", err)
+	}
+	if _, err = Open(ctx); err == nil {
+		t.Errorf("库文件损坏应报错")
+	}
 }
 
 func TestTransactionWithoutClaims(t *testing.T) {
@@ -240,7 +265,6 @@ func TestTransaction(t *testing.T) {
 		t.Errorf("事务内插入的操作日志未落库")
 	}
 
-	//主键冲突让第二个handler失败，第一个的插入必须一起回滚
 	rollbackExpense := newTestExpense()
 	err = Transaction(ctx,
 		NewExpenseInsertHandler(rollbackExpense),

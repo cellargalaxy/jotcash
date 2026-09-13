@@ -8,7 +8,6 @@ import (
 	"github.com/cellargalaxy/jotcash/model"
 )
 
-// 口令要随jwt载荷走，所以json.Marshal带上它；但String()（日志用）必须抹掉
 func TestClaims(t *testing.T) {
 	claims := model.Claims{ClientToken: "secret-client-token"}
 	claims.LogId = 123

@@ -10,7 +10,6 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	//model包init会调util.Init，日志落在相对路径下，测试产物不留在仓库里
 	os.RemoveAll("log")
 	os.Exit(code)
 }

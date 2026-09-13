@@ -59,7 +59,6 @@ func TestOperationLogCrud(t *testing.T) {
 		t.Errorf("更新未生效: count=%d want=1", count)
 	}
 
-	//操作日志无DeletedAt，删除即物理删除
 	if _, err = DeleteOperationLog(ctx, model.OperationLogInquiry{Id: []int64{origin.Id}}); err != nil {
 		t.Fatalf("删除操作日志异常: %+v", err)
 	}

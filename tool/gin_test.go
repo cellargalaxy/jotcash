@@ -8,7 +8,6 @@ import (
 	"github.com/cellargalaxy/jotcash/tool"
 )
 
-// Claims用的是go_common的ctx key，db包取口令、gin中间件塞口令都靠这一对
 func TestClaims(t *testing.T) {
 	ctx := util.GenCtx()
 	if tool.GetClaims(ctx) != nil {

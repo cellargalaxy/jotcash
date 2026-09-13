@@ -16,7 +16,7 @@ func newTestExpense() *model.Expense {
 		CardLast4:              "6789",
 		ExpenseDate:            time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
 		ExpenseCurrency:        "USD",
-		ExpenseAmount:          decimal.RequireFromString("-1234567890123456.7890"), //20位有效数字、4位小数，且为负数（允许冲正）
+		ExpenseAmount:          decimal.RequireFromString("-1234567890123456.7890"),
 		Counterparty:           "亚马逊",
 		Remark:                 "退款冲正",
 		ExchangeRate:           decimal.RequireFromString("7.12345678"),
@@ -94,7 +94,6 @@ func TestExpenseCrud(t *testing.T) {
 	}
 }
 
-// E-4 乐观锁：版本号落后的那次冲突报错，并回滚整个事务
 func TestExpenseVersion(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -141,7 +140,6 @@ func TestExpenseVersion(t *testing.T) {
 	}
 }
 
-// E-5 只有软删除：Deleted带值也不能退化成物理删
 func TestExpenseDelete(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -151,7 +149,6 @@ func TestExpenseDelete(t *testing.T) {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	//无条件删除会被gorm拦下，避免整表清空
 	if _, err := DeleteExpense(ctx, model.ExpenseInquiry{}); err == nil {
 		t.Errorf("无条件删除应报错")
 	}
@@ -222,7 +219,6 @@ func TestExpenseInquiry(t *testing.T) {
 		t.Errorf("日期区间: count=%d want=2", count)
 	}
 
-	//金额列存的是文本，区间必须按数值比，"9.99" 不能大于 "100.10"
 	min := decimal.RequireFromString("10")
 	max := decimal.RequireFromString("1000")
 	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{ExpenseAmountMin: &min, ExpenseAmountMax: &max})
@@ -248,7 +244,6 @@ func TestExpenseInquiry(t *testing.T) {
 	if count != 4 {
 		t.Errorf("对手方模糊: count=%d want=4", count)
 	}
-	//%是like的通配符，转义后必须当普通字符匹配
 	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{RemarkLike: "100%退"})
 	if err != nil {
 		t.Fatalf("模糊查询异常: %+v", err)
@@ -264,7 +259,6 @@ func TestExpenseInquiry(t *testing.T) {
 		t.Errorf("通配符未转义，被当成了模式匹配: count=%d want=0", count)
 	}
 
-	//F-4 切换记账币种要筛的是「记账币种≠目标币种」的全部明细
 	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}, Deleted: model.DeletedAll})
 	if err != nil {
 		t.Fatalf("记账币种取反查询异常: %+v", err)
@@ -285,7 +279,6 @@ func TestExpenseSort(t *testing.T) {
 		}
 	}
 
-	//金额列是文本，白名单里映射成了cast，否则"9.99"会排在"100.10"后面
 	objects, _, err := SelectExpense(ctx, model.ExpenseInquiry{Sort: "expense_amount desc"})
 	if err != nil {
 		t.Fatalf("排序查询异常: %+v", err)

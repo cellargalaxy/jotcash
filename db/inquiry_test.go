@@ -21,7 +21,6 @@ func TestLikeValue(t *testing.T) {
 	}
 }
 
-// 页码从1开始，传0或负数按第1页算，不能拼出负的OFFSET
 func TestPageLimit(t *testing.T) {
 	ctx := newTestCtx(t)
 

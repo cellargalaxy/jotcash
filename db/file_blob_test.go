@@ -25,7 +25,6 @@ func TestFileBlobCrud(t *testing.T) {
 		t.Errorf("二进制内容读写不一致: got=%v want=%v", objects[0].FileData, origin.FileData)
 	}
 
-	//D-2 内容寻址天然去重靠的就是主键，同一份内容再插一次要冲突
 	if _, err = InsertFileBlob(ctx, &model.FileBlob{FileHash: origin.FileHash, FileData: []byte("其他内容")}); err == nil {
 		t.Errorf("重复内容哈希应插入失败")
 	}

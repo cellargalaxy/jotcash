@@ -13,7 +13,6 @@ func TestFileBlobTableName(t *testing.T) {
 	}
 }
 
-// 文件内容打了json:"-"，不能随String()混进日志或响应体
 func TestFileBlobJson(t *testing.T) {
 	blob := model.FileBlob{FileHash: "abc123", FileData: []byte("secret-bytes")}
 	if strings.Contains(blob.String(), "secret-bytes") {

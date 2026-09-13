@@ -34,7 +34,6 @@ func TestExport(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导回异常: %+v", err)
 	}
-	//换进来的库结构可能是旧版本，替换后下一次开库要重新建表
 	migrateLock.Lock()
 	reset := !migrated
 	migrateLock.Unlock()
@@ -127,9 +126,8 @@ func TestImportMissingTable(t *testing.T) {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	//造一个同口令、但一张表都没有的空库
 	emptyPath := genTempPath()
-	gormDb, err := open(ctx, emptyPath, testClientToken, true)
+	gormDb, err := create(ctx, emptyPath, testClientToken)
 	if err != nil {
 		t.Fatalf("建空库异常: %+v", err)
 	}
