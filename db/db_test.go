@@ -1,8 +1,8 @@
 package db
 
 import (
+	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -21,8 +21,9 @@ const testClientToken = "test-client-token"
 func TestMain(m *testing.M) {
 	logrus.SetLevel(logrus.WarnLevel)
 	code := m.Run()
-	//config包init时会把默认配置落到相对路径下，测试产物不留在仓库里
+	//config包init会把默认配置、model包init会把日志落到相对路径下，测试产物不留在仓库里
 	os.RemoveAll("resource")
+	os.RemoveAll("log")
 	os.Exit(code)
 }
 
@@ -36,63 +37,55 @@ func newTestDb(t *testing.T) {
 	migrated = false
 }
 
-// newTestCtx 独立的库 + 带Claims的ctx，之后各db函数自己开关库
+// newTestCtx 独立的库 + 带Claims的ctx，之后各db函数自己开关库。
+// Open只认已存在的库文件，所以这里显式走一次create把测试库建出来
 func newTestCtx(t *testing.T) context.Context {
 	t.Helper()
 	newTestDb(t)
-	return tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: testClientToken})
-}
 
-// logHook 抓logrus的字段，用来验初始口令有没有被打出来
-type logHook struct {
-	entries []*logrus.Entry
-}
-
-func (this *logHook) Levels() []logrus.Level {
-	return logrus.AllLevels
-}
-func (this *logHook) Fire(entry *logrus.Entry) error {
-	this.entries = append(this.entries, entry)
-	return nil
-}
-func (this *logHook) find(key string) string {
-	for i := range this.entries {
-		value, ok := this.entries[i].Data[key]
-		if ok {
-			return fmt.Sprintf("%v", value)
-		}
+	ctx := tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: testClientToken})
+	gormDb, err := open(ctx, config.DbPath, testClientToken, true)
+	if err != nil {
+		t.Fatalf("建测试库异常: %+v", err)
 	}
-	return ""
+	//空文件是0字节，任何口令都能"打开"，得先建表把库写实，才和生产上Init建完库的状态一致
+	if err = autoMigrate(ctx, gormDb); err != nil {
+		t.Fatalf("建测试表异常: %+v", err)
+	}
+	Close(ctx, gormDb)
+	return ctx
 }
 
-func catchLog(t *testing.T) *logHook {
+// catchToken 初始口令不走logrus、直接打stdout，测试把输出接到buffer里
+func catchToken(t *testing.T) *bytes.Buffer {
 	t.Helper()
-	hook := new(logHook)
-	logrus.AddHook(hook)
-	//logrus没有删钩子的接口，跑完把钩子清空，避免污染后面的用例
-	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks)) })
-	return hook
+	buffer := new(bytes.Buffer)
+	origin := tokenWriter
+	tokenWriter = buffer
+	t.Cleanup(func() { tokenWriter = origin })
+	return buffer
 }
 
 // 首次启动：没有库文件就建库、建表、记一条系统初始化，并且把两个初始口令打出来
 func TestInit(t *testing.T) {
-	ctx := newTestCtx(t)
+	newTestDb(t)
+	ctx := util.GenCtx()
 	dbPath := config.DbPath
 	config.Config.ServerToken = "test-server-token"
 
-	hook := catchLog(t)
+	buffer := catchToken(t)
 	if err := Init(ctx); err != nil {
 		t.Fatalf("初始化异常: %+v", err)
 	}
 	if util.GetPathInfo(ctx, dbPath) == nil {
 		t.Fatalf("初始化后库文件应存在: %s", dbPath)
 	}
-	clientToken := hook.find("clientToken")
+	clientToken := findToken(buffer.String(), "系统初始化，前端口令: ")
 	if clientToken == "" {
-		t.Fatalf("初始前端口令没有打印")
+		t.Fatalf("初始前端口令没有打印: %s", buffer.String())
 	}
-	if hook.find("serverToken") != "test-server-token" {
-		t.Errorf("初始后端口令没有打印")
+	if findToken(buffer.String(), "系统初始化，后端口令: ") != "test-server-token" {
+		t.Errorf("初始后端口令没有打印: %s", buffer.String())
 	}
 	if err := tool.CheckToken(ctx, clientToken); err != nil {
 		t.Errorf("生成的初始口令不满足强度: %+v", err)
@@ -119,15 +112,49 @@ func TestInit(t *testing.T) {
 	}
 
 	//A-2：库已存在就是重启，不重新生成也不重新打印
-	hook2 := catchLog(t)
+	buffer2 := catchToken(t)
 	if err = Init(ctx); err != nil {
 		t.Fatalf("重复初始化异常: %+v", err)
 	}
-	if hook2.find("clientToken") != "" {
-		t.Errorf("库已存在时不应再打印初始口令")
+	if buffer2.String() != "" {
+		t.Errorf("库已存在时不应再打印初始口令: %s", buffer2.String())
 	}
 	if _, count, _ = SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
 		t.Errorf("重复初始化不应再记审计: count=%d", count)
+	}
+}
+
+func findToken(text, prefix string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, prefix)
+		}
+	}
+	return ""
+}
+
+// 库文件不存在时，只有Init能建；其余入口一律报错，不能拿请求的口令悄悄建一个空库
+func TestOpenWithoutDbFile(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+	util.RemoveFile(ctx, config.DbPath)
+
+	if _, err := Open(ctx, testClientToken); err == nil {
+		t.Errorf("库文件不存在时开库应报错")
+	}
+	//换个口令来的请求同样开不了库，也不会把库文件重新建出来
+	otherCtx := tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: "other-client-token"})
+	if _, _, err := SelectExpense(otherCtx, model.ExpenseInquiry{}); err == nil {
+		t.Errorf("库文件不存在时查询应报错")
+	}
+	if util.GetPathInfo(ctx, config.DbPath) != nil {
+		t.Errorf("库文件不应被请求重新建出来")
+	}
+	if err := CheckClientToken(ctx, testClientToken); err == nil {
+		t.Errorf("库文件不存在时口令探针应报错")
 	}
 }
 
@@ -329,6 +356,57 @@ func TestExpenseCrud(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("含已删除查询: count=%d want=1", count)
+	}
+}
+
+// E-4 乐观锁：版本号对得上才更新得动，更新后版本号+1；版本落后的那次返回0行且什么都没改
+func TestUpdateExpenseByVersion(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	origin := newTestExpense()
+	origin.Version = 1
+	if _, err := InsertExpense(ctx, origin); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	//两个人同时把同一行读出来
+	first := *origin
+	second := *origin
+
+	first.Remark = "先提交的改动"
+	count, err := UpdateExpenseByVersion(ctx, &first)
+	if err != nil {
+		t.Fatalf("更新异常: %+v", err)
+	}
+	if count != 1 {
+		t.Fatalf("更新影响行数: got=%d want=1", count)
+	}
+	if first.Version != 2 {
+		t.Errorf("更新成功应把版本号+1并回填: got=%d want=2", first.Version)
+	}
+
+	//后提交的人版本号已经落后，更新不动，也不能覆盖掉前一个人的改动
+	second.Remark = "后提交的改动"
+	count, err = UpdateExpenseByVersion(ctx, &second)
+	if err != nil {
+		t.Fatalf("版本冲突不应报错，只返回0行: %+v", err)
+	}
+	if count != 0 {
+		t.Errorf("版本冲突时影响行数: got=%d want=0", count)
+	}
+	if second.Version != 1 {
+		t.Errorf("冲突时不应回填版本号: got=%d", second.Version)
+	}
+
+	objects, _, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
+	if err != nil {
+		t.Fatalf("查询异常: %+v", err)
+	}
+	if len(objects) != 1 || objects[0].Remark != "先提交的改动" || objects[0].Version != 2 {
+		t.Errorf("库里应是先提交的那份: %+v", objects[0])
+	}
+	if !objects[0].ExpenseAmount.Equal(origin.ExpenseAmount) || objects[0].CreatedAt.IsZero() {
+		t.Errorf("未改动的字段不应被抹掉: %+v", objects[0])
 	}
 }
 
