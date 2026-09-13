@@ -7,6 +7,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 func newTestExpense() *model.Expense {
@@ -94,6 +95,14 @@ func TestExpenseCrud(t *testing.T) {
 	}
 	if !objects[0].CreatedAt.Equal(loaded.CreatedAt) || !objects[0].UpdatedAt.After(loaded.UpdatedAt) {
 		t.Errorf("更新只应推进UpdatedAt: created=%v updated=%v", objects[0].CreatedAt, objects[0].UpdatedAt)
+	}
+
+	loaded.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+	if _, err = UpdateExpense(ctx, loaded); err != nil {
+		t.Fatalf("更新支出明细异常: %+v", err)
+	}
+	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
+		t.Errorf("编辑把明细软删掉了，软删是终态只能走删除接口")
 	}
 }
 
@@ -190,6 +199,19 @@ func TestExpenseDelete(t *testing.T) {
 	}
 	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Deleted: model.DeletedAll}); count != 2 {
 		t.Errorf("软删除的行被物理删掉了: count=%d want=2", count)
+	}
+
+	pageOne := newTestExpense()
+	pageTwo := newTestExpense()
+	if _, err = InsertExpense(ctx, pageOne, pageTwo); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+	count, err = DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{pageOne.Id, pageTwo.Id}, Page: 1, PageSize: 1})
+	if err != nil {
+		t.Fatalf("删除支出明细异常: %+v", err)
+	}
+	if count != 2 {
+		t.Errorf("删除删的是筛选结果全集，分页参数不作数: got=%d want=2", count)
 	}
 }
 

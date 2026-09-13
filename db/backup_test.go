@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
@@ -34,10 +35,10 @@ func TestExport(t *testing.T) {
 		t.Fatalf("导回异常: %+v", err)
 	}
 	dbLock.Lock()
-	reset := !migrated
+	done := migrated
 	dbLock.Unlock()
-	if !reset {
-		t.Errorf("导入后应复位建表标记")
+	if !done {
+		t.Errorf("导入后应在写锁内把表结构补齐")
 	}
 
 	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
@@ -46,6 +47,94 @@ func TestExport(t *testing.T) {
 	}
 	if count != 1 || len(objects) != 1 || !objects[0].ExpenseAmount.Equal(expense.ExpenseAmount) {
 		t.Errorf("导回后的数据不符: count=%d %+v", count, objects)
+	}
+}
+
+func TestImportOldDb(t *testing.T) {
+	ctx := newTestCtx(t)
+	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	//造一个同口令、一张表都没有的库文件，冒充旧版本导出的库
+	oldPath := "resource/old.db"
+	gormDb, err := connect(ctx, oldPath, testClientToken)
+	if err != nil {
+		t.Fatalf("建旧库异常: %+v", err)
+	}
+	if err = gormDb.Exec("PRAGMA user_version=1").Error; err != nil {
+		t.Fatalf("写旧库异常: %+v", err)
+	}
+	Close(ctx, gormDb)
+	data, err := util.ReadFile2Data(ctx, oldPath, nil)
+	if err != nil {
+		t.Fatalf("读旧库异常: %+v", err)
+	}
+	util.RemoveFile(ctx, oldPath)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				//建表标记要是在锁外从true翻回false，这里就会撞上缺表
+				if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < 5; j++ {
+			if err := Import(ctx, bytes.NewReader(data)); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发导入旧库异常: %+v", err)
+	}
+}
+
+func TestTokenSpecialChar(t *testing.T) {
+	newTestDb(t)
+	//口令里的空格经url编码会变成加号，而SQLite的uri只认%XX转义，备份目标库会落到另一把口令上
+	token := "pass word 1234"
+	ctx := newTokenCtx(token)
+	if err := create(ctx, config.DbPath, token); err != nil {
+		t.Fatalf("建库异常: %+v", err)
+	}
+	expense := newTestExpense()
+	if _, err := InsertExpense(ctx, expense); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	buffer := new(bytes.Buffer)
+	if err := Export(ctx, buffer); err != nil {
+		t.Fatalf("导出异常: %+v", err)
+	}
+	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
+		t.Fatalf("导出的库用同一口令导不回来: %+v", err)
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+		t.Errorf("导回后数据不符: count=%d want=1", count)
+	}
+
+	newToken := "new pass word 1234"
+	if err := ChangeToken(ctx, newToken); err != nil {
+		t.Fatalf("换口令异常: %+v", err)
+	}
+	if err := CheckToken(newTokenCtx(newToken)); err != nil {
+		t.Errorf("换成含空格的口令后打不开库: %+v", err)
 	}
 }
 
