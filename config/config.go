@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	ListenAddress = ":4343"
 	ConfigPath    = "resource/jotcash.yaml"
 	DbPath        = "resource/jotcash.db"
 	DbBackupPath  = "resource/db_backup"
