@@ -3,7 +3,7 @@ module github.com/cellargalaxy/jotcash
 go 1.27.0
 
 require (
-	github.com/cellargalaxy/go_common v0.0.0-20260913021950-37b361cb8195
+	github.com/cellargalaxy/go_common v0.0.0-20260913053215-2d06a6191373
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
 	github.com/pkg/errors v0.9.1
@@ -66,4 +66,5 @@ require (
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	lukechampine.com/adiantum v1.1.1 // indirect
 )
