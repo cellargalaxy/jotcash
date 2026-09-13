@@ -92,6 +92,9 @@ func TestExpenseCrud(t *testing.T) {
 	if objects[0].CreatedAt.IsZero() || !objects[0].ExpenseAmount.Equal(origin.ExpenseAmount) {
 		t.Errorf("未改动的字段不应被抹掉: %+v", objects[0])
 	}
+	if !objects[0].CreatedAt.Equal(loaded.CreatedAt) || !objects[0].UpdatedAt.After(loaded.UpdatedAt) {
+		t.Errorf("更新只应推进UpdatedAt: created=%v updated=%v", objects[0].CreatedAt, objects[0].UpdatedAt)
+	}
 }
 
 func TestExpenseVersion(t *testing.T) {

@@ -75,9 +75,7 @@ func findLogField(text, key string) string {
 func TestCreate(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
-	originToken := config.Config.ServerToken
-	t.Cleanup(func() { config.Config.ServerToken = originToken })
-	config.Config.ServerToken = "test-server-token"
+	serverToken := config.GetConfig().ServerToken
 
 	buffer := catchLog(t)
 	if err := Create(ctx); err != nil {
@@ -90,7 +88,7 @@ func TestCreate(t *testing.T) {
 	if clientToken == "" {
 		t.Fatalf("初始前端口令没有打印: %s", buffer.String())
 	}
-	if findLogField(buffer.String(), "serverToken") != "test-server-token" {
+	if findLogField(buffer.String(), "serverToken") != serverToken {
 		t.Errorf("初始后端口令没有打印: %s", buffer.String())
 	}
 	if err := tool.CheckToken(ctx, clientToken); err != nil {
