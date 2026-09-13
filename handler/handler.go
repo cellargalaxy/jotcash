@@ -18,6 +18,7 @@ func Init(ctx context.Context) error {
 	engine.Use(util.GinLog)
 
 	engine.GET(util.PathPing, util.Ping)
+	engine.POST(util.PathPing, validate, Ping)
 
 	engine.Use(staticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))
@@ -34,4 +35,8 @@ func staticCache(c *gin.Context) {
 	if strings.HasPrefix(c.Request.RequestURI, util.PathStatic) {
 		c.Header("Cache-Control", "max-age=86400")
 	}
+}
+
+func validate(ctx *gin.Context) {
+	util.ValidateGin(ctx, config.GetConfig().ServerToken)
 }
