@@ -2,6 +2,7 @@ package model
 
 const (
 	PathExpenseSelect      = "/api/expense/select"
+	PathExpenseDelete      = "/api/expense/delete"
 	PathOperationLogSelect = "/api/operation_log/select"
 	PathFileMetaSelect     = "/api/file_meta/select"
 	PathChangeToken        = "/api/token/change"

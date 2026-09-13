@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 
+	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/pkg/errors"
@@ -25,17 +26,21 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.
 	return db.SelectExpense(ctx, inquiry)
 }
 
+func checkExpenseRange(ctx context.Context, inquiry model.ExpenseInquiry) error {
+	err := checkTimeRange(ctx, inquiry.ExpenseDateStart, inquiry.ExpenseDateEnd)
+	if err != nil {
+		return err
+	}
+	return checkAmountRange(ctx, inquiry.ExpenseAmountMin, inquiry.ExpenseAmountMax)
+}
+
 func checkExpenseInquiry(ctx context.Context, inquiry model.ExpenseInquiry) (model.ExpenseInquiry, error) {
 	//db层对没见过的取值会按「只查未删除」处理，静默少查数据不如直接报错
 	if !expenseDeleteds[inquiry.Deleted] {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"deleted": inquiry.Deleted}).Warn("查询明细，删除筛选非法")
 		return inquiry, errors.Errorf("查询明细，删除筛选非法: %d", inquiry.Deleted)
 	}
-	err := checkTimeRange(ctx, inquiry.ExpenseDateStart, inquiry.ExpenseDateEnd)
-	if err != nil {
-		return inquiry, err
-	}
-	err = checkAmountRange(ctx, inquiry.ExpenseAmountMin, inquiry.ExpenseAmountMax)
+	err := checkExpenseRange(ctx, inquiry)
 	if err != nil {
 		return inquiry, err
 	}
@@ -45,4 +50,26 @@ func checkExpenseInquiry(ctx context.Context, inquiry model.ExpenseInquiry) (mod
 		inquiry.Sort = expenseSortDefault
 	}
 	return inquiry, nil
+}
+
+func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, error) {
+	err := checkExpenseRange(ctx, inquiry)
+	if err != nil {
+		return 0, err
+	}
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeExpenseDelete,
+		Summary:       "批量软删除明细",
+		Result:        model.ResultSuccess,
+	}
+
+	//分页与排序对批量删除没有意义，db层的NewExpenseDeleteHandler会把它们清掉，也会强制只删未删除的行
+	deleteHandler := db.NewExpenseDeleteHandler(inquiry)
+	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	err = db.Transaction(ctx, deleteHandler, operationLogHandler)
+	if err != nil {
+		return 0, err
+	}
+	return deleteHandler.Count, nil
 }
