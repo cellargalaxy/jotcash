@@ -8,25 +8,26 @@ import (
 	"gorm.io/gorm"
 )
 
+var fileBlobSortMap = map[string]string{
+	"file_hash asc":  "file_hash asc",
+	"file_hash desc": "file_hash desc",
+}
+
+const fileBlobSortDefault = "file_hash asc"
+
 type FileBlobInquiry model.FileBlobInquiry
 
-func (this FileBlobInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
+func (this FileBlobInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
 	if len(this.FileHash) > 0 {
 		tx = tx.Where("file_hash in (?)", this.FileHash)
 	}
-	return tx
+	return tx, nil
 }
-func (this FileBlobInquiry) Order(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	tx = tx.Order("file_hash")
-	return tx
+func (this FileBlobInquiry) Order(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return sortOrder(ctx, tx, fileBlobSortMap, this.Sort, fileBlobSortDefault)
 }
-func (this FileBlobInquiry) Limit(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	if this.PageSize <= 0 {
-		return tx
-	}
-	offset := (this.Page - 1) * this.PageSize
-	tx = tx.Offset(offset).Limit(this.PageSize)
-	return tx
+func (this FileBlobInquiry) Limit(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return pageLimit(ctx, tx, this.Page, this.PageSize)
 }
 
 func NewFileBlobInsertHandler(object ...*model.FileBlob) *util.InsertHandler[model.FileBlob] {

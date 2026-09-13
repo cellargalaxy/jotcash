@@ -8,9 +8,18 @@ import (
 	"gorm.io/gorm"
 )
 
+var operationLogSortMap = map[string]string{
+	"id asc":          "id asc",
+	"id desc":         "id desc",
+	"created_at asc":  "created_at asc",
+	"created_at desc": "created_at desc",
+}
+
+const operationLogSortDefault = "id asc"
+
 type OperationLogInquiry model.OperationLogInquiry
 
-func (this OperationLogInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
+func (this OperationLogInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
 	if len(this.Id) > 0 {
 		tx = tx.Where("id in (?)", this.Id)
 	}
@@ -26,19 +35,22 @@ func (this OperationLogInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB
 	if len(this.Result) > 0 {
 		tx = tx.Where("result in (?)", this.Result)
 	}
-	return tx
-}
-func (this OperationLogInquiry) Order(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	tx = tx.Order("id")
-	return tx
-}
-func (this OperationLogInquiry) Limit(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	if this.PageSize <= 0 {
-		return tx
+	if this.SummaryLike != "" {
+		tx = tx.Where(`summary like ? escape '\'`, likeValue(this.SummaryLike))
 	}
-	offset := (this.Page - 1) * this.PageSize
-	tx = tx.Offset(offset).Limit(this.PageSize)
-	return tx
+	if !this.CreatedAtStart.IsZero() {
+		tx = tx.Where("created_at >= ?", this.CreatedAtStart)
+	}
+	if !this.CreatedAtEnd.IsZero() {
+		tx = tx.Where("created_at <= ?", this.CreatedAtEnd)
+	}
+	return tx, nil
+}
+func (this OperationLogInquiry) Order(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return sortOrder(ctx, tx, operationLogSortMap, this.Sort, operationLogSortDefault)
+}
+func (this OperationLogInquiry) Limit(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return pageLimit(ctx, tx, this.Page, this.PageSize)
 }
 
 func NewOperationLogInsertHandler(object ...*model.OperationLog) *util.InsertHandler[model.OperationLog] {

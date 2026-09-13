@@ -8,31 +8,48 @@ import (
 	"gorm.io/gorm"
 )
 
+var fileMetaSortMap = map[string]string{
+	"id asc":          "id asc",
+	"id desc":         "id desc",
+	"file_name asc":   "file_name asc",
+	"file_name desc":  "file_name desc",
+	"created_at asc":  "created_at asc",
+	"created_at desc": "created_at desc",
+}
+
+const fileMetaSortDefault = "id asc"
+
 type FileMetaInquiry model.FileMetaInquiry
 
-func (this FileMetaInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
+func (this FileMetaInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
 	if len(this.Id) > 0 {
 		tx = tx.Where("id in (?)", this.Id)
 	}
 	if len(this.FileHash) > 0 {
 		tx = tx.Where("file_hash in (?)", this.FileHash)
 	}
+	if len(this.FileName) > 0 {
+		tx = tx.Where("file_name in (?)", this.FileName)
+	}
 	if len(this.OperationId) > 0 {
 		tx = tx.Where("operation_id in (?)", this.OperationId)
 	}
-	return tx
-}
-func (this FileMetaInquiry) Order(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	tx = tx.Order("id")
-	return tx
-}
-func (this FileMetaInquiry) Limit(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	if this.PageSize <= 0 {
-		return tx
+	if this.FileNameLike != "" {
+		tx = tx.Where(`file_name like ? escape '\'`, likeValue(this.FileNameLike))
 	}
-	offset := (this.Page - 1) * this.PageSize
-	tx = tx.Offset(offset).Limit(this.PageSize)
-	return tx
+	if !this.CreatedAtStart.IsZero() {
+		tx = tx.Where("created_at >= ?", this.CreatedAtStart)
+	}
+	if !this.CreatedAtEnd.IsZero() {
+		tx = tx.Where("created_at <= ?", this.CreatedAtEnd)
+	}
+	return tx, nil
+}
+func (this FileMetaInquiry) Order(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return sortOrder(ctx, tx, fileMetaSortMap, this.Sort, fileMetaSortDefault)
+}
+func (this FileMetaInquiry) Limit(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return pageLimit(ctx, tx, this.Page, this.PageSize)
 }
 
 func NewFileMetaInsertHandler(object ...*model.FileMeta) *util.InsertHandler[model.FileMeta] {

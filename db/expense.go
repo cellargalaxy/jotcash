@@ -8,9 +8,22 @@ import (
 	"gorm.io/gorm"
 )
 
+var expenseSortMap = map[string]string{
+	"id asc":              "id asc",
+	"id desc":             "id desc",
+	"expense_date asc":    "expense_date asc",
+	"expense_date desc":   "expense_date desc",
+	"expense_amount asc":  "cast(expense_amount as real) asc", //金额列是文本，按文本排序会串位
+	"expense_amount desc": "cast(expense_amount as real) desc",
+	"created_at asc":      "created_at asc",
+	"created_at desc":     "created_at desc",
+}
+
+const expenseSortDefault = "id asc"
+
 type ExpenseInquiry model.ExpenseInquiry
 
-func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
+func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
 	if len(this.Id) > 0 {
 		tx = tx.Where("id in (?)", this.Id)
 	}
@@ -41,19 +54,40 @@ func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) *gorm.DB {
 	if len(this.Version) > 0 {
 		tx = tx.Where("version in (?)", this.Version)
 	}
-	return tx
-}
-func (this ExpenseInquiry) Order(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	tx = tx.Order("id")
-	return tx
-}
-func (this ExpenseInquiry) Limit(ctx context.Context, tx *gorm.DB) *gorm.DB {
-	if this.PageSize <= 0 {
-		return tx
+	if !this.ExpenseDateStart.IsZero() {
+		tx = tx.Where("expense_date >= ?", this.ExpenseDateStart)
 	}
-	offset := (this.Page - 1) * this.PageSize
-	tx = tx.Offset(offset).Limit(this.PageSize)
-	return tx
+	if !this.ExpenseDateEnd.IsZero() {
+		tx = tx.Where("expense_date <= ?", this.ExpenseDateEnd)
+	}
+	if this.ExpenseAmountMin != nil {
+		tx = tx.Where("cast(expense_amount as real) >= ?", this.ExpenseAmountMin.InexactFloat64())
+	}
+	if this.ExpenseAmountMax != nil {
+		tx = tx.Where("cast(expense_amount as real) <= ?", this.ExpenseAmountMax.InexactFloat64())
+	}
+	if this.CounterpartyLike != "" {
+		tx = tx.Where(`counterparty like ? escape '\'`, likeValue(this.CounterpartyLike))
+	}
+	if this.RemarkLike != "" {
+		tx = tx.Where(`remark like ? escape '\'`, likeValue(this.RemarkLike))
+	}
+	if this.ExpenseTypeLike != "" {
+		tx = tx.Where(`expense_type like ? escape '\'`, likeValue(this.ExpenseTypeLike))
+	}
+	switch this.Deleted {
+	case model.DeletedAll:
+		tx = tx.Unscoped()
+	case model.DeletedOnly:
+		tx = tx.Unscoped().Where("deleted_at is not null")
+	}
+	return tx, nil
+}
+func (this ExpenseInquiry) Order(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return sortOrder(ctx, tx, expenseSortMap, this.Sort, expenseSortDefault)
+}
+func (this ExpenseInquiry) Limit(ctx context.Context, tx *gorm.DB) (*gorm.DB, error) {
+	return pageLimit(ctx, tx, this.Page, this.PageSize)
 }
 
 func NewExpenseInsertHandler(object ...*model.Expense) *util.InsertHandler[model.Expense] {
