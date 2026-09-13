@@ -11,13 +11,11 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	//config包init会落配置文件、model包init会落日志，测试产物不留在仓库里
 	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)
 }
 
-// 没有配置文件时按默认值生成一份：后端口令要随机生成且满足强度
 func TestConfigDefault(t *testing.T) {
 	ctx := util.GenCtx()
 
@@ -29,13 +27,11 @@ func TestConfigDefault(t *testing.T) {
 	if handler.GetPath(ctx) != config.ConfigPath {
 		t.Errorf("配置路径不符: %s", handler.GetPath(ctx))
 	}
-	//两次生成的默认配置里，后端口令不能是同一个
 	if handler.GetDefault(ctx) == handler.GetDefault(ctx) {
 		t.Errorf("默认配置里的后端口令应随机生成")
 	}
 }
 
-// 配置文件被改坏时的兜底：后端口令为空直接报错
 func TestConfigParse(t *testing.T) {
 	ctx := util.GenCtx()
 	origin := config.Config
