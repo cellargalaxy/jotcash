@@ -11,7 +11,8 @@ func init() {
 }
 
 type Config struct {
-	ServerToken string `json:"-" yaml:"server_token"`
+	ServerToken   string `json:"-" yaml:"server_token"`
+	DbBackupLimit int    `json:"db_backup_limit" yaml:"db_backup_limit"`
 }
 
 func (this Config) String() string {

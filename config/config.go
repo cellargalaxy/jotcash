@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	ConfigPath = "resource/jotcash.yaml"
-	DbPath     = "resource/jotcash.db"
+	ConfigPath    = "resource/jotcash.yaml"
+	DbPath        = "resource/jotcash.db"
+	DbBackupPath  = "resource/db_backup"
+	DbBackupLimit = 5
 )
 
 var Config model.Config
@@ -40,6 +42,7 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 		panic(err)
 	}
 	config.ServerToken = serverToken
+	config.DbBackupLimit = DbBackupLimit
 	conf := util.YamlStruct2Str(ctx, config)
 	return conf
 }
@@ -53,6 +56,9 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	if config.ServerToken == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"path": ConfigPath}).Error("加载配置，后端口令为空")
 		return errors.Errorf("加载配置，后端口令为空")
+	}
+	if config.DbBackupLimit <= 0 {
+		config.DbBackupLimit = DbBackupLimit
 	}
 	Config = config
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")

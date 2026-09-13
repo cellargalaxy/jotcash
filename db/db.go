@@ -23,11 +23,8 @@ const vfsName = "adiantum"
 
 func init() {
 	ctx := util.GenCtx()
-	dbPath := config.DbPath
-	err := Init(ctx, dbPath)
+	err := Create(ctx)
 	if err != nil {
-		util.RemoveFile(ctx, dbPath)
-		resetMigrate()
 		panic(err)
 	}
 }
@@ -41,8 +38,8 @@ func getToken(ctx context.Context) (string, error) {
 	return claims.ClientToken, nil
 }
 
-func connect(ctx context.Context, dbPath, clientToken string) (*gorm.DB, error) {
-	if clientToken == "" {
+func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
+	if token == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("连接数据库，口令为空")
 		return nil, errors.Errorf("连接数据库，口令为空")
 	}
@@ -55,7 +52,7 @@ func connect(ctx context.Context, dbPath, clientToken string) (*gorm.DB, error) 
 	}
 
 	sqlDb, err := driver.Open(fmt.Sprintf("file:%s?vfs=%s", dbPath, vfsName), func(conn *sqlite3.Conn) error {
-		err := conn.Exec(fmt.Sprintf("PRAGMA textkey=%s;", sqlite3.Quote(clientToken)))
+		err := conn.Exec(fmt.Sprintf("PRAGMA textkey=%s;", sqlite3.Quote(token)))
 		if err != nil {
 			return err
 		}
@@ -86,17 +83,27 @@ func connect(ctx context.Context, dbPath, clientToken string) (*gorm.DB, error) 
 	return gormDb, nil
 }
 
-func Init(ctx context.Context, dbPath string) error {
+func Create(ctx context.Context) error {
+	dbPath := config.DbPath
+	token, err := tool.GenToken(ctx, tool.TokenLen)
+	if err != nil {
+		return err
+	}
+	err = create(ctx, dbPath, token)
+	if err != nil {
+		util.RemoveFile(ctx, dbPath)
+		resetMigrate()
+		return err
+	}
+	return nil
+}
+func create(ctx context.Context, dbPath, token string) error {
 	if util.GetPathInfo(ctx, dbPath) != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("初始化数据库，库文件已存在")
 		return nil
 	}
 
-	clientToken, err := tool.GenToken(ctx, tool.TokenLen)
-	if err != nil {
-		return err
-	}
-	gormDb, err := connect(ctx, dbPath, clientToken)
+	gormDb, err := connect(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
@@ -113,22 +120,30 @@ func Init(ctx context.Context, dbPath string) error {
 		return err
 	}
 
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": clientToken}).Warn("系统初始化，前端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Warn("系统初始化，前端口令")
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.Config.ServerToken}).Warn("系统初始化，后端口令")
 	return nil
 }
 
-func Open(ctx context.Context, dbPath string) (*gorm.DB, error) {
+func Open(ctx context.Context) (*gorm.DB, error) {
+	dbPath := config.DbPath
+	token, err := getToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gormDb, err := open(ctx, dbPath, token)
+	if err != nil {
+		return nil, err
+	}
+	return gormDb, nil
+}
+func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	if util.GetPathInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("打开数据库，库文件不存在")
 		return nil, nil
 	}
 
-	clientToken, err := getToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-	gormDb, err := connect(ctx, dbPath, clientToken)
+	gormDb, err := connect(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +175,8 @@ func Close(ctx context.Context, gormDb *gorm.DB) error {
 	return nil
 }
 
-func CheckClientToken(ctx context.Context) error {
-	gormDb, err := Open(ctx, config.DbPath)
+func CheckToken(ctx context.Context) error {
+	gormDb, err := Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -169,7 +184,7 @@ func CheckClientToken(ctx context.Context) error {
 }
 
 func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error {
-	gormDb, err := Open(ctx, config.DbPath)
+	gormDb, err := Open(ctx)
 	if err != nil {
 		return err
 	}
