@@ -39,6 +39,11 @@ func autoMigrate(ctx context.Context, dbPath, token string) error {
 	if migrated {
 		return nil
 	}
+	return migrate(ctx, dbPath, token)
+}
+
+func migrate(ctx context.Context, dbPath, token string) error {
+	migrated = false
 	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err

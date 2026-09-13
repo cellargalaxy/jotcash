@@ -161,7 +161,10 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	resetMigrate()
+	err = migrate(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
 	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
 	return nil
 }
