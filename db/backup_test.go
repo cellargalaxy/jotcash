@@ -68,6 +68,9 @@ func TestChangeToken(t *testing.T) {
 	if err := ChangeToken(newTokenCtx("wrong-client-token"), "new-client-token-1"); err == nil {
 		t.Errorf("旧口令错误应报错")
 	}
+	if err := ChangeToken(ctx, ""); err == nil {
+		t.Errorf("新口令为空应报错")
+	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Fatalf("失败的换口令不应影响原库: count=%d", count)
 	}
@@ -117,16 +120,21 @@ func TestImportIllegal(t *testing.T) {
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Errorf("导入失败不应影响原库: count=%d", count)
 	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("导入失败没清理临时文件: %d", len(files))
+	}
 }
 
 func TestClearBackup(t *testing.T) {
 	ctx := newTestCtx(t)
-	originLimit := config.Config.DbBackupLimit
-	t.Cleanup(func() { config.Config.DbBackupLimit = originLimit })
-	config.Config.DbBackupLimit = 2
+	limit := config.GetConfig().DbBackupLimit
 
 	var backupPaths []string
-	for i := 0; i < 5; i++ {
+	for i := 0; i < limit+2; i++ {
 		backupPath, err := genBackupPath(ctx)
 		if err != nil {
 			t.Fatalf("生成备份路径异常: %+v", err)
@@ -144,15 +152,15 @@ func TestClearBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读备份目录异常: %+v", err)
 	}
-	if len(files) != config.Config.DbBackupLimit {
-		t.Errorf("备份保留数量: got=%d want=%d", len(files), config.Config.DbBackupLimit)
+	if len(files) != limit {
+		t.Errorf("备份保留数量: got=%d want=%d", len(files), limit)
 	}
 	for i := range backupPaths {
 		exist := util.GetPathInfo(ctx, backupPaths[i]) != nil
-		if i < 3 && exist {
+		if i < 2 && exist {
 			t.Errorf("旧备份未清理: %s", backupPaths[i])
 		}
-		if i >= 3 && !exist {
+		if i >= 2 && !exist {
 			t.Errorf("新备份不应清理: %s", backupPaths[i])
 		}
 	}
