@@ -32,6 +32,7 @@ func NewEngine(ctx context.Context) *gin.Engine {
 	engine.GET(util.PathPing, util.Ping)
 	engine.POST(util.PathPing, validate, Ping)
 	engine.POST(model.PathOperationLogSelect, validate, util.NewGinPost("审计查看", service.SelectOperationLog))
+	engine.POST(model.PathFileMetaSelect, validate, util.NewGinPost("文件列表", service.SelectFileMeta))
 
 	engine.Use(staticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))

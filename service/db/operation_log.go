@@ -9,11 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	pageSizeDefault         = 20
-	pageSizeMax             = 200
-	operationLogSortDefault = "created_at desc"
-)
+const operationLogSortDefault = "created_at desc"
 
 var operationTypes = map[string]bool{
 	model.OperationTypeSystemInit:      true,
@@ -53,17 +49,11 @@ func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInq
 			return inquiry, errors.Errorf("查询审计，操作结果非法: %s", one)
 		}
 	}
-	if !inquiry.CreatedAtStart.IsZero() && !inquiry.CreatedAtEnd.IsZero() && inquiry.CreatedAtStart.After(inquiry.CreatedAtEnd) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"start": inquiry.CreatedAtStart, "end": inquiry.CreatedAtEnd}).Warn("查询审计，时间区间倒挂")
-		return inquiry, errors.Errorf("查询审计，时间区间倒挂")
+	err := checkCreatedAt(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
+	if err != nil {
+		return inquiry, err
 	}
-	//db层的pageSize<=0是不加limit，审计只涨不减，不兜底就会整表拉出来
-	if inquiry.PageSize <= 0 {
-		inquiry.PageSize = pageSizeDefault
-	}
-	if inquiry.PageSize > pageSizeMax {
-		inquiry.PageSize = pageSizeMax
-	}
+	inquiry.PageSize = checkPageSize(inquiry.PageSize)
 	//db层默认id asc，审计列表要的是最新在前
 	if inquiry.Sort == "" {
 		inquiry.Sort = operationLogSortDefault
