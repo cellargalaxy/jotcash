@@ -60,9 +60,8 @@ func Init(ctx context.Context) error {
 		return err
 	}
 
-	logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"clientToken": clientToken, "serverToken": config.Config.ServerToken,
-	}).Warn("系统初始化，初始口令仅打印这一次，请立刻保存")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": clientToken}).Warn("系统初始化，前端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.Config.ServerToken}).Warn("系统初始化，后端口令")
 	return nil
 }
 
@@ -112,12 +111,38 @@ func Open(ctx context.Context, clientToken string) (*gorm.DB, error) {
 		return nil, errors.Errorf("打开数据库，gorm初始化异常: %+v", err)
 	}
 
-	err = autoMigrate(ctx, gormDb, dbPath)
+	err = AutoMigrate(ctx, gormDb)
 	if err != nil {
 		util.CloseIo(ctx, sqlDb)
 		return nil, err
 	}
 	return gormDb, nil
+}
+
+var migrateLock sync.Mutex
+var migrated bool
+
+func AutoMigrate(ctx context.Context, db *gorm.DB) error {
+	migrateLock.Lock()
+	defer migrateLock.Unlock()
+
+	if migrated {
+		return nil
+	}
+
+	if db == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("自动建表，连接为空")
+		return errors.Errorf("自动建表，连接为空")
+	}
+	err := db.WithContext(ctx).AutoMigrate(&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{})
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("自动建表，异常")
+		return errors.Errorf("自动建表，异常: %+v", err)
+	}
+
+	migrated = true
+	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("自动建表，完成")
+	return nil
 }
 
 func CheckClientToken(ctx context.Context, clientToken string) error {
@@ -143,37 +168,6 @@ func Close(ctx context.Context, db *gorm.DB) error {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("关闭数据库，异常")
 		return errors.Errorf("关闭数据库，异常: %+v", err)
 	}
-	return nil
-}
-
-var migrateLock sync.Mutex
-var migratePaths = make(map[string]bool)
-
-func autoMigrate(ctx context.Context, db *gorm.DB, dbPath string) error {
-	migrateLock.Lock()
-	defer migrateLock.Unlock()
-
-	if migratePaths[dbPath] {
-		return nil
-	}
-	err := AutoMigrate(ctx, db)
-	if err != nil {
-		return err
-	}
-	migratePaths[dbPath] = true
-	return nil
-}
-func AutoMigrate(ctx context.Context, db *gorm.DB) error {
-	if db == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("自动建表，连接为空")
-		return errors.Errorf("自动建表，连接为空")
-	}
-	err := db.WithContext(ctx).AutoMigrate(&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{})
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("自动建表，异常")
-		return errors.Errorf("自动建表，异常: %+v", err)
-	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("自动建表，完成")
 	return nil
 }
 
