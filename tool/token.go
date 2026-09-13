@@ -16,7 +16,6 @@ const (
 	tokenLetters = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ"
 )
 
-// 口令即数据库密钥，只能用crypto/rand；go_common的GenRandStr是math/rand且只有字母，不满足口令强度
 func GenToken(ctx context.Context, length int) (string, error) {
 	if length < TokenMinLen {
 		length = TokenMinLen
@@ -39,7 +38,6 @@ func GenToken(ctx context.Context, length int) (string, error) {
 	}
 }
 
-// 口令强度：长度不少于12，且不能是纯数字或纯字母
 func CheckToken(ctx context.Context, token string) error {
 	if len([]rune(token)) < TokenMinLen {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"len": len([]rune(token))}).Warn("校验口令，长度不足")

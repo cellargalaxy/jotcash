@@ -11,7 +11,7 @@ func init() {
 }
 
 type Config struct {
-	ServerToken string `json:"-" yaml:"server_token"` //后端口令
+	ServerToken string `json:"-" yaml:"server_token"`
 }
 
 func (this Config) String() string {
