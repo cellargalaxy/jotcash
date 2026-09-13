@@ -2,6 +2,8 @@ package handler_test
 
 import (
 	"bytes"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -146,6 +148,40 @@ func TestPingWithoutJwt(t *testing.T) {
 	resp := postPing(t, engine, newPingRequest(""))
 	if resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
+	}
+}
+
+// 前端签了jwt但漏掉client_token，是联调最容易出的岔子
+func TestPingWithoutClientToken(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig().ServerToken, "", time.Hour)))
+	if resp.Code == http.StatusOK {
+		t.Errorf("jwt里没有前端口令应校验不通过: %+v", resp)
+	}
+}
+
+// header里直接放裸jwt、漏掉Bearer前缀，同上
+func TestPingWithoutBearer(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+
+	request := httptest.NewRequest(http.MethodPost, util.PathPing, nil)
+	request.Header.Set(util.AuthorizationKey, newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour))
+	resp := postPing(t, engine, request)
+	if resp.Code != http.StatusUnauthorized {
+		t.Errorf("漏掉Bearer前缀应401: %+v", resp)
+	}
+}
+
+// go_common在改，alg=none这条底线得钉住
+func TestPingAlgNoneJwt(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+
+	encode := func(text string) string { return base64.RawURLEncoding.EncodeToString([]byte(text)) }
+	jwt := encode(`{"alg":"none","typ":"JWT"}`) + "." + encode(fmt.Sprintf(`{"exp":%d,"client_token":"%s"}`, time.Now().Add(time.Hour).Unix(), clientToken)) + "."
+	resp := postPing(t, engine, newPingRequest(jwt))
+	if resp.Code == http.StatusOK {
+		t.Errorf("alg=none的jwt应校验不通过: %+v", resp)
 	}
 }
 
