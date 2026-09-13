@@ -5,6 +5,8 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -95,9 +97,41 @@ func NewExpenseInsertHandler(object ...*model.Expense) *util.InsertHandler[model
 	return handler
 }
 
-func NewExpenseUpdateHandler(object *model.Expense) *util.UpdateHandler[model.Expense] {
-	handler := util.NewUpdateHandler[model.Expense](model.Expense{}.TableName(), object)
+func NewExpenseUpdateHandler(object *model.Expense) *ExpenseUpdateHandler {
+	handler := new(ExpenseUpdateHandler)
+	handler.Object = object
 	return handler
+}
+
+type ExpenseUpdateHandler struct {
+	Object *model.Expense
+	Count  int64
+}
+
+func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) error {
+	if this.Object == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("更新expense，为空")
+		return nil
+	}
+
+	object := *this.Object
+	object.Version = this.Object.Version + 1
+	result := tx.Model(&model.Expense{}).
+		Where("id = ? and version = ?", this.Object.Id, this.Object.Version).
+		Select("*").Omit("id", "created_at").Updates(&object)
+	this.Count = result.RowsAffected
+	err := result.Error
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("更新expense，异常")
+		return errors.Errorf("更新expense，异常: %+v", err)
+	}
+	if this.Count == 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"id": this.Object.Id, "version": this.Object.Version}).Warn("更新expense，版本冲突")
+		return nil
+	}
+	this.Object.Version = object.Version
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"count": this.Count}).Info("更新expense，完成")
+	return nil
 }
 
 func NewExpenseDeleteHandler(inquiry model.ExpenseInquiry) *util.DeleteHandler[model.Expense] {
