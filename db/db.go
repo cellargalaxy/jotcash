@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"sync"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
@@ -20,6 +21,8 @@ import (
 )
 
 const vfsName = "adiantum"
+
+var dbLock sync.RWMutex
 
 func init() {
 	ctx := util.GenCtx()
@@ -89,6 +92,10 @@ func Create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
+
 	err = create(ctx, dbPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, dbPath)
@@ -108,6 +115,11 @@ func create(ctx context.Context, dbPath, token string) error {
 		return err
 	}
 	defer Close(ctx, gormDb)
+
+	err = AutoMigrate(ctx, gormDb)
+	if err != nil {
+		return err
+	}
 
 	operationLog := model.OperationLog{
 		Id:            util.GenId(),
@@ -131,6 +143,14 @@ func Open(ctx context.Context) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	err = autoMigrate(ctx, dbPath, token)
+	if err != nil {
+		return nil, err
+	}
+
+	dbLock.RLock()
+	defer dbLock.RUnlock()
+
 	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
@@ -139,21 +159,14 @@ func Open(ctx context.Context) (*gorm.DB, error) {
 }
 func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	if util.GetPathInfo(ctx, dbPath) == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("打开数据库，库文件不存在")
-		return nil, nil
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在")
+		return nil, errors.Errorf("打开数据库，库文件不存在")
 	}
 
 	gormDb, err := connect(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
 	}
-
-	err = autoMigrate(ctx, gormDb)
-	if err != nil {
-		Close(ctx, gormDb)
-		return nil, err
-	}
-
 	return gormDb, nil
 }
 
@@ -176,7 +189,20 @@ func Close(ctx context.Context, gormDb *gorm.DB) error {
 }
 
 func CheckToken(ctx context.Context) error {
-	gormDb, err := Open(ctx)
+	dbPath := config.DbPath
+	token, err := getToken(ctx)
+	if err != nil {
+		return err
+	}
+	err = autoMigrate(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+
+	dbLock.RLock()
+	defer dbLock.RUnlock()
+
+	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
@@ -184,7 +210,20 @@ func CheckToken(ctx context.Context) error {
 }
 
 func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error {
-	gormDb, err := Open(ctx)
+	dbPath := config.DbPath
+	token, err := getToken(ctx)
+	if err != nil {
+		return err
+	}
+	err = autoMigrate(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+
+	dbLock.RLock()
+	defer dbLock.RUnlock()
+
+	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}

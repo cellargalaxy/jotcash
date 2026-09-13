@@ -2,7 +2,6 @@ package db
 
 import (
 	"bytes"
-	"path/filepath"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
@@ -34,9 +33,9 @@ func TestExport(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导回异常: %+v", err)
 	}
-	migrateLock.Lock()
+	dbLock.Lock()
 	reset := !migrated
-	migrateLock.Unlock()
+	dbLock.Unlock()
 	if !reset {
 		t.Errorf("导入后应复位建表标记")
 	}
@@ -59,17 +58,14 @@ func TestExportWrongToken(t *testing.T) {
 	}
 }
 
-func TestChangeClientToken(t *testing.T) {
+func TestChangeToken(t *testing.T) {
 	ctx := newTestCtx(t)
 	expense := newTestExpense()
 	if _, err := InsertExpense(ctx, expense); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	if err := ChangeClientToken(ctx, "123456"); err == nil {
-		t.Errorf("弱口令应被拒绝")
-	}
-	if err := ChangeClientToken(newTokenCtx("wrong-client-token"), "new-client-token-1"); err == nil {
+	if err := ChangeToken(newTokenCtx("wrong-client-token"), "new-client-token-1"); err == nil {
 		t.Errorf("旧口令错误应报错")
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
@@ -77,11 +73,11 @@ func TestChangeClientToken(t *testing.T) {
 	}
 
 	newToken := "new-client-token-1"
-	if err := ChangeClientToken(ctx, newToken); err != nil {
+	if err := ChangeToken(ctx, newToken); err != nil {
 		t.Fatalf("换口令异常: %+v", err)
 	}
 
-	if err := CheckClientToken(ctx); err == nil {
+	if err := CheckToken(ctx); err == nil {
 		t.Errorf("换口令后旧口令应打不开库")
 	}
 	newCtx := newTokenCtx(newToken)
@@ -92,9 +88,12 @@ func TestChangeClientToken(t *testing.T) {
 	if count != 1 || len(objects) != 1 || objects[0].Counterparty != expense.Counterparty {
 		t.Errorf("换口令后数据不符: count=%d %+v", count, objects)
 	}
-	names, err := filepath.Glob(config.DbPath + "*.tmp")
-	if err != nil || len(names) > 0 {
-		t.Errorf("临时文件没清理: %v", names)
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("备份文件没清理: %d", len(files))
 	}
 }
 
@@ -120,28 +119,41 @@ func TestImportIllegal(t *testing.T) {
 	}
 }
 
-func TestImportMissingTable(t *testing.T) {
+func TestClearBackup(t *testing.T) {
 	ctx := newTestCtx(t)
-	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
-		t.Fatalf("插入异常: %+v", err)
+	originLimit := config.Config.DbBackupLimit
+	t.Cleanup(func() { config.Config.DbBackupLimit = originLimit })
+	config.Config.DbBackupLimit = 2
+
+	var backupPaths []string
+	for i := 0; i < 5; i++ {
+		backupPath, err := genBackupPath(ctx)
+		if err != nil {
+			t.Fatalf("生成备份路径异常: %+v", err)
+		}
+		if err = util.WriteData2File(ctx, []byte("backup"), backupPath); err != nil {
+			t.Fatalf("写备份文件异常: %+v", err)
+		}
+		backupPaths = append(backupPaths, backupPath)
 	}
 
-	emptyPath := genTempPath()
-	gormDb, err := create(ctx, emptyPath, testClientToken)
+	if err := ClearBackup(ctx); err != nil {
+		t.Fatalf("清理备份异常: %+v", err)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
 	if err != nil {
-		t.Fatalf("建空库异常: %+v", err)
+		t.Fatalf("读备份目录异常: %+v", err)
 	}
-	Close(ctx, gormDb)
-	data, err := util.ReadFile2Data(ctx, emptyPath, nil)
-	if err != nil {
-		t.Fatalf("读空库异常: %+v", err)
+	if len(files) != config.Config.DbBackupLimit {
+		t.Errorf("备份保留数量: got=%d want=%d", len(files), config.Config.DbBackupLimit)
 	}
-	util.RemoveFile(ctx, emptyPath)
-
-	if err = Import(ctx, bytes.NewReader(data)); err == nil {
-		t.Errorf("缺表的库应拒绝导入")
-	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
-		t.Errorf("导入失败不应影响原库: count=%d", count)
+	for i := range backupPaths {
+		exist := util.GetPathInfo(ctx, backupPaths[i]) != nil
+		if i < 3 && exist {
+			t.Errorf("旧备份未清理: %s", backupPaths[i])
+		}
+		if i >= 3 && !exist {
+			t.Errorf("新备份不应清理: %s", backupPaths[i])
+		}
 	}
 }

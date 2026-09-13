@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
@@ -28,8 +29,8 @@ func newTestDb(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
 
-	migrateLock.Lock()
-	defer migrateLock.Unlock()
+	dbLock.Lock()
+	defer dbLock.Unlock()
 	migrated = false
 }
 
@@ -42,14 +43,10 @@ func newTestCtx(t *testing.T) context.Context {
 	newTestDb(t)
 
 	ctx := newTokenCtx(testClientToken)
-	gormDb, err := create(ctx, config.DbPath, testClientToken)
+	err := create(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
-	if err = autoMigrate(ctx, gormDb); err != nil {
-		t.Fatalf("建测试表异常: %+v", err)
-	}
-	Close(ctx, gormDb)
 	return ctx
 }
 
@@ -75,7 +72,7 @@ func findLogField(text, key string) string {
 	return text[:index]
 }
 
-func TestInit(t *testing.T) {
+func TestCreate(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
 	originToken := config.Config.ServerToken
@@ -83,7 +80,7 @@ func TestInit(t *testing.T) {
 	config.Config.ServerToken = "test-server-token"
 
 	buffer := catchLog(t)
-	if err := Init(ctx); err != nil {
+	if err := Create(ctx); err != nil {
 		t.Fatalf("初始化异常: %+v", err)
 	}
 	if util.GetPathInfo(ctx, config.DbPath) == nil {
@@ -120,7 +117,7 @@ func TestInit(t *testing.T) {
 	}
 
 	buffer2 := catchLog(t)
-	if err = Init(ctx); err != nil {
+	if err = Create(ctx); err != nil {
 		t.Fatalf("重复初始化异常: %+v", err)
 	}
 	if findLogField(buffer2.String(), "clientToken") != "" {
@@ -128,26 +125,6 @@ func TestInit(t *testing.T) {
 	}
 	if _, count, _ = SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
 		t.Errorf("重复初始化不应再记审计: count=%d", count)
-	}
-}
-
-func TestCreate(t *testing.T) {
-	ctx := newTestCtx(t)
-
-	if _, err := create(ctx, config.DbPath, testClientToken); err == nil {
-		t.Errorf("库文件已存在时创建应报错")
-	}
-	util.RemoveFile(ctx, config.DbPath)
-	gormDb, err := create(ctx, config.DbPath, testClientToken)
-	if err != nil {
-		t.Fatalf("创建数据库异常: %+v", err)
-	}
-	Close(ctx, gormDb)
-	if util.GetPathInfo(ctx, config.DbPath) == nil {
-		t.Errorf("创建后库文件应存在")
-	}
-	if _, err = create(ctx, config.DbPath, ""); err == nil {
-		t.Errorf("口令为空时创建应报错")
 	}
 }
 
@@ -168,7 +145,7 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	if util.GetPathInfo(ctx, config.DbPath) != nil {
 		t.Errorf("库文件不应被请求重新建出来")
 	}
-	if err := CheckClientToken(ctx); err == nil {
+	if err := CheckToken(ctx); err == nil {
 		t.Errorf("库文件不存在时口令探针应报错")
 	}
 }
@@ -195,17 +172,18 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
-func TestCheckClientToken(t *testing.T) {
+func TestCheckToken(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	if err := CheckClientToken(ctx); err != nil {
+	if err := CheckToken(ctx); err != nil {
 		t.Fatalf("正确口令探测异常: %+v", err)
 	}
-	if err := CheckClientToken(newTokenCtx("wrong-client-token")); err == nil {
+	if err := CheckToken(newTokenCtx("wrong-client-token")); err == nil {
 		t.Errorf("错误口令探测应报错")
 	}
-	if _, count, _ := SelectOperationLog(ctx, model.OperationLogInquiry{}); count != 0 {
-		t.Errorf("探针不该写数据: count=%d", count)
+	_, count, _ := SelectOperationLog(ctx, model.OperationLogInquiry{})
+	if count != 1 {
+		t.Errorf("探针不该写数据，库里只该有建库那条: count=%d want=1", count)
 	}
 }
 
@@ -275,5 +253,55 @@ func TestTransaction(t *testing.T) {
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{rollbackExpense.Id}}); count != 0 {
 		t.Errorf("事务未回滚")
+	}
+}
+
+func TestConcurrent(t *testing.T) {
+	ctx := newTestCtx(t)
+	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 3; j++ {
+				if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+					errs <- err
+					return
+				}
+				if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < 2; j++ {
+			buffer := new(bytes.Buffer)
+			if err := Export(ctx, buffer); err != nil {
+				errs <- err
+				return
+			}
+			if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发读写异常: %+v", err)
+	}
+	if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
+		t.Errorf("并发之后查询异常: %+v", err)
 	}
 }

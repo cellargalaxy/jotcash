@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
@@ -16,8 +15,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
-
-var fileLock sync.RWMutex
 
 func genBackupPath(ctx context.Context) (string, error) {
 	err := util.CreateFolderPath(ctx, config.DbBackupPath)
@@ -72,6 +69,10 @@ func Export(ctx context.Context, writer io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	dbLock.RLock()
+	defer dbLock.RUnlock()
+
 	err = export(ctx, dbPath, token, writer)
 	if err != nil {
 		return err
@@ -111,6 +112,10 @@ func Import(ctx context.Context, reader io.Reader) error {
 	if err != nil {
 		return err
 	}
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
+
 	err = import_(ctx, dbPath, token, reader)
 	if err != nil {
 		return err
@@ -156,6 +161,10 @@ func ChangeToken(ctx context.Context, newToken string) error {
 	if err != nil {
 		return err
 	}
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
+
 	err = changeToken(ctx, dbPath, token, newToken)
 	if err != nil {
 		return err
@@ -196,6 +205,10 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 
 func ClearBackup(ctx context.Context) error {
 	backupPath := config.DbBackupPath
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
+
 	err := util.CreateFolderPath(ctx, backupPath)
 	if err != nil {
 		return err

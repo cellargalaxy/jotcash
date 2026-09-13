@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"sync"
 
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/pkg/errors"
@@ -10,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-var migrateLock sync.Mutex
 var migrated bool
 
 func AutoMigrate(ctx context.Context, gormDb *gorm.DB) error {
@@ -27,14 +25,27 @@ func AutoMigrate(ctx context.Context, gormDb *gorm.DB) error {
 	return nil
 }
 
-func autoMigrate(ctx context.Context, gormDb *gorm.DB) error {
-	migrateLock.Lock()
-	defer migrateLock.Unlock()
+func autoMigrate(ctx context.Context, dbPath, token string) error {
+	dbLock.RLock()
+	done := migrated
+	dbLock.RUnlock()
+	if done {
+		return nil
+	}
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
 
 	if migrated {
 		return nil
 	}
-	err := AutoMigrate(ctx, gormDb)
+	gormDb, err := open(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+	defer Close(ctx, gormDb)
+
+	err = AutoMigrate(ctx, gormDb)
 	if err != nil {
 		return err
 	}
@@ -43,8 +54,5 @@ func autoMigrate(ctx context.Context, gormDb *gorm.DB) error {
 }
 
 func resetMigrate() {
-	migrateLock.Lock()
-	defer migrateLock.Unlock()
-
 	migrated = false
 }
