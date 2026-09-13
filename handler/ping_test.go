@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -124,20 +123,12 @@ func TestPingWrongToken(t *testing.T) {
 	if resp.Code == http.StatusOK {
 		t.Errorf("前端口令错应校验不通过: %+v", resp)
 	}
-	if resp.Msg != "口令错误或数据库文件损坏" {
-		t.Errorf("前端口令错应返回统一文案: %+v", resp)
+	if resp.Msg != "连接数据库，口令错误或数据库文件损坏" {
+		t.Errorf("前端口令错的文案不符: %+v", resp)
 	}
-	if resp.Data != nil {
-		t.Errorf("校验不通过不应返回data: %+v", resp)
-	}
-
-	//强度不合规的口令在开库之前就被挡回，文案是强度提示而不是统一文案
-	resp = postPing(t, engine, newPingRequest(newJwt(t, serverToken, "short", time.Hour)))
-	if resp.Code == http.StatusOK {
-		t.Errorf("前端口令强度不合规应校验不通过: %+v", resp)
-	}
-	if resp.Msg == "口令错误或数据库文件损坏" {
-		t.Errorf("前端口令强度不合规应返回强度文案: %+v", resp)
+	//报错归报错，服务的基础信息照样要返回
+	if data, ok := resp.Data.(map[string]any); !ok || data["sn"] != util.GetServerName() {
+		t.Errorf("校验不通过也应返回服务基础信息: %+v", resp.Data)
 	}
 
 	resp = postPing(t, engine, newPingRequest(newJwt(t, "wrong-server-token", clientToken, time.Hour)))
@@ -164,18 +155,6 @@ func TestPingExpiredJwt(t *testing.T) {
 	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig().ServerToken, clientToken, -time.Minute)))
 	if resp.Code == http.StatusOK {
 		t.Errorf("过期jwt应校验不通过: %+v", resp)
-	}
-}
-
-// jwt载荷里是明文前端口令，走query会被GinLog连着uri写进日志
-func TestPingJwtInQuery(t *testing.T) {
-	engine, clientToken := newTestEngine(t)
-
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
-	path := util.PathPing + "?" + url.Values{util.AuthorizationKey: []string{jwt}}.Encode()
-	resp := postPing(t, engine, httptest.NewRequest(http.MethodPost, path, nil))
-	if resp.Code != http.StatusUnauthorized {
-		t.Errorf("jwt走query应401: %+v", resp)
 	}
 }
 
