@@ -12,7 +12,6 @@ import (
 
 var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-// 模糊匹配的值来自用户输入，%与_要当普通字符，转义后SQL里跟上escape '\'
 func likeValue(value string) string {
 	return fmt.Sprintf("%%%s%%", likeReplacer.Replace(value))
 }
