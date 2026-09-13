@@ -5,7 +5,6 @@ import (
 )
 
 type Config struct {
-	DbPath      string `json:"db_path" yaml:"db_path"`
 	ServerToken string `json:"-" yaml:"server_token"` //后端口令
 }
 

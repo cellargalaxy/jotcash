@@ -39,7 +39,6 @@ func (this *ConfigHandler) GetPath(ctx context.Context) string {
 }
 func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	var config model.Config
-	config.DbPath = DbPath
 	serverToken, err := tool.GenToken(ctx, tool.TokenLen)
 	if err != nil {
 		panic(err)
@@ -53,9 +52,6 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	err := util.YamlStr2Struct(ctx, text, &config)
 	if err != nil {
 		return err
-	}
-	if config.DbPath == "" {
-		config.DbPath = DbPath
 	}
 	//后端口令是jwt签名密钥，空值等于谁都能伪造jwt，宁可起不来也不能带着空口令跑
 	if config.ServerToken == "" {
