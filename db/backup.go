@@ -87,6 +87,7 @@ func replace(ctx context.Context, backupPath, dbPath, token string) error {
 }
 
 func Export(ctx context.Context, writer io.Writer) error {
+	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
 	if err != nil {
@@ -130,6 +131,7 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
 }
 
 func Import(ctx context.Context, reader io.Reader) error {
+	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
 	if err != nil {
@@ -170,6 +172,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 }
 
 func ChangeToken(ctx context.Context, newToken string) error {
+	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
 	if err != nil {

@@ -41,6 +41,11 @@ func getToken(ctx context.Context) (string, error) {
 	return claims.ClientToken, nil
 }
 
+// gin会把*gin.Context放回sync.Pool给下个请求复用，而database/sql的awaitDone协程可能在请求结束后才去读ctx，交给gorm之前必须脱钩
+func detachCtx(ctx context.Context) context.Context {
+	return tool.SetClaims(util.CopyCtx(ctx), tool.GetClaims(ctx))
+}
+
 func existDb(ctx context.Context, dbPath string) bool {
 	info := util.GetFileInfo(ctx, dbPath)
 	//0字节的库文件是建库崩在半路的残骸，任何口令都能把它当空库打开，只能当作没建过
@@ -145,6 +150,7 @@ func create(ctx context.Context, dbPath, token string) error {
 }
 
 func Open(ctx context.Context) (*gorm.DB, error) {
+	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
 	if err != nil {
@@ -204,6 +210,7 @@ func CheckToken(ctx context.Context) error {
 }
 
 func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error {
+	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
 	if err != nil {
