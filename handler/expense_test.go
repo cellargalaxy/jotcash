@@ -367,3 +367,12 @@ func TestDeleteExpenseWithoutJwt(t *testing.T) {
 		t.Errorf("没带jwt应401: %+v", resp)
 	}
 }
+
+func decimalOf(t *testing.T, text string) decimal.Decimal {
+	t.Helper()
+	value, err := decimal.NewFromString(text)
+	if err != nil {
+		t.Fatalf("解析金额异常: %+v", err)
+	}
+	return value
+}
