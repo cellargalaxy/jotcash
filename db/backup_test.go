@@ -50,20 +50,62 @@ func TestExport(t *testing.T) {
 	}
 }
 
+// B-2「结构合法」：口令对得上但不是本系统的库，不能拿来把用户数据覆盖成空库
+func TestImportWrongSchema(t *testing.T) {
+	ctx := newTestCtx(t)
+	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	otherPath := "resource/other.db"
+	gormDb, err := connect(ctx, otherPath, testClientToken)
+	if err != nil {
+		t.Fatalf("建库异常: %+v", err)
+	}
+	if err = gormDb.Exec("CREATE TABLE other(id integer)").Error; err != nil {
+		t.Fatalf("建表异常: %+v", err)
+	}
+	Close(ctx, gormDb)
+	data, err := util.ReadFile2Data(ctx, otherPath, nil)
+	if err != nil {
+		t.Fatalf("读库异常: %+v", err)
+	}
+	util.RemoveFile(ctx, otherPath)
+
+	if err = Import(ctx, bytes.NewReader(data)); err == nil {
+		t.Fatalf("结构不合法的库应拒绝导入")
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
+		t.Errorf("被拒的导入不应影响原库: count=%d", count)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("被拒的导入没清理临时文件: %d", len(files))
+	}
+}
+
 func TestImportOldDb(t *testing.T) {
 	ctx := newTestCtx(t)
 	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	//造一个同口令、一张表都没有的库文件，冒充旧版本导出的库
+	//造一个同口令、表在但少了两列的库文件，冒充旧版本导出的库（一张表都没有的库过不了B-2的结构校验）
 	oldPath := "resource/old.db"
-	gormDb, err := connect(ctx, oldPath, testClientToken)
-	if err != nil {
+	if err := create(ctx, oldPath, testClientToken); err != nil {
 		t.Fatalf("建旧库异常: %+v", err)
 	}
-	if err = gormDb.Exec("PRAGMA user_version=1").Error; err != nil {
-		t.Fatalf("写旧库异常: %+v", err)
+	gormDb, err := connect(ctx, oldPath, testClientToken)
+	if err != nil {
+		t.Fatalf("连旧库异常: %+v", err)
+	}
+	for _, column := range []string{"counterparty", "remark"} {
+		if err = gormDb.Exec("ALTER TABLE expense DROP COLUMN " + column).Error; err != nil {
+			t.Fatalf("删旧库列异常: %+v", err)
+		}
 	}
 	Close(ctx, gormDb)
 	data, err := util.ReadFile2Data(ctx, oldPath, nil)

@@ -1,6 +1,8 @@
 package handler_test
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,5 +132,103 @@ func TestExportDbNoBackupResidue(t *testing.T) {
 	}
 	if len(files) > 0 {
 		t.Errorf("导出用的临时快照没清理: %d", len(files))
+	}
+}
+
+func newImportRequest(t *testing.T, jwt string, data []byte) *http.Request {
+	t.Helper()
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	if data != nil {
+		part, err := writer.CreateFormFile(model.ImportFileKey, "jotcash.db")
+		if err != nil {
+			t.Fatalf("构造上传表单异常: %+v", err)
+		}
+		if _, err = part.Write(data); err != nil {
+			t.Fatalf("写上传表单异常: %+v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("关闭上传表单异常: %+v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, model.PathImportDb, body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if jwt != "" {
+		request.Header.Set(util.AuthorizationKey, util.BearerKey+" "+jwt)
+	}
+	return request
+}
+
+func importDb(t *testing.T, engine *gin.Engine, jwt string, data []byte) common_model.HttpResp {
+	t.Helper()
+	var resp common_model.HttpResp
+	doRequest(t, engine, newImportRequest(t, jwt, data), &resp)
+	return resp
+}
+
+func TestImportDb(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	newTestFileMeta(t, clientToken)
+
+	snapshot := exportDb(t, engine, jwt).Body.Bytes()
+
+	//快照之后再加一条，导入要把它整库覆盖掉
+	newTestOperationLog(t, clientToken)
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDataEntry}}); logs.Data.Count != 1 {
+		t.Fatalf("快照后应多出一条审计: %+v", logs.Data)
+	}
+
+	if resp := importDb(t, engine, jwt, snapshot); resp.Code != http.StatusOK {
+		t.Fatalf("导入应成功: %+v", resp)
+	}
+
+	//B-2：整库覆盖，快照之后的数据没了，快照里的数据都在
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDataEntry}}); logs.Data.Count != 0 {
+		t.Errorf("快照之后的数据应被整库覆盖掉: %+v", logs.Data)
+	}
+	if files := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{}); files.Data.Count != 3 {
+		t.Errorf("快照里的数据应还在: %+v", files.Data)
+	}
+	//B-2：审计落新库
+	logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbImport}})
+	if logs.Data.Count != 1 {
+		t.Fatalf("导入应记一条审计且落在新库里: %+v", logs.Data)
+	}
+	if logs.Data.Object[0].Changes != "" {
+		t.Errorf("导入不应记变更内容: %+v", logs.Data.Object[0])
+	}
+}
+
+func TestImportDbIllegal(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	newTestFileMeta(t, clientToken)
+
+	//没带文件 / 非数据库文件 / 0字节，都要被拒
+	if resp := importDb(t, engine, jwt, nil); resp.Code == http.StatusOK {
+		t.Errorf("没带文件应报错: %+v", resp)
+	}
+	if resp := importDb(t, engine, jwt, []byte("我不是数据库")); resp.Code == http.StatusOK {
+		t.Errorf("非数据库文件应报错: %+v", resp)
+	}
+	if resp := importDb(t, engine, jwt, []byte{}); resp.Code == http.StatusOK {
+		t.Errorf("0字节文件应报错: %+v", resp)
+	}
+
+	//原库原封不动，且失败的导入不留审计
+	if files := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{}); files.Data.Count != 3 {
+		t.Errorf("被拒的导入不应影响原库: %+v", files.Data)
+	}
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbImport}}); logs.Data.Count != 0 {
+		t.Errorf("失败的导入不应记审计: %+v", logs.Data)
+	}
+}
+
+func TestImportDbWithoutJwt(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	if resp := importDb(t, engine, "", []byte("whatever")); resp.Code != http.StatusUnauthorized {
+		t.Errorf("没带jwt应401: %+v", resp)
 	}
 }
