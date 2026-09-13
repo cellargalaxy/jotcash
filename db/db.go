@@ -224,6 +224,9 @@ func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error
 	dbLock.RLock()
 	defer dbLock.RUnlock()
 
+	return transaction(ctx, dbPath, token, handlers...)
+}
+func transaction(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
 	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err

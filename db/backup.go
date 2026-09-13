@@ -171,7 +171,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 	return nil
 }
 
-func ChangeToken(ctx context.Context, newToken string) error {
+func ChangeToken(ctx context.Context, newToken string, handlers ...util.TransactionHandler) error {
 	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
@@ -182,13 +182,13 @@ func ChangeToken(ctx context.Context, newToken string) error {
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = changeToken(ctx, dbPath, token, newToken)
+	err = changeToken(ctx, dbPath, token, newToken, handlers...)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
+func changeToken(ctx context.Context, dbPath, oldToken, newToken string, handlers ...util.TransactionHandler) error {
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
@@ -198,6 +198,14 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
+	}
+
+	if len(handlers) > 0 {
+		err = transaction(ctx, backupPath, newToken, handlers...)
+		if err != nil {
+			util.RemoveFile(ctx, backupPath)
+			return err
+		}
 	}
 
 	err = replace(ctx, backupPath, dbPath, newToken)
