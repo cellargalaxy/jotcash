@@ -5,15 +5,15 @@ import (
 )
 
 type FileBlob struct {
-	FileHash string `json:"file_hash"`
-	FileData []byte `json:"-"`
+	FileHash string `json:"file_hash" gorm:"column:file_hash;primaryKey"`
+	FileData []byte `json:"-" gorm:"column:file_data;type:blob"`
 }
 
 func (this FileBlob) String() string {
 	return util.JsonStruct2Str(this)
 }
 func (this FileBlob) TableName() string {
-	return "" //todo
+	return "file_blob"
 }
 
 type FileBlobInquiry struct {

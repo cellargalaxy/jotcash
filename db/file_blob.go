@@ -49,10 +49,36 @@ func NewFileBlobSelectHandler(inquiry model.FileBlobInquiry) *util.SelectHandler
 	return handler
 }
 
+func InsertFileBlob(ctx context.Context, object ...*model.FileBlob) (int64, error) {
+	handler := NewFileBlobInsertHandler(object...)
+	err := Transaction(ctx, handler)
+	if err != nil {
+		return 0, err
+	}
+	return handler.Count, nil
+}
+
+func UpdateFileBlob(ctx context.Context, object *model.FileBlob) (int64, error) {
+	handler := NewFileBlobUpdateHandler(object)
+	err := Transaction(ctx, handler)
+	if err != nil {
+		return 0, err
+	}
+	return handler.Count, nil
+}
+
+func DeleteFileBlob(ctx context.Context, inquiry model.FileBlobInquiry) (int64, error) {
+	handler := NewFileBlobDeleteHandler(inquiry)
+	err := Transaction(ctx, handler)
+	if err != nil {
+		return 0, err
+	}
+	return handler.Count, nil
+}
+
 func SelectFileBlob(ctx context.Context, inquiry model.FileBlobInquiry) ([]*model.FileBlob, int64, error) {
 	handler := NewFileBlobSelectHandler(inquiry)
-	var tx *gorm.DB //todo
-	err := util.Transaction(ctx, tx, handler)
+	err := Transaction(ctx, handler)
 	if err != nil {
 		return nil, 0, err
 	}

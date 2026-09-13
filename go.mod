@@ -6,7 +6,9 @@ require (
 	github.com/cellargalaxy/go_common v0.0.0-20260913021950-37b361cb8195
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
+	github.com/pkg/errors v0.9.1
 	github.com/shopspring/decimal v1.4.0
+	github.com/sirupsen/logrus v1.10.2
 	gorm.io/gorm v1.31.2
 )
 
@@ -43,12 +45,10 @@ require (
 	github.com/panjf2000/ants/v2 v2.12.1 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
-	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
