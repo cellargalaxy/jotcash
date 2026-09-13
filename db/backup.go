@@ -137,7 +137,7 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer, handler
 	return nil
 }
 
-func Import(ctx context.Context, reader io.Reader) error {
+func Import(ctx context.Context, reader io.Reader, handlers ...util.TransactionHandler) error {
 	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
@@ -148,13 +148,13 @@ func Import(ctx context.Context, reader io.Reader) error {
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = import_(ctx, dbPath, token, reader)
+	err = import_(ctx, dbPath, token, reader, handlers...)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func import_(ctx context.Context, dbPath, token string, reader io.Reader) error {
+func import_(ctx context.Context, dbPath, token string, reader io.Reader, handlers ...util.TransactionHandler) error {
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
@@ -165,17 +165,40 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return err
 	}
 
+	err = checkImport(ctx, backupPath, token, handlers...)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+
 	err = replace(ctx, backupPath, dbPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	err = migrate(ctx, dbPath, token)
+	setMigrated()
+	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
+	return nil
+}
+func checkImport(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
+	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
-	return nil
+	defer Close(ctx, gormDb)
+
+	err = checkSchema(ctx, gormDb)
+	if err != nil {
+		return err
+	}
+	err = AutoMigrate(ctx, gormDb)
+	if err != nil {
+		return err
+	}
+	if len(handlers) == 0 {
+		return nil
+	}
+	return util.Transaction(ctx, gormDb, handlers...)
 }
 
 func ChangeToken(ctx context.Context, newToken string, handlers ...util.TransactionHandler) error {

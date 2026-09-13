@@ -37,3 +37,13 @@ func Export(ctx context.Context, writer io.Writer) error {
 	}
 	return db.Export(ctx, writer, db.NewOperationLogInsertHandler(&operationLog))
 }
+
+func Import(ctx context.Context, reader io.Reader) error {
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeDbImport,
+		Summary:       "导入加密数据库，整库覆盖",
+		Result:        model.ResultSuccess,
+	}
+	return db.Import(ctx, reader, db.NewOperationLogInsertHandler(&operationLog))
+}
