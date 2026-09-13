@@ -18,6 +18,7 @@ func (this FileBlob) TableName() string {
 
 type FileBlobInquiry struct {
 	FileHash []string `json:"file_hash"`
+	Sort     string   `json:"sort"`
 	Page     int      `json:"page"`
 	PageSize int      `json:"page_size"`
 }

@@ -6,6 +6,23 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 )
 
+const (
+	OperationTypeSystemInit      = "系统初始化"
+	OperationTypeDataEntry       = "数据入库"
+	OperationTypeExpenseEdit     = "明细编辑"
+	OperationTypeExpenseDelete   = "明细删除"
+	OperationTypeCurrencySwitch  = "记账币种切换"
+	OperationTypeClientTokenSwap = "更换口令"
+	OperationTypeDbImport        = "数据库导入"
+	OperationTypeDbExport        = "数据库导出"
+)
+
+const (
+	ResultSuccess = "成功"
+	ResultFailure = "失败"
+	ResultPartial = "部分成功"
+)
+
 type OperationLog struct {
 	Id            int64     `json:"id" gorm:"column:id;primaryKey;autoIncrement:false"`
 	OperationType string    `json:"operation_type" gorm:"column:operation_type;index"`
@@ -14,7 +31,7 @@ type OperationLog struct {
 	Summary       string    `json:"summary" gorm:"column:summary"`
 	Changes       string    `json:"changes" gorm:"column:changes"`
 	Result        string    `json:"result" gorm:"column:result;index"`
-	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at"`
+	CreatedAt     time.Time `json:"created_at" gorm:"column:created_at;index"`
 }
 
 func (this OperationLog) String() string {
@@ -25,13 +42,17 @@ func (this OperationLog) TableName() string {
 }
 
 type OperationLogInquiry struct {
-	Id            []int64  `json:"id"`
-	OperationType []string `json:"operation_type"`
-	ObjectType    []string `json:"object_type"`
-	ObjectId      []int64  `json:"object_id"`
-	Result        []string `json:"result"`
-	Page          int      `json:"page"`
-	PageSize      int      `json:"page_size"`
+	Id             []int64   `json:"id"`
+	OperationType  []string  `json:"operation_type"`
+	ObjectType     []string  `json:"object_type"`
+	ObjectId       []int64   `json:"object_id"`
+	Result         []string  `json:"result"`
+	SummaryLike    string    `json:"summary_like"`
+	CreatedAtStart time.Time `json:"created_at_start"`
+	CreatedAtEnd   time.Time `json:"created_at_end"`
+	Sort           string    `json:"sort"`
+	Page           int       `json:"page"`
+	PageSize       int       `json:"page_size"`
 }
 
 func (this OperationLogInquiry) String() string {

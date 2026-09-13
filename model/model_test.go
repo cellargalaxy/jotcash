@@ -66,6 +66,26 @@ func TestFileBlobJson(t *testing.T) {
 	}
 }
 
+// ClientToken打了json:"-"：既不进String()/日志，也不会随json.Marshal进jwt载荷
+func TestClaimsJson(t *testing.T) {
+	claims := model.Claims{ClientToken: "secret-client-token"}
+	claims.LogId = 123
+
+	data, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("序列化异常: %+v", err)
+	}
+	if strings.Contains(string(data), "secret-client-token") {
+		t.Errorf("ClientToken不应出现在序列化结果中: %s", string(data))
+	}
+	if !strings.Contains(string(data), "123") {
+		t.Errorf("其余字段应正常序列化: %s", string(data))
+	}
+	if strings.Contains(claims.String(), "secret-client-token") {
+		t.Errorf("ClientToken不应出现在String()中: %s", claims.String())
+	}
+}
+
 // Inquiry也要能直接打日志
 func TestInquiryString(t *testing.T) {
 	inquiry := model.ExpenseInquiry{Id: []int64{1, 2}, PageSize: 10}

@@ -8,6 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	DeletedNo   = iota //只查未删除
+	DeletedAll         //未删除与已删除都查
+	DeletedOnly        //只查已删除
+)
+
 // decimal.Decimal只能声明为varchar：SQLite按声明类型做亲和判定，decimal/numeric落到NUMERIC亲和，会把数字文本转成浮点数丢精度
 type Expense struct {
 	Id                     int64           `json:"id" gorm:"column:id;primaryKey;autoIncrement:false"`
@@ -41,18 +47,27 @@ func (this Expense) TableName() string {
 }
 
 type ExpenseInquiry struct {
-	Id                 []int64  `json:"id"`
-	BankName           []string `json:"bank_name"`
-	CardLast4          []string `json:"card_last_4"`
-	ExpenseCurrency    []string `json:"expense_currency"`
-	AccountingCurrency []string `json:"accounting_currency"`
-	ExpenseType        []string `json:"expense_type"`
-	AmortizationMonths []int    `json:"amortization_months"`
-	OperationId        []int64  `json:"operation_id"`
-	FileId             []int64  `json:"file_id"`
-	Version            []int    `json:"version"`
-	Page               int      `json:"page"`
-	PageSize           int      `json:"page_size"`
+	Id                 []int64          `json:"id"`
+	BankName           []string         `json:"bank_name"`
+	CardLast4          []string         `json:"card_last_4"`
+	ExpenseCurrency    []string         `json:"expense_currency"`
+	AccountingCurrency []string         `json:"accounting_currency"`
+	ExpenseType        []string         `json:"expense_type"`
+	AmortizationMonths []int            `json:"amortization_months"`
+	OperationId        []int64          `json:"operation_id"`
+	FileId             []int64          `json:"file_id"`
+	Version            []int            `json:"version"`
+	ExpenseDateStart   time.Time        `json:"expense_date_start"`
+	ExpenseDateEnd     time.Time        `json:"expense_date_end"`
+	ExpenseAmountMin   *decimal.Decimal `json:"expense_amount_min"` //金额允许0与负数，用指针区分“不限”与“限定为0”
+	ExpenseAmountMax   *decimal.Decimal `json:"expense_amount_max"`
+	CounterpartyLike   string           `json:"counterparty_like"`
+	RemarkLike         string           `json:"remark_like"`
+	ExpenseTypeLike    string           `json:"expense_type_like"`
+	Deleted            int              `json:"deleted"`
+	Sort               string           `json:"sort"`
+	Page               int              `json:"page"`
+	PageSize           int              `json:"page_size"`
 }
 
 func (this ExpenseInquiry) String() string {
