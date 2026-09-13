@@ -27,6 +27,11 @@ func genBackupPath(ctx context.Context) (string, error) {
 }
 
 func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) error {
+	if dstToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，口令为空")
+		return errors.Errorf("备份数据库，口令为空")
+	}
+
 	gormDb, err := open(ctx, srcPath, srcToken)
 	if err != nil {
 		return err
@@ -59,6 +64,24 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath, "err": err}).Error("备份数据库，异常")
 		return errors.Errorf("备份数据库，异常: %+v", err)
+	}
+	return nil
+}
+
+func replace(ctx context.Context, backupPath, dbPath, token string) error {
+	gormDb, err := open(ctx, backupPath, token)
+	if err != nil {
+		return err
+	}
+	err = Close(ctx, gormDb)
+	if err != nil {
+		return err
+	}
+
+	err = os.Rename(backupPath, dbPath)
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"backupPath": backupPath, "err": err}).Error("替换数据库，异常")
+		return errors.Errorf("替换数据库，异常: %+v", err)
 	}
 	return nil
 }
@@ -133,22 +156,10 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return err
 	}
 
-	gormDb, err := open(ctx, backupPath, token)
+	err = replace(ctx, backupPath, dbPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
-	}
-	err = Close(ctx, gormDb)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		return err
-	}
-
-	err = os.Rename(backupPath, dbPath)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导入数据库，异常")
-		return errors.Errorf("导入数据库，异常: %+v", err)
 	}
 	resetMigrate()
 	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
@@ -179,25 +190,14 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 
 	err = backup(ctx, dbPath, oldToken, backupPath, newToken)
 	if err != nil {
-		return err
-	}
-
-	gormDb, err := open(ctx, backupPath, newToken)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		return err
-	}
-	err = Close(ctx, gormDb)
-	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 
-	err = os.Rename(backupPath, dbPath)
+	err = replace(ctx, backupPath, dbPath, newToken)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("更换口令，异常")
-		return errors.Errorf("更换口令，异常: %+v", err)
+		return err
 	}
 	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("更换口令，完成")
 	return nil
@@ -224,7 +224,7 @@ func ClearBackup(ctx context.Context) error {
 		}
 		filenames = append(filenames, file.Name())
 	}
-	limit := config.Config.DbBackupLimit
+	limit := config.GetConfig().DbBackupLimit
 	if len(filenames) <= limit {
 		return nil
 	}

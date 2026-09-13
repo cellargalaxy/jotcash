@@ -34,7 +34,7 @@ type Expense struct {
 	OperationId            int64           `json:"operation_id" gorm:"column:operation_id;index"`
 	FileId                 int64           `json:"file_id" gorm:"column:file_id;index"`
 	Version                int             `json:"version" gorm:"column:version;index"`
-	CreatedAt              time.Time       `json:"created_at" gorm:"column:created_at"`
+	CreatedAt              time.Time       `json:"created_at" gorm:"column:created_at;index"`
 	UpdatedAt              time.Time       `json:"updated_at" gorm:"column:updated_at"`
 	DeletedAt              gorm.DeletedAt  `json:"deleted_at" gorm:"column:deleted_at;index"`
 }

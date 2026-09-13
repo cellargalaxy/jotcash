@@ -133,7 +133,7 @@ func create(ctx context.Context, dbPath, token string) error {
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Warn("系统初始化，前端口令")
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.Config.ServerToken}).Warn("系统初始化，后端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig().ServerToken}).Warn("系统初始化，后端口令")
 	return nil
 }
 
@@ -189,20 +189,7 @@ func Close(ctx context.Context, gormDb *gorm.DB) error {
 }
 
 func CheckToken(ctx context.Context) error {
-	dbPath := config.DbPath
-	token, err := getToken(ctx)
-	if err != nil {
-		return err
-	}
-	err = autoMigrate(ctx, dbPath, token)
-	if err != nil {
-		return err
-	}
-
-	dbLock.RLock()
-	defer dbLock.RUnlock()
-
-	gormDb, err := open(ctx, dbPath, token)
+	gormDb, err := Open(ctx)
 	if err != nil {
 		return err
 	}

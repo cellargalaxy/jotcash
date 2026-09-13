@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"sync"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
@@ -17,8 +18,9 @@ const (
 	DbBackupLimit = 5
 )
 
-var Config model.Config
 var configService *util.ConfigService
+var confLock sync.RWMutex
+var conf model.Config
 
 func init() {
 	ctx := util.GenCtx()
@@ -27,6 +29,12 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func GetConfig() model.Config {
+	confLock.RLock()
+	defer confLock.RUnlock()
+	return conf
 }
 
 type ConfigHandler struct {
@@ -43,8 +51,8 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	}
 	config.ServerToken = serverToken
 	config.DbBackupLimit = DbBackupLimit
-	conf := util.YamlStruct2Str(ctx, config)
-	return conf
+	text := util.YamlStruct2Str(ctx, config)
+	return text
 }
 func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	var config model.Config
@@ -60,7 +68,11 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	if config.DbBackupLimit <= 0 {
 		config.DbBackupLimit = DbBackupLimit
 	}
-	Config = config
+
+	confLock.Lock()
+	defer confLock.Unlock()
+	conf = config
+
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")
 	return nil
 }
