@@ -5,6 +5,8 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/tool"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,7 +40,11 @@ func (this *ConfigHandler) GetPath(ctx context.Context) string {
 func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	var config model.Config
 	config.DbPath = DbPath
-	config.ServerToken = "" //todo,生成初始后端口令，打印初始的前端口令与后端口令的地方在db包里，db包才是判断数据库文件是否为创建，服务第一次其次的地方
+	serverToken, err := tool.GenToken(ctx, tool.TokenLen)
+	if err != nil {
+		panic(err)
+	}
+	config.ServerToken = serverToken
 	conf := util.YamlStruct2Str(ctx, config)
 	return conf
 }
@@ -47,6 +53,14 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	err := util.YamlStr2Struct(ctx, text, &config)
 	if err != nil {
 		return err
+	}
+	if config.DbPath == "" {
+		config.DbPath = DbPath
+	}
+	//后端口令是jwt签名密钥，空值等于谁都能伪造jwt，宁可起不来也不能带着空口令跑
+	if config.ServerToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"path": ConfigPath}).Error("加载配置，后端口令为空")
+		return errors.Errorf("加载配置，后端口令为空")
 	}
 	Config = config
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")
