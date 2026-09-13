@@ -126,8 +126,8 @@ func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) 
 		return errors.Errorf("更新expense，异常: %+v", err)
 	}
 	if this.Count == 0 {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"id": this.Object.Id, "version": this.Object.Version}).Warn("更新expense，版本冲突")
-		return nil
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"expense": this.Object}).Error("更新expense，版本冲突")
+		return errors.Errorf("更新expense，版本冲突") //如果版本冲突，回滚整个事务
 	}
 	this.Object.Version = object.Version
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"count": this.Count}).Info("更新expense，完成")
