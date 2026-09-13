@@ -41,6 +41,9 @@ func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, er
 	if len(this.AccountingCurrency) > 0 {
 		tx = tx.Where("accounting_currency in (?)", this.AccountingCurrency)
 	}
+	if len(this.AccountingCurrencyNot) > 0 {
+		tx = tx.Where("accounting_currency not in (?)", this.AccountingCurrencyNot)
+	}
 	if len(this.ExpenseType) > 0 {
 		tx = tx.Where("expense_type in (?)", this.ExpenseType)
 	}
