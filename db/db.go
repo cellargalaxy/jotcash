@@ -123,16 +123,16 @@ var migrateLock sync.Mutex
 var migrated bool
 
 func AutoMigrate(ctx context.Context, db *gorm.DB) error {
+	if db == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("自动建表，连接为空")
+		return errors.Errorf("自动建表，连接为空")
+	}
+
 	migrateLock.Lock()
 	defer migrateLock.Unlock()
 
 	if migrated {
 		return nil
-	}
-
-	if db == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("自动建表，连接为空")
-		return errors.Errorf("自动建表，连接为空")
 	}
 	err := db.WithContext(ctx).AutoMigrate(&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{})
 	if err != nil {
