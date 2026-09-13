@@ -8,6 +8,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/service"
 	"github.com/cellargalaxy/jotcash/static"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -30,6 +31,7 @@ func NewEngine(ctx context.Context) *gin.Engine {
 
 	engine.GET(util.PathPing, util.Ping)
 	engine.POST(util.PathPing, validate, Ping)
+	engine.POST(model.PathOperationLogSelect, validate, util.NewGinPost("审计查看", service.SelectOperationLog))
 
 	engine.Use(staticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))
