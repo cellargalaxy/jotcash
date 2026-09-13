@@ -11,8 +11,9 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
-	//init时会把默认配置落到相对路径下，测试产物不留在仓库里
+	//config包init会落配置文件、model包init会落日志，测试产物不留在仓库里
 	os.RemoveAll("resource")
+	os.RemoveAll("log")
 	os.Exit(code)
 }
 
