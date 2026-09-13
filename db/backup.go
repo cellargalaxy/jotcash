@@ -86,7 +86,7 @@ func replace(ctx context.Context, backupPath, dbPath, token string) error {
 	return nil
 }
 
-func Export(ctx context.Context, writer io.Writer) error {
+func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionHandler) error {
 	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
@@ -97,13 +97,20 @@ func Export(ctx context.Context, writer io.Writer) error {
 	dbLock.RLock()
 	defer dbLock.RUnlock()
 
-	err = export(ctx, dbPath, token, writer)
+	err = export(ctx, dbPath, token, writer, handlers...)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
+func export(ctx context.Context, dbPath, token string, writer io.Writer, handlers ...util.TransactionHandler) error {
+	if len(handlers) > 0 {
+		err := transaction(ctx, dbPath, token, handlers...)
+		if err != nil {
+			return err
+		}
+	}
+
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err

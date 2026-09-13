@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"io"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/db"
@@ -25,4 +26,14 @@ func ChangeToken(ctx context.Context, newToken string) error {
 		Result:        model.ResultSuccess,
 	}
 	return db.ChangeToken(ctx, newToken, db.NewOperationLogInsertHandler(&operationLog))
+}
+
+func Export(ctx context.Context, writer io.Writer) error {
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeDbExport,
+		Summary:       "导出加密数据库快照",
+		Result:        model.ResultSuccess,
+	}
+	return db.Export(ctx, writer, db.NewOperationLogInsertHandler(&operationLog))
 }
