@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,20 +32,98 @@ func TestMain(m *testing.M) {
 func newTestCtx(t *testing.T) context.Context {
 	t.Helper()
 	config.Config.DbPath = filepath.Join(t.TempDir(), "jotcash.db")
-	ctx := tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: testClientToken})
-
-	gormDb, err := db.Open(ctx, testClientToken)
-	if err != nil {
-		t.Fatalf("打开测试数据库异常: %+v", err)
-	}
-	defer db.Close(ctx, gormDb)
-	if err = db.AutoMigrate(ctx, gormDb); err != nil {
-		t.Fatalf("自动建表异常: %+v", err)
-	}
-	return ctx
+	return tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: testClientToken})
 }
 
-// 四张表都要建出来，且重复执行不报错（服务每次启动都会跑一遍）
+// logHook 抓logrus的字段，用来验初始口令有没有被打出来
+type logHook struct {
+	entries []*logrus.Entry
+}
+
+func (this *logHook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+func (this *logHook) Fire(entry *logrus.Entry) error {
+	this.entries = append(this.entries, entry)
+	return nil
+}
+func (this *logHook) find(key string) string {
+	for i := range this.entries {
+		value, ok := this.entries[i].Data[key]
+		if ok {
+			return fmt.Sprintf("%v", value)
+		}
+	}
+	return ""
+}
+
+func catchLog(t *testing.T) *logHook {
+	t.Helper()
+	hook := new(logHook)
+	logrus.AddHook(hook)
+	//logrus没有删钩子的接口，跑完把钩子清空，避免污染后面的用例
+	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks)) })
+	return hook
+}
+
+// 首次启动：没有库文件就建库、建表、记一条系统初始化，并且把两个初始口令打出来
+func TestInit(t *testing.T) {
+	ctx := newTestCtx(t)
+	dbPath := config.Config.DbPath
+	config.Config.ServerToken = "test-server-token"
+
+	hook := catchLog(t)
+	if err := db.Init(ctx); err != nil {
+		t.Fatalf("初始化异常: %+v", err)
+	}
+	if util.GetPathInfo(ctx, dbPath) == nil {
+		t.Fatalf("初始化后库文件应存在: %s", dbPath)
+	}
+	clientToken := hook.find("clientToken")
+	if clientToken == "" {
+		t.Fatalf("初始前端口令没有打印")
+	}
+	if hook.find("serverToken") != "test-server-token" {
+		t.Errorf("初始后端口令没有打印")
+	}
+	if err := tool.CheckToken(ctx, clientToken); err != nil {
+		t.Errorf("生成的初始口令不满足强度: %+v", err)
+	}
+
+	//用打印出来的口令能打开库，四张表都在，且有一条系统初始化
+	tokenCtx := tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
+	gormDb, err := db.Open(tokenCtx, clientToken)
+	if err != nil {
+		t.Fatalf("用初始口令打开库异常: %+v", err)
+	}
+	for _, object := range []interface{}{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}} {
+		if !gormDb.Migrator().HasTable(object) {
+			t.Errorf("表未建出来: %T", object)
+		}
+	}
+	db.Close(tokenCtx, gormDb)
+	objects, count, err := db.SelectOperationLog(tokenCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
+	if err != nil {
+		t.Fatalf("查询系统初始化审计异常: %+v", err)
+	}
+	if count != 1 || len(objects) != 1 || objects[0].Result != model.ResultSuccess {
+		t.Errorf("系统初始化审计不符: count=%d %+v", count, objects)
+	}
+
+	//A-2：库已存在就是重启，不重新生成也不重新打印
+	hook2 := catchLog(t)
+	if err = db.Init(ctx); err != nil {
+		t.Fatalf("重复初始化异常: %+v", err)
+	}
+	if hook2.find("clientToken") != "" {
+		t.Errorf("库已存在时不应再打印初始口令")
+	}
+	if _, count, _ = db.SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
+		t.Errorf("重复初始化不应再记审计: count=%d", count)
+	}
+}
+
+// 开库时自己会把表建好，上层不需要调AutoMigrate
 func TestAutoMigrate(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -67,14 +146,36 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
+// 只读探针：口令对就通，口令错就报错，且不留下任何数据
+func TestCheckClientToken(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if err := db.CheckClientToken(ctx, testClientToken); err != nil {
+		t.Fatalf("正确口令探测异常: %+v", err)
+	}
+	if err := db.CheckClientToken(ctx, "wrong-client-token"); err == nil {
+		t.Errorf("错误口令探测应报错")
+	}
+	if _, count, _ := db.SelectOperationLog(ctx, model.OperationLogInquiry{}); count != 0 {
+		t.Errorf("探针不该写数据: count=%d", count)
+	}
+}
+
 // 口令错与文件损坏不可区分，统一提示；空口令直接拦下
 func TestOpenClientToken(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	if _, err := db.Open(ctx, ""); err == nil {
+	//先用正确口令把库建出来，否则错误口令只会建一个新库，验不出口令错
+	gormDb, err := db.Open(ctx, testClientToken)
+	if err != nil {
+		t.Fatalf("打开数据库异常: %+v", err)
+	}
+	db.Close(ctx, gormDb)
+
+	if _, err = db.Open(ctx, ""); err == nil {
 		t.Errorf("空口令应报错")
 	}
-	gormDb, err := db.Open(ctx, "wrong-client-token")
+	gormDb, err = db.Open(ctx, "wrong-client-token")
 	if err == nil {
 		db.Close(ctx, gormDb)
 		t.Fatalf("错误口令应报错")

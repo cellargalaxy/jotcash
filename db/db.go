@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
@@ -22,7 +23,48 @@ import (
 
 const vfsName = "adiantum"
 
-var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+func init() {
+	ctx := util.GenCtx()
+	err := Init(ctx)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func Init(ctx context.Context) error {
+	dbPath := config.DbPath
+	if util.GetPathInfo(ctx, dbPath) != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("初始化数据库，库文件已存在")
+		return nil
+	}
+
+	clientToken, err := tool.GenToken(ctx, tool.TokenLen)
+	if err != nil {
+		return err
+	}
+	gormDb, err := Open(ctx, clientToken)
+	if err != nil {
+		return err
+	}
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeSystemInit,
+		Summary:       "系统初始化，创建加密数据库",
+		Result:        model.ResultSuccess,
+	}
+	err = util.Transaction(ctx, gormDb, NewOperationLogInsertHandler(&operationLog))
+	Close(ctx, gormDb)
+	if err != nil {
+		//初始化没走完就把刚建出来的库文件删掉，否则下次启动会被当成已初始化，而口令谁都不知道
+		util.RemoveFile(ctx, dbPath)
+		return err
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"clientToken": clientToken, "serverToken": config.Config.ServerToken,
+	}).Warn("系统初始化，初始口令仅打印这一次，请立刻保存")
+	return nil
+}
 
 func Open(ctx context.Context, clientToken string) (*gorm.DB, error) {
 	if clientToken == "" {
@@ -30,7 +72,7 @@ func Open(ctx context.Context, clientToken string) (*gorm.DB, error) {
 		return nil, errors.Errorf("打开数据库，口令为空")
 	}
 
-	dbPath := config.Config.DbPath
+	dbPath := config.DbPath
 	folderPath, _ := path.Split(dbPath)
 	if folderPath != "" {
 		err := util.CreateFolderPath(ctx, folderPath)
@@ -69,7 +111,21 @@ func Open(ctx context.Context, clientToken string) (*gorm.DB, error) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "err": err}).Error("打开数据库，gorm初始化异常")
 		return nil, errors.Errorf("打开数据库，gorm初始化异常: %+v", err)
 	}
+
+	err = autoMigrate(ctx, gormDb, dbPath)
+	if err != nil {
+		util.CloseIo(ctx, sqlDb)
+		return nil, err
+	}
 	return gormDb, nil
+}
+
+func CheckClientToken(ctx context.Context, clientToken string) error {
+	gormDb, err := Open(ctx, clientToken)
+	if err != nil {
+		return err
+	}
+	return Close(ctx, gormDb)
 }
 
 func Close(ctx context.Context, db *gorm.DB) error {
@@ -90,6 +146,23 @@ func Close(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+var migrateLock sync.Mutex
+var migratePaths = make(map[string]bool)
+
+func autoMigrate(ctx context.Context, db *gorm.DB, dbPath string) error {
+	migrateLock.Lock()
+	defer migrateLock.Unlock()
+
+	if migratePaths[dbPath] {
+		return nil
+	}
+	err := AutoMigrate(ctx, db)
+	if err != nil {
+		return err
+	}
+	migratePaths[dbPath] = true
+	return nil
+}
 func AutoMigrate(ctx context.Context, db *gorm.DB) error {
 	if db == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("自动建表，连接为空")
@@ -104,7 +177,6 @@ func AutoMigrate(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// 逐请求开库关库：口令在Claims里，连接在db包内部开关，上层不感知
 func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error {
 	claims := tool.GetClaims(ctx)
 	if claims == nil || claims.ClientToken == "" {
@@ -119,6 +191,8 @@ func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error
 	return util.Transaction(ctx, db, handlers...)
 }
 
+var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 func likeValue(value string) string {
 	return fmt.Sprintf("%%%s%%", likeReplacer.Replace(value))
 }
@@ -132,7 +206,6 @@ func pageLimit(ctx context.Context, tx *gorm.DB, page, pageSize int) (*gorm.DB, 
 	return tx, nil
 }
 
-// 排序由上层直接传字符串，这里按白名单换成SQL片段，不在白名单的一律报错，杜绝拼接注入
 func sortOrder(ctx context.Context, tx *gorm.DB, sortMap map[string]string, sort, defaultSort string) (*gorm.DB, error) {
 	if sort == "" {
 		sort = defaultSort
