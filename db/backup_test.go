@@ -189,6 +189,34 @@ func TestChangeToken(t *testing.T) {
 	}
 }
 
+// 换口令时附带的写入落在换好口令的副本里，写失败就整个放弃，原库一个字节不动
+func TestChangeTokenHandlerFail(t *testing.T) {
+	ctx := newTestCtx(t)
+	operationLog := &model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Result: model.ResultSuccess}
+	if _, err := InsertOperationLog(ctx, operationLog); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	newToken := "new-client-token-1"
+	//主键撞车，副本里的事务必失败
+	if err := ChangeToken(ctx, newToken, NewOperationLogInsertHandler(&model.OperationLog{Id: operationLog.Id})); err == nil {
+		t.Fatalf("副本写入失败时应报错")
+	}
+	if err := CheckToken(ctx); err != nil {
+		t.Errorf("失败后原口令应照常可用: %+v", err)
+	}
+	if err := CheckToken(newTokenCtx(newToken)); err == nil {
+		t.Errorf("失败后新口令不应能打开")
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("失败的副本没清理: %d", len(files))
+	}
+}
+
 func TestImportIllegal(t *testing.T) {
 	ctx := newTestCtx(t)
 	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
