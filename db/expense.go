@@ -138,6 +138,7 @@ func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) 
 }
 
 func NewExpenseDeleteHandler(inquiry model.ExpenseInquiry) *util.DeleteHandler[model.Expense] {
+	inquiry.Deleted = model.DeletedNo
 	handler := util.NewDeleteHandler[model.Expense](model.Expense{}.TableName(), ExpenseInquiry(inquiry))
 	return handler
 }
