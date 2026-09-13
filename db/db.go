@@ -41,6 +41,12 @@ func getToken(ctx context.Context) (string, error) {
 	return claims.ClientToken, nil
 }
 
+func existDb(ctx context.Context, dbPath string) bool {
+	info := util.GetFileInfo(ctx, dbPath)
+	//0字节的库文件是建库崩在半路的残骸，任何口令都能把它当空库打开，只能当作没建过
+	return info != nil && info.Size() > 0
+}
+
 func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	if token == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("连接数据库，口令为空")
@@ -54,7 +60,8 @@ func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 		}
 	}
 
-	sqlDb, err := driver.Open(fmt.Sprintf("file:%s?vfs=%s", dbPath, vfsName), func(conn *sqlite3.Conn) error {
+	//_txlock=immediate：事务一开始就占写锁，否则先读后写的事务在并发下会锁升级失败，busy_timeout也救不回来
+	sqlDb, err := driver.Open(fmt.Sprintf("file:%s?vfs=%s&_txlock=immediate", dbPath, vfsName), func(conn *sqlite3.Conn) error {
 		err := conn.Exec(fmt.Sprintf("PRAGMA textkey=%s;", sqlite3.Quote(token)))
 		if err != nil {
 			return err
@@ -105,7 +112,7 @@ func Create(ctx context.Context) error {
 	return nil
 }
 func create(ctx context.Context, dbPath, token string) error {
-	if util.GetPathInfo(ctx, dbPath) != nil {
+	if existDb(ctx, dbPath) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("初始化数据库，库文件已存在")
 		return nil
 	}
@@ -158,9 +165,9 @@ func Open(ctx context.Context) (*gorm.DB, error) {
 	return gormDb, nil
 }
 func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
-	if util.GetPathInfo(ctx, dbPath) == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在")
-		return nil, errors.Errorf("打开数据库，库文件不存在")
+	if !existDb(ctx, dbPath) {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在或为空")
+		return nil, errors.Errorf("打开数据库，库文件不存在或为空")
 	}
 
 	gormDb, err := connect(ctx, dbPath, token)

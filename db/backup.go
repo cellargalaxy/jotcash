@@ -205,10 +205,18 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 
 func ClearBackup(ctx context.Context) error {
 	backupPath := config.DbBackupPath
+	limit := config.GetConfig().DbBackupLimit
 
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
+	err := clearBackup(ctx, backupPath, limit)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func clearBackup(ctx context.Context, backupPath string, limit int) error {
 	err := util.CreateFolderPath(ctx, backupPath)
 	if err != nil {
 		return err
@@ -224,7 +232,6 @@ func ClearBackup(ctx context.Context) error {
 		}
 		filenames = append(filenames, file.Name())
 	}
-	limit := config.GetConfig().DbBackupLimit
 	if len(filenames) <= limit {
 		return nil
 	}

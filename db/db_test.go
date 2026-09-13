@@ -126,6 +126,29 @@ func TestCreate(t *testing.T) {
 	}
 }
 
+func TestCreateEmptyDbFile(t *testing.T) {
+	newTestDb(t)
+	ctx := util.GenCtx()
+	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
+		t.Fatalf("写0字节库文件异常: %+v", err)
+	}
+
+	buffer := catchLog(t)
+	if err := Create(ctx); err != nil {
+		t.Fatalf("初始化异常: %+v", err)
+	}
+	clientToken := findLogField(buffer.String(), "clientToken")
+	if clientToken == "" {
+		t.Fatalf("0字节库文件是残骸，应当重新初始化: %s", buffer.String())
+	}
+	if err := CheckToken(newTokenCtx(clientToken)); err != nil {
+		t.Errorf("重新初始化后的口令应能打开库: %+v", err)
+	}
+	if err := CheckToken(newTokenCtx("wrong-client-token")); err == nil {
+		t.Errorf("重新初始化后其他口令不应能打开库")
+	}
+}
+
 func TestOpenWithoutDbFile(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -145,6 +168,13 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	}
 	if err := CheckToken(ctx); err == nil {
 		t.Errorf("库文件不存在时口令探针应报错")
+	}
+
+	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
+		t.Fatalf("写0字节库文件异常: %+v", err)
+	}
+	if _, err := Open(ctx); err == nil {
+		t.Errorf("0字节库文件开库应报错")
 	}
 }
 
@@ -251,6 +281,39 @@ func TestTransaction(t *testing.T) {
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{rollbackExpense.Id}}); count != 0 {
 		t.Errorf("事务未回滚")
+	}
+}
+
+func TestConcurrentTransaction(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 8; j++ {
+				//先读后写的混合事务，是SQLite锁升级失败的典型场景
+				err := Transaction(ctx,
+					NewExpenseSelectHandler(model.ExpenseInquiry{PageSize: 1}),
+					NewExpenseInsertHandler(newTestExpense()),
+				)
+				if err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发混合事务异常: %+v", err)
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 48 {
+		t.Errorf("并发插入条数: got=%d want=48", count)
 	}
 }
 

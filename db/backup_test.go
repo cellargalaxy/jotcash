@@ -117,6 +117,9 @@ func TestImportIllegal(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader([]byte("我不是数据库"))); err == nil {
 		t.Errorf("非数据库文件应拒绝导入")
 	}
+	if err := Import(ctx, bytes.NewReader(nil)); err == nil {
+		t.Errorf("0字节文件应拒绝导入")
+	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Errorf("导入失败不应影响原库: count=%d", count)
 	}
