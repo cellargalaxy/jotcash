@@ -40,7 +40,7 @@ func (this *Parser) checkColumns(lines [][]string) bool {
 	}
 	header := make([]string, 0, len(lines[0]))
 	for i := range lines[0] {
-		header = append(header, strings.TrimSpace(lines[0][i]))
+		header = append(header, strings.TrimSpace(strings.TrimPrefix(lines[0][i], "\ufeff")))
 	}
 	return slices.Equal(header, columns)
 }
