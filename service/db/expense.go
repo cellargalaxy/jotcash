@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/db"
@@ -16,6 +17,25 @@ var expenseDeleteds = map[int]bool{
 	model.DeletedNo:   true,
 	model.DeletedAll:  true,
 	model.DeletedOnly: true,
+}
+
+func InsertExpense(ctx context.Context, operationId int64, expenses []*model.Expense, fileMeta *model.FileMeta, fileBlob *model.FileBlob) error {
+	if len(expenses) == 0 || fileMeta == nil || fileBlob == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("明细入库，入库内容为空")
+		return errors.Errorf("明细入库，入库内容为空")
+	}
+	operationLog := model.OperationLog{
+		Id:            operationId,
+		OperationType: model.OperationTypeDataEntry,
+		Summary:       fmt.Sprintf("入库 %d 笔，来源 %s", len(expenses), fileMeta.FileName),
+		Result:        model.ResultSuccess,
+	}
+
+	fileBlobHandler := db.NewFileBlobInsertIgnoreHandler(fileBlob)
+	fileMetaHandler := db.NewFileMetaInsertHandler(fileMeta)
+	expenseHandler := db.NewExpenseInsertHandler(expenses...)
+	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	return db.Transaction(ctx, fileBlobHandler, fileMetaHandler, expenseHandler, operationLogHandler)
 }
 
 func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.Expense, int64, error) {
