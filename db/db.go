@@ -111,7 +111,7 @@ func Create(ctx context.Context) error {
 	err = create(ctx, dbPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, dbPath)
-		resetMigrate()
+		migrated = false
 		return err
 	}
 	return nil
@@ -139,7 +139,8 @@ func create(ctx context.Context, dbPath, token string) error {
 		Summary:       "系统初始化，创建加密数据库",
 		Result:        model.ResultSuccess,
 	}
-	err = util.Transaction(ctx, gormDb, NewOperationLogInsertHandler(&operationLog))
+	operationLogHandler := NewOperationLogInsertHandler(&operationLog)
+	err = util.Transaction(ctx, gormDb, operationLogHandler)
 	if err != nil {
 		return err
 	}

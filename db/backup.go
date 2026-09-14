@@ -165,22 +165,6 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		return err
 	}
 
-	err = checkImport(ctx, backupPath, token, handlers...)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		return err
-	}
-
-	err = replace(ctx, backupPath, dbPath, token)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		return err
-	}
-	setMigrated()
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
-	return nil
-}
-func checkImport(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
 	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
@@ -198,7 +182,31 @@ func checkImport(ctx context.Context, dbPath, token string, handlers ...util.Tra
 	if len(handlers) == 0 {
 		return nil
 	}
-	return util.Transaction(ctx, gormDb, handlers...)
+	err = util.Transaction(ctx, gormDb, handlers...)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+
+	originPath, err := genBackupPath(ctx)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+	err = backup(ctx, dbPath, token, originPath, token)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+
+	err = replace(ctx, backupPath, dbPath, token)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+	migrated = true
+	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
+	return nil
 }
 
 func ChangeToken(ctx context.Context, newToken string, handlers ...util.TransactionHandler) error {

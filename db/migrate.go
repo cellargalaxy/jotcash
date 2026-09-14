@@ -67,7 +67,6 @@ func autoMigrate(ctx context.Context, dbPath, token string) error {
 }
 
 func migrate(ctx context.Context, dbPath, token string) error {
-	migrated = false
 	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
@@ -80,12 +79,4 @@ func migrate(ctx context.Context, dbPath, token string) error {
 	}
 	migrated = true
 	return nil
-}
-
-func resetMigrate() {
-	migrated = false
-}
-
-func setMigrated() {
-	migrated = true
 }
