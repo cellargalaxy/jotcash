@@ -111,7 +111,7 @@ type ExpenseUpdateHandler struct {
 	Count  int64
 }
 
-func (this *ExpenseUpdateHandler) Transaction(ctx context.Context, tx *gorm.DB) error {
+func (this *ExpenseUpdateHandler) Exec(ctx context.Context, tx *gorm.DB) error {
 	if this.Object == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("更新expense，为空")
 		return nil
