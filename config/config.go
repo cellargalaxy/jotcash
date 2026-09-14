@@ -16,10 +16,12 @@ const (
 	ConfigPath    = "resource/jotcash.yaml"
 	DbPath        = "resource/jotcash.db"
 	DbBackupPath  = "resource/db_backup"
-	DbBackupLimit = 5
+)
 
-	ExpenseFileLimit = 10 * 1024 * 1024   //明细文件上限10MB
-	ImportFileLimit  = 1024 * 1024 * 1024 //数据库文件上限1GB
+const (
+	DbBackupLimit    = 5                  //数据库备份上限
+	ExpenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
+	ImportFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
 )
 
 var configService *util.ConfigService
@@ -55,6 +57,8 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	}
 	config.ServerToken = serverToken
 	config.DbBackupLimit = DbBackupLimit
+	config.ExpenseFileLimit = ExpenseFileLimit
+	config.ImportFileLimit = ImportFileLimit
 	text := util.YamlStruct2Str(ctx, config)
 	return text
 }
@@ -71,6 +75,12 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) error {
 	}
 	if config.DbBackupLimit <= 0 {
 		config.DbBackupLimit = DbBackupLimit
+	}
+	if config.ExpenseFileLimit <= 0 {
+		config.ExpenseFileLimit = ExpenseFileLimit
+	}
+	if config.ImportFileLimit <= 0 {
+		config.ImportFileLimit = ImportFileLimit
 	}
 
 	confLock.Lock()
