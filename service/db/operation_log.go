@@ -37,16 +37,16 @@ func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) 
 }
 
 func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInquiry) (model.OperationLogInquiry, error) {
-	for _, one := range inquiry.OperationType {
-		if !operationTypes[one] {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"operationType": one}).Warn("查询审计，操作类型非法")
-			return inquiry, errors.Errorf("查询审计，操作类型非法: %s", one)
+	for _, operationType := range inquiry.OperationType {
+		if !operationTypes[operationType] {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"operationType": operationType}).Warn("查询审计，操作类型非法")
+			return inquiry, errors.Errorf("查询审计，操作类型非法: %s", operationType)
 		}
 	}
-	for _, one := range inquiry.Result {
-		if !operationResults[one] {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"result": one}).Warn("查询审计，操作结果非法")
-			return inquiry, errors.Errorf("查询审计，操作结果非法: %s", one)
+	for _, result := range inquiry.Result {
+		if !operationResults[result] {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"result": result}).Warn("查询审计，操作结果非法")
+			return inquiry, errors.Errorf("查询审计，操作结果非法: %s", result)
 		}
 	}
 	err := checkTimeRange(ctx, inquiry.CreatedAtStart, inquiry.CreatedAtEnd)
