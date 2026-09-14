@@ -6,6 +6,8 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -16,6 +18,15 @@ const (
 	tokenDigits  = "23456789"
 	tokenLetters = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ"
 )
+
+func GetToken(ctx context.Context) (string, error) {
+	claims := util.GetClaims[*model.Claims](ctx)
+	if claims == nil || claims.ClientToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("获取口令，为空")
+		return "", errors.Errorf("获取口令，为空")
+	}
+	return claims.ClientToken, nil
+}
 
 func GenToken(ctx context.Context, length int) (string, error) {
 	if length < TokenMinLen {
