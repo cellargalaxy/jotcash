@@ -5,8 +5,6 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -33,32 +31,10 @@ func (this FileBlobInquiry) Limit(ctx context.Context, tx *gorm.DB) (*gorm.DB, e
 	return pageLimit(ctx, tx, this.Page, this.PageSize)
 }
 
-func NewFileBlobInsertHandler(object ...*model.FileBlob) *FileBlobInsertHandler {
-	handler := new(FileBlobInsertHandler)
-	handler.Object = object
+func NewFileBlobInsertHandler(object ...*model.FileBlob) *util.InsertHandler[model.FileBlob] {
+	handler := util.NewInsertHandler[model.FileBlob](model.FileBlob{}.TableName(), object...)
+	handler = handler.Clauses(clause.OnConflict{DoNothing: true})
 	return handler
-}
-
-type FileBlobInsertHandler struct {
-	Object []*model.FileBlob
-	Count  int64
-}
-
-func (this *FileBlobInsertHandler) Transaction(ctx context.Context, tx *gorm.DB) error {
-	if len(this.Object) == 0 {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("插入file_blob，为空")
-		return nil
-	}
-
-	result := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(this.Object, util.DbBatchSize)
-	this.Count = result.RowsAffected
-	err := result.Error
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("插入file_blob，异常")
-		return errors.Errorf("插入file_blob，异常: %+v", err)
-	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"count": this.Count}).Info("插入file_blob，完成")
-	return nil
 }
 
 func NewFileBlobUpdateHandler(object *model.FileBlob) *util.UpdateHandler[model.FileBlob] {

@@ -10,6 +10,8 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+//todo,只在数据库创建或者数据库导入，也就是数据库第一次就绪的时候，才创建表，这时候是肯定有口令的，其余普通业务不在处理自动建表
+
 var migrated bool
 
 var migrateModels = []schema.Tabler{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}}

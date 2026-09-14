@@ -203,28 +203,16 @@ func checkToken(ctx context.Context, dbPath, token string) error {
 	return Close(ctx, gormDb)
 }
 
-func Transaction(ctx context.Context, handlers ...util.TransactionHandler) error {
-	ctx = detachCtx(ctx)
+func NewTransaction(ctx context.Context) (*util.Transaction, error) {
 	dbPath := config.DbPath
-	token, err := getToken(ctx)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	err = autoMigrate(ctx, dbPath, token)
+	db, err := open(ctx, dbPath, token)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	dbLock.RLock()
-	defer dbLock.RUnlock()
-
-	return transaction(ctx, dbPath, token, handlers...)
-}
-func transaction(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
-	gormDb, err := open(ctx, dbPath, token)
-	if err != nil {
-		return err
-	}
-	defer Close(ctx, gormDb)
-	return util.Transaction(ctx, gormDb, handlers...)
+	transaction := util.NewTransaction(db)
+	return transaction, nil
 }
