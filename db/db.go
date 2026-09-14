@@ -32,23 +32,8 @@ func init() {
 	}
 }
 
-func getToken(ctx context.Context) (string, error) {
-	claims := util.GetClaims[*model.Claims](ctx)
-	if claims == nil || claims.ClientToken == "" {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("获取数据库口令，为空")
-		return "", errors.Errorf("获取数据库口令，为空")
-	}
-	return claims.ClientToken, nil
-}
-
-// gin会把*gin.Context放回sync.Pool给下个请求复用，而database/sql的awaitDone协程可能在请求结束后才去读ctx，交给gorm之前必须脱钩
-func detachCtx(ctx context.Context) context.Context {
-	return util.SetClaims[*model.Claims](util.CopyCtx(ctx), util.GetClaims[*model.Claims](ctx))
-}
-
 func existDb(ctx context.Context, dbPath string) bool {
 	info := util.GetFileInfo(ctx, dbPath)
-	//0字节的库文件是建库崩在半路的残骸，任何口令都能把它当空库打开，只能当作没建过
 	return info != nil && info.Size() > 0
 }
 
@@ -65,7 +50,6 @@ func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 		}
 	}
 
-	//_txlock=immediate：事务一开始就占写锁，否则先读后写的事务在并发下会锁升级失败，busy_timeout也救不回来
 	sqlDb, err := driver.Open(fmt.Sprintf("file:%s?vfs=%s&_txlock=immediate", dbPath, vfsName), func(conn *sqlite3.Conn) error {
 		err := conn.Exec(fmt.Sprintf("PRAGMA textkey=%s;", sqlite3.Quote(token)))
 		if err != nil {
@@ -104,6 +88,7 @@ func Create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	operationLog := model.OperationLog{
 		Id:            util.GenId(),
 		OperationType: model.OperationTypeSystemInit,
@@ -125,7 +110,7 @@ func Create(ctx context.Context) error {
 }
 func create(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
 	if existDb(ctx, dbPath) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("初始化数据库，库文件已存在")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库，库文件已存在")
 		return nil
 	}
 
@@ -146,8 +131,8 @@ func create(ctx context.Context, dbPath, token string, handlers ...util.Transact
 		}
 	}
 
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Warn("系统初始化，前端口令")
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig(ctx).ServerToken}).Warn("系统初始化，后端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Info("创建数据库，前端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig(ctx).ServerToken}).Info("创建数据库，后端口令")
 	return nil
 }
 
