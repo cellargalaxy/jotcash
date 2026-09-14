@@ -128,9 +128,9 @@ func TestInsertExpenseAccountingCurrency(t *testing.T) {
 		t.Errorf("CSV里没给记账币种应用jwt里的: %+v", list.Data.Object[1])
 	}
 	//汇率留空，系统查出来再算记账金额
-	for _, one := range list.Data.Object {
-		if !one.ExchangeRate.IsPositive() || !one.AccountingAmount.Equal(one.ExpenseAmount.Mul(one.ExchangeRate).Round(2)) {
-			t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", one)
+	for _, expense := range list.Data.Object {
+		if !expense.ExchangeRate.IsPositive() || !expense.AccountingAmount.Equal(expense.ExpenseAmount.Mul(expense.ExchangeRate).Round(2)) {
+			t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", expense)
 		}
 	}
 }

@@ -386,7 +386,7 @@ func TestImportForeignDb(t *testing.T) {
 		t.Fatalf("读外来库异常: %+v", err)
 	}
 
-	//外来库自身能用外来口令打开，checkImport这一关拦不住，拦住它的是原库打不开
+	//外来库拿外来口令自己能打开，校验副本这一关拦不住，拦住它的是原库打不开
 	if err = Import(newTokenCtx(foreignToken), bytes.NewReader(data)); err == nil {
 		t.Errorf("外来库不应能顶掉原库")
 	}

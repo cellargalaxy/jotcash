@@ -43,7 +43,8 @@ func newTestCtx(t *testing.T) context.Context {
 	newTestDb(t)
 
 	ctx := newTokenCtx(testClientToken)
-	err := create(ctx, config.DbPath, testClientToken)
+	operationLog := model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeSystemInit, Result: model.ResultSuccess}
+	err := create(ctx, config.DbPath, testClientToken, NewOperationLogInsertHandler(&operationLog))
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
