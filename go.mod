@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/bojanz/currency v1.5.0
-	github.com/cellargalaxy/go_common v0.0.0-20260914025533-40cbc559ce24
+	github.com/cellargalaxy/go_common v0.0.0-20260914092108-c44c0d8fdaf4
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
 	github.com/pkg/errors v0.9.1
