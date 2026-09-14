@@ -33,7 +33,7 @@ func init() {
 }
 
 func getToken(ctx context.Context) (string, error) {
-	claims := tool.GetClaims(ctx)
+	claims := util.GetClaims[*model.Claims](ctx)
 	if claims == nil || claims.ClientToken == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("获取数据库口令，为空")
 		return "", errors.Errorf("获取数据库口令，为空")
@@ -43,7 +43,7 @@ func getToken(ctx context.Context) (string, error) {
 
 // gin会把*gin.Context放回sync.Pool给下个请求复用，而database/sql的awaitDone协程可能在请求结束后才去读ctx，交给gorm之前必须脱钩
 func detachCtx(ctx context.Context) context.Context {
-	return tool.SetClaims(util.CopyCtx(ctx), tool.GetClaims(ctx))
+	return util.SetClaims[*model.Claims](util.CopyCtx(ctx), util.GetClaims[*model.Claims](ctx))
 }
 
 func existDb(ctx context.Context, dbPath string) bool {
@@ -147,7 +147,7 @@ func create(ctx context.Context, dbPath, token string, handlers ...util.Transact
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Warn("系统初始化，前端口令")
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig().ServerToken}).Warn("系统初始化，后端口令")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig(ctx).ServerToken}).Warn("系统初始化，后端口令")
 	return nil
 }
 
