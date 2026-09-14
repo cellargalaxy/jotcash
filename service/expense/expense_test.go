@@ -13,7 +13,7 @@ const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,�
 func TestParse(t *testing.T) {
 	ctx := util.GenCtx()
 
-	objects, err := expense.Parse(ctx, "2609.csv", []byte(testCsvHeader+
+	objects, err := expense.Parse(ctx, []byte(testCsvHeader+
 		"招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n"+
 		"中国银行,4321,2026-03-04,USD,-20.25,苹果,退款,7.1234,数码\n"), "CNY")
 	if err != nil {
@@ -56,17 +56,17 @@ func TestParseInvalid(t *testing.T) {
 	ctx := util.GenCtx()
 	csv := []byte(testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n")
 
-	if _, err := expense.Parse(ctx, "2609.csv", csv, ""); err == nil {
+	if _, err := expense.Parse(ctx, csv, ""); err == nil {
 		t.Errorf("记账币种为空应报错")
 	}
-	if _, err := expense.Parse(ctx, "2609.csv", csv, "XYZ"); err == nil {
+	if _, err := expense.Parse(ctx, csv, "XYZ"); err == nil {
 		t.Errorf("记账币种不在枚举内应报错")
 	}
-	if _, err := expense.Parse(ctx, "2609.csv", []byte(testCsvHeader+",,2026-01-02,XYZ,1,,,1,\n"), "CNY"); err == nil {
+	if _, err := expense.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,XYZ,1,,,1,\n"), "CNY"); err == nil {
 		t.Errorf("支出币种不在枚举内应报错")
 	}
-	//没有解析器认领的格式，不能当成CSV硬解
-	if _, err := expense.Parse(ctx, "2609.xlsx", csv, "CNY"); err == nil {
+	//别家的CSV没有解析器认领，不能当成本系统的格式硬解
+	if _, err := expense.Parse(ctx, []byte("交易日期,摘要,发生额\n2026-01-02,消费,100.50\n"), "CNY"); err == nil {
 		t.Errorf("没有解析器认领应报错")
 	}
 }
