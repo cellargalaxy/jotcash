@@ -18,9 +18,9 @@ const (
 )
 
 const (
-	DbBackupLimit    = 5                  //数据库备份上限
-	ExpenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
-	ImportFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
+	dbBackupLimit    = 5                  //数据库备份上限
+	expenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
+	importFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
 )
 
 var configService *util.ConfigService[model.Config]
@@ -51,9 +51,9 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 		panic(err)
 	}
 	config.ServerToken = serverToken
-	config.DbBackupLimit = DbBackupLimit
-	config.ExpenseFileLimit = ExpenseFileLimit
-	config.ImportFileLimit = ImportFileLimit
+	config.DbBackupLimit = dbBackupLimit
+	config.ExpenseFileLimit = expenseFileLimit
+	config.ImportFileLimit = importFileLimit
 	text := util.YamlStruct2Str(ctx, config)
 	return text
 }
@@ -68,13 +68,13 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) (model.Config
 		return config, errors.Errorf("加载配置，后端口令为空")
 	}
 	if config.DbBackupLimit <= 0 {
-		config.DbBackupLimit = DbBackupLimit
+		config.DbBackupLimit = dbBackupLimit
 	}
 	if config.ExpenseFileLimit <= 0 {
-		config.ExpenseFileLimit = ExpenseFileLimit
+		config.ExpenseFileLimit = expenseFileLimit
 	}
 	if config.ImportFileLimit <= 0 {
-		config.ImportFileLimit = ImportFileLimit
+		config.ImportFileLimit = importFileLimit
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")
