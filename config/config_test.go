@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 func TestConfigDefault(t *testing.T) {
 	ctx := util.GenCtx()
 
-	if err := tool.CheckToken(ctx, config.GetConfig().ServerToken); err != nil {
+	if err := tool.CheckToken(ctx, config.GetConfig(ctx).ServerToken); err != nil {
 		t.Errorf("默认后端口令不满足强度: %+v", err)
 	}
 
@@ -35,23 +35,22 @@ func TestConfigDefault(t *testing.T) {
 func TestConfigParse(t *testing.T) {
 	ctx := util.GenCtx()
 	handler := new(config.ConfigHandler)
-	origin := util.YamlStruct2Str(ctx, config.GetConfig())
-	t.Cleanup(func() {
-		if err := handler.Parse(ctx, origin); err != nil {
-			t.Errorf("还原配置异常: %+v", err)
-		}
-	})
 
-	if err := handler.Parse(ctx, "server_token: abcdefghijk1\n"); err != nil {
+	object, err := handler.Parse(ctx, "server_token: abcdefghijk1\n")
+	if err != nil {
 		t.Fatalf("解析配置异常: %+v", err)
 	}
-	if config.GetConfig().ServerToken != "abcdefghijk1" {
-		t.Errorf("后端口令解析不符: %s", config.GetConfig().ServerToken)
+	if object.ServerToken != "abcdefghijk1" {
+		t.Errorf("后端口令解析不符: %s", object.ServerToken)
 	}
-	if err := handler.Parse(ctx, "server_token: \"\"\n"); err == nil {
+	//没填的项要用默认值兜底，不能留零值
+	if object.DbBackupLimit <= 0 || object.ExpenseFileLimit <= 0 || object.ImportFileLimit <= 0 {
+		t.Errorf("缺省项未兜底: %+v", object)
+	}
+	if _, err = handler.Parse(ctx, "server_token: \"\"\n"); err == nil {
 		t.Errorf("后端口令为空应报错")
 	}
-	if err := handler.Parse(ctx, "server_token: [ban"); err == nil {
+	if _, err = handler.Parse(ctx, "server_token: [ban"); err == nil {
 		t.Errorf("非法yaml应报错")
 	}
 }

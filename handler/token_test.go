@@ -7,6 +7,7 @@ import (
 	"time"
 
 	common_model "github.com/cellargalaxy/go_common/model"
+	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/gin-gonic/gin"
@@ -18,13 +19,13 @@ const testNewToken = "new-client-token-1"
 func changeToken(t *testing.T, engine *gin.Engine, jwt, newToken string) common_model.HttpResp {
 	t.Helper()
 	var resp common_model.HttpResp
-	doRequest(t, engine, newRequest(model.PathChangeToken, jwt, model.ChangeTokenRequest{NewToken: newToken}), &resp)
+	doRequest(t, engine, newRequest(config.PathChangeToken, jwt, model.ChangeTokenReq{NewToken: newToken}), &resp)
 	return resp
 }
 
 func TestChangeToken(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	resp := changeToken(t, engine, newJwt(t, serverToken, clientToken, time.Hour), testNewToken)
 	if resp.Code != http.StatusOK {
@@ -60,7 +61,7 @@ func TestChangeToken(t *testing.T) {
 // A-6：长度≥12、不得纯数字或纯字母、不得带空格，不合规的连库都不该动
 func TestChangeTokenWeak(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 	jwt := newJwt(t, serverToken, clientToken, time.Hour)
 
 	for _, weak := range []string{"", "short-1", "123456789012", "abcdefghijkl", "pass word 1234"} {
@@ -76,7 +77,7 @@ func TestChangeTokenWeak(t *testing.T) {
 
 func TestChangeTokenWrongOldToken(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	resp := changeToken(t, engine, newJwt(t, serverToken, "wrong-client-token-1", time.Hour), testNewToken)
 	if resp.Code == http.StatusOK {
@@ -99,7 +100,7 @@ func TestChangeTokenNotInLog(t *testing.T) {
 	t.Cleanup(func() { logrus.SetLevel(logrus.WarnLevel) })
 	buffer := catchLog(t)
 
-	resp := changeToken(t, engine, newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour), testNewToken)
+	resp := changeToken(t, engine, newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour), testNewToken)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("更换口令应成功: %+v", resp)
 	}
@@ -112,7 +113,7 @@ func TestChangeTokenWithoutJwt(t *testing.T) {
 	engine, _ := newTestEngine(t)
 
 	var resp common_model.HttpResp
-	doRequest(t, engine, newRequest(model.PathChangeToken, "", model.ChangeTokenRequest{NewToken: testNewToken}), &resp)
+	doRequest(t, engine, newRequest(config.PathChangeToken, "", model.ChangeTokenReq{NewToken: testNewToken}), &resp)
 	if resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
 	}

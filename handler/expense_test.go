@@ -62,13 +62,13 @@ func newTestExpenses(t *testing.T, clientToken string) (*model.Expense, *model.E
 func selectExpense(t *testing.T, engine *gin.Engine, jwt string, inquiry model.ExpenseInquiry) expenseResp {
 	t.Helper()
 	var resp expenseResp
-	doRequest(t, engine, newRequest(model.PathExpenseSelect, jwt, inquiry), &resp)
+	doRequest(t, engine, newRequest(config.PathExpenseSelect, jwt, inquiry), &resp)
 	return resp
 }
 
 func TestSelectExpense(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, late, _ := newTestExpenses(t, clientToken)
 
 	resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
@@ -91,7 +91,7 @@ func TestSelectExpense(t *testing.T) {
 
 func TestSelectExpenseDeleted(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	_, _, gone := newTestExpenses(t, clientToken)
 
 	if resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{Deleted: model.DeletedAll}); resp.Data.Count != 3 {
@@ -109,7 +109,7 @@ func TestSelectExpenseDeleted(t *testing.T) {
 
 func TestSelectExpenseFilter(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, late, _ := newTestExpenses(t, clientToken)
 
 	//E-7 顶部筛选逐项
@@ -139,7 +139,7 @@ func TestSelectExpenseFilter(t *testing.T) {
 
 func TestSelectExpensePage(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, _, _ := newTestExpenses(t, clientToken)
 
 	//count是筛选结果全集，不受分页影响
@@ -159,7 +159,7 @@ func TestSelectExpensePage(t *testing.T) {
 
 func TestSelectExpenseInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	min := decimal.RequireFromString("100")
 	max := decimal.RequireFromString("1")
@@ -187,14 +187,14 @@ func TestSelectExpenseWithoutJwt(t *testing.T) {
 func deleteExpense(t *testing.T, engine *gin.Engine, jwt string, inquiry model.ExpenseInquiry) expenseResp {
 	t.Helper()
 	var resp expenseResp
-	doRequest(t, engine, newRequest(model.PathExpenseDelete, jwt, inquiry), &resp)
+	doRequest(t, engine, newRequest(config.PathExpenseDelete, jwt, inquiry), &resp)
 	return resp
 }
 
 // E-5：勾选具体行删除
 func TestDeleteExpense(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, late, _ := newTestExpenses(t, clientToken)
 
 	resp := deleteExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{early.Id}})
@@ -232,7 +232,7 @@ func TestDeleteExpense(t *testing.T) {
 // E-5：全选当前筛选结果全集，不用把ID一条条传上来
 func TestDeleteExpenseByFilter(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestExpenses(t, clientToken)
 
 	//筛出「亚马逊」这一条删掉，另一条不受影响
@@ -257,7 +257,7 @@ func TestDeleteExpenseByFilter(t *testing.T) {
 // 一个条件都不带的删除会被gorm的空条件保护挡下来，db层的TestExpenseDelete已经钉过，这里确认这条约束透到了接口上
 func TestDeleteExpenseNoCondition(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestExpenses(t, clientToken)
 
 	if resp := deleteExpense(t, engine, jwt, model.ExpenseInquiry{}); resp.Code == http.StatusOK {
@@ -279,7 +279,7 @@ func TestDeleteExpenseNoCondition(t *testing.T) {
 // 那一行要是丢了，请求带上DeletedAll就会变成物理删除，这里钉住它
 func TestDeleteExpenseNeverPhysical(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, _, gone := newTestExpenses(t, clientToken)
 
 	before := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{gone.Id}, Deleted: model.DeletedOnly})
@@ -312,7 +312,7 @@ func TestDeleteExpenseNeverPhysical(t *testing.T) {
 // §8.5：已删除行跳过、不覆盖其删除时间
 func TestDeleteExpenseSkipDeleted(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	_, _, gone := newTestExpenses(t, clientToken)
 
 	before := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{gone.Id}, Deleted: model.DeletedOnly})
@@ -336,7 +336,7 @@ func TestDeleteExpenseSkipDeleted(t *testing.T) {
 
 func TestDeleteExpenseInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestExpenses(t, clientToken)
 
 	min := decimal.RequireFromString("100")

@@ -13,7 +13,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/handler"
-	"github.com/cellargalaxy/jotcash/tool"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -34,8 +34,14 @@ func catchLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buffer := new(bytes.Buffer)
 	origin := logrus.StandardLogger().Out
+	originLevel := logrus.GetLevel()
 	logrus.SetOutput(buffer)
-	t.Cleanup(func() { logrus.SetOutput(origin) })
+	//要捞的建库口令是Info级，TestMain把全局级别压到了Warn，捞的这段得临时放开
+	logrus.SetLevel(logrus.InfoLevel)
+	t.Cleanup(func() {
+		logrus.SetOutput(origin)
+		logrus.SetLevel(originLevel)
+	})
 	return buffer
 }
 
@@ -73,7 +79,22 @@ func newTestEngine(t *testing.T) (*gin.Engine, string) {
 // 每个请求都自带口令与记账币种，两样都签进jwt
 func newJwt(t *testing.T, serverToken, clientToken string, expire time.Duration) string {
 	t.Helper()
-	jwt, err := tool.EnJwt(util.GenCtx(), serverToken, clientToken, testAccountingCurrency, expire)
+	return newJwtByCurrency(t, serverToken, clientToken, testAccountingCurrency, expire)
+}
+
+func newJwtByCurrency(t *testing.T, serverToken, clientToken, accountingCurrency string, expire time.Duration) string {
+	t.Helper()
+	ctx := util.GenCtx()
+	now := time.Now()
+	var claims model.Claims
+	claims.IssuedAt = now.Unix()
+	claims.ExpiresAt = now.Add(expire).Unix()
+	claims.Ip = util.GetIP()
+	claims.ServerName = util.GetServerName()
+	claims.LogId = util.GetLogId(ctx)
+	claims.ClientToken = clientToken
+	claims.AccountingCurrency = accountingCurrency
+	jwt, err := util.EnJwt(ctx, serverToken, claims)
 	if err != nil {
 		t.Fatalf("签发jwt异常: %+v", err)
 	}

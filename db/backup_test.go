@@ -35,12 +35,14 @@ func TestExport(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导回异常: %+v", err)
 	}
-	dbLock.Lock()
-	done := migrated
-	dbLock.Unlock()
-	if !done {
-		t.Errorf("导入后应在写锁内把表结构补齐")
+	gormDb, err := Open(ctx)
+	if err != nil {
+		t.Fatalf("导回后打开数据库异常: %+v", err)
 	}
+	if err = checkSchema(ctx, gormDb); err != nil {
+		t.Errorf("导入后应把表结构补齐: %+v", err)
+	}
+	Close(ctx, gormDb)
 
 	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {
@@ -294,7 +296,7 @@ func TestImportIllegal(t *testing.T) {
 
 func TestClearBackup(t *testing.T) {
 	ctx := newTestCtx(t)
-	limit := config.GetConfig().DbBackupLimit
+	limit := config.GetConfig(util.GenCtx()).DbBackupLimit
 
 	var backupPaths []string
 	for i := 0; i < limit+2; i++ {

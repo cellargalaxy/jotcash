@@ -10,7 +10,6 @@ import (
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,7 +23,7 @@ type operationLogResp struct {
 }
 
 func newTokenCtx(clientToken string) context.Context {
-	return tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
+	return util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
 }
 
 // 建库时已写过一条「系统初始化」，这里再补两条，凑出可分页可筛选的数据
@@ -43,13 +42,13 @@ func newTestOperationLog(t *testing.T, clientToken string) {
 func selectOperationLog(t *testing.T, engine *gin.Engine, jwt string, inquiry model.OperationLogInquiry) operationLogResp {
 	t.Helper()
 	var resp operationLogResp
-	doRequest(t, engine, newRequest(model.PathOperationLogSelect, jwt, inquiry), &resp)
+	doRequest(t, engine, newRequest(config.PathOperationLogSelect, jwt, inquiry), &resp)
 	return resp
 }
 
 func TestSelectOperationLog(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestOperationLog(t, clientToken)
 
 	resp := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{})
@@ -67,7 +66,7 @@ func TestSelectOperationLog(t *testing.T) {
 
 func TestSelectOperationLogFilter(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestOperationLog(t, clientToken)
 
 	//C-3：按操作类型筛选
@@ -90,7 +89,7 @@ func TestSelectOperationLogFilter(t *testing.T) {
 
 func TestSelectOperationLogPage(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestOperationLog(t, clientToken)
 
 	//count是筛选结果全集，不受分页影响
@@ -109,7 +108,7 @@ func TestSelectOperationLogPage(t *testing.T) {
 
 func TestSelectOperationLogInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	//非枚举值要报错，而不是静默返回空列表
 	inquiries := map[string]model.OperationLogInquiry{
@@ -129,10 +128,10 @@ func TestSelectOperationLogInvalid(t *testing.T) {
 // NewGinPost用的是ShouldBindJSON，空body报的是EOF，前端不带筛选条件时也得传{}
 func TestSelectOperationLogEmptyBody(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	var resp operationLogResp
-	doRequest(t, engine, newRequest(model.PathOperationLogSelect, jwt, nil), &resp)
+	doRequest(t, engine, newRequest(config.PathOperationLogSelect, jwt, nil), &resp)
 	if resp.Code == http.StatusOK {
 		t.Errorf("空body应报错: %+v", resp)
 	}

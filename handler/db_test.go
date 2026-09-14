@@ -20,13 +20,13 @@ import (
 func exportDb(t *testing.T, engine *gin.Engine, jwt string) *httptest.ResponseRecorder {
 	t.Helper()
 	writer := httptest.NewRecorder()
-	engine.ServeHTTP(writer, newRequest(model.PathExportDb, jwt, nil))
+	engine.ServeHTTP(writer, newRequest(config.PathExportDb, jwt, nil))
 	return writer
 }
 
 func TestExportDb(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	writer := exportDb(t, engine, jwt)
 	if writer.Code != http.StatusOK {
@@ -64,7 +64,7 @@ func TestExportDb(t *testing.T) {
 // 快照必须是能真正打开的一致性副本，而不只是一堆字节
 func TestExportDbUsable(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestFileMeta(t, clientToken)
 
 	writer := exportDb(t, engine, jwt)
@@ -87,7 +87,7 @@ func TestExportDbUsable(t *testing.T) {
 
 func TestExportDbWrongToken(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	//口令错时要能改回JSON报错，而不是吐半个文件
 	writer := exportDb(t, engine, newJwt(t, serverToken, "wrong-client-token-1", time.Hour))
@@ -123,7 +123,7 @@ func TestExportDbWithoutJwt(t *testing.T) {
 
 func TestExportDbNoBackupResidue(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	exportDb(t, engine, jwt)
 	files, err := util.ListFile(util.GenCtx(), config.DbBackupPath)
@@ -140,7 +140,7 @@ func newImportRequest(t *testing.T, jwt string, data []byte) *http.Request {
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 	if data != nil {
-		part, err := writer.CreateFormFile(model.ImportFileKey, "jotcash.db")
+		part, err := writer.CreateFormFile(config.ImportFileKey, "jotcash.db")
 		if err != nil {
 			t.Fatalf("构造上传表单异常: %+v", err)
 		}
@@ -151,7 +151,7 @@ func newImportRequest(t *testing.T, jwt string, data []byte) *http.Request {
 	if err := writer.Close(); err != nil {
 		t.Fatalf("关闭上传表单异常: %+v", err)
 	}
-	request := httptest.NewRequest(http.MethodPost, model.PathImportDb, body)
+	request := httptest.NewRequest(http.MethodPost, config.PathImportDb, body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	if jwt != "" {
 		request.Header.Set(util.AuthorizationKey, util.BearerKey+" "+jwt)
@@ -168,7 +168,7 @@ func importDb(t *testing.T, engine *gin.Engine, jwt string, data []byte) common_
 
 func TestImportDb(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestFileMeta(t, clientToken)
 
 	snapshot := exportDb(t, engine, jwt).Body.Bytes()
@@ -202,7 +202,7 @@ func TestImportDb(t *testing.T) {
 
 func TestImportDbIllegal(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestFileMeta(t, clientToken)
 
 	//没带文件 / 非数据库文件 / 0字节，都要被拒

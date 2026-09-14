@@ -40,13 +40,13 @@ func newTestFileMeta(t *testing.T, clientToken string) int64 {
 func selectFileMeta(t *testing.T, engine *gin.Engine, jwt string, inquiry model.FileMetaInquiry) fileMetaResp {
 	t.Helper()
 	var resp fileMetaResp
-	doRequest(t, engine, newRequest(model.PathFileMetaSelect, jwt, inquiry), &resp)
+	doRequest(t, engine, newRequest(config.PathFileMetaSelect, jwt, inquiry), &resp)
 	return resp
 }
 
 func TestSelectFileMeta(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestFileMeta(t, clientToken)
 
 	resp := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{})
@@ -68,7 +68,7 @@ func TestSelectFileMeta(t *testing.T) {
 
 func TestSelectFileMetaFilter(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	operationId := newTestFileMeta(t, clientToken)
 
 	//D-4：按来源审计筛选
@@ -102,7 +102,7 @@ func TestSelectFileMetaFilter(t *testing.T) {
 
 func TestSelectFileMetaPage(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	newTestFileMeta(t, clientToken)
 
 	//count是筛选结果全集，不受分页影响
@@ -121,7 +121,7 @@ func TestSelectFileMetaPage(t *testing.T) {
 
 func TestSelectFileMetaInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	inquiries := map[string]model.FileMetaInquiry{
 		"时间区间倒挂":  {CreatedAtStart: time.Now(), CreatedAtEnd: time.Now().Add(-time.Hour)},

@@ -28,14 +28,10 @@ func TestMain(m *testing.M) {
 func newTestDb(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
-
-	dbLock.Lock()
-	defer dbLock.Unlock()
-	migrated = false
 }
 
 func newTokenCtx(clientToken string) context.Context {
-	return tool.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
+	return util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
 }
 
 func newTestCtx(t *testing.T) context.Context {
@@ -55,8 +51,14 @@ func catchLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buffer := new(bytes.Buffer)
 	origin := logrus.StandardLogger().Out
+	originLevel := logrus.GetLevel()
 	logrus.SetOutput(buffer)
-	t.Cleanup(func() { logrus.SetOutput(origin) })
+	//要捞的建库口令是Info级，TestMain把全局级别压到了Warn，捞的这段得临时放开
+	logrus.SetLevel(logrus.InfoLevel)
+	t.Cleanup(func() {
+		logrus.SetOutput(origin)
+		logrus.SetLevel(originLevel)
+	})
 	return buffer
 }
 
@@ -76,7 +78,7 @@ func findLogField(text, key string) string {
 func TestCreate(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	buffer := catchLog(t)
 	if err := Create(ctx); err != nil {
@@ -201,6 +203,28 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
+// 建表与调用方handler同处一个事务：handler失败，表结构要跟着回滚，不能留下半个库
+func TestCreateRollbackWithHandler(t *testing.T) {
+	newTestDb(t)
+	ctx := util.GenCtx()
+	dbPath := "resource/rollback.db"
+
+	//同一条记录插两次，主键冲突让handler失败
+	operationLog := model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeSystemInit, Result: model.ResultSuccess}
+	if err := create(ctx, dbPath, testClientToken, NewOperationLogInsertHandler(&operationLog, &operationLog)); err == nil {
+		t.Fatalf("handler失败时建库应报错")
+	}
+
+	gormDb, err := connect(ctx, dbPath, testClientToken)
+	if err != nil {
+		t.Fatalf("打开残库异常: %+v", err)
+	}
+	defer Close(ctx, gormDb)
+	if err = checkSchema(ctx, gormDb); err == nil {
+		t.Errorf("handler失败时建表应一并回滚，库里不该有表")
+	}
+}
+
 func TestCheckToken(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -251,7 +275,7 @@ func TestTransactionWithoutClaims(t *testing.T) {
 	if _, err := Open(util.GenCtx()); err == nil {
 		t.Errorf("ctx无Claims时开库应报错")
 	}
-	if tool.GetClaims(tool.SetClaims(util.GenCtx(), nil)) != nil {
+	if util.GetClaims[*model.Claims](util.SetClaims(util.GenCtx(), nil)) != nil {
 		t.Errorf("SetClaims传nil不应写入ctx")
 	}
 }

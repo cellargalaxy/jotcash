@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
 )
 
@@ -19,7 +20,7 @@ func TestConfig(t *testing.T) {
 	if strings.Contains(config.String(), "secret-server-token") {
 		t.Errorf("ServerToken不应出现在序列化结果中: %s", config.String())
 	}
-	if model.DefaultServerName != "jotcash" {
-		t.Errorf("服务名不符: %s", model.DefaultServerName)
+	if util.GetServerName() != "jotcash" {
+		t.Errorf("服务名不符: %s", util.GetServerName())
 	}
 }

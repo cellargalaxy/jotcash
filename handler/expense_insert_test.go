@@ -14,7 +14,6 @@ import (
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,7 +24,7 @@ func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) 
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 	if filename != "" {
-		part, err := writer.CreateFormFile(model.ExpenseFileKey, filename)
+		part, err := writer.CreateFormFile(config.ExpenseFileKey, filename)
 		if err != nil {
 			t.Fatalf("构造上传表单异常: %+v", err)
 		}
@@ -36,7 +35,7 @@ func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) 
 	if err := writer.Close(); err != nil {
 		t.Fatalf("关闭上传表单异常: %+v", err)
 	}
-	request := httptest.NewRequest(http.MethodPost, model.PathExpenseInsert, body)
+	request := httptest.NewRequest(http.MethodPost, config.PathExpenseInsert, body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	if jwt != "" {
 		request.Header.Set(util.AuthorizationKey, util.BearerKey+" "+jwt)
@@ -48,7 +47,7 @@ func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) 
 
 func TestInsertExpense(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	csv := testCsvHeader +
 		"招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n" +
@@ -108,7 +107,7 @@ func TestInsertExpense(t *testing.T) {
 // 记账币种两个来源：CSV列逐笔给，没给才用jwt里那个
 func TestInsertExpenseAccountingCurrency(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	csv := testCsvHeader +
 		"招商银行,6789,2026-01-02,USD,100,亚马逊,买书,,JPY,购物,\n" +
@@ -138,7 +137,7 @@ func TestInsertExpenseAccountingCurrency(t *testing.T) {
 // 一条「数据入库」审计 + 一份CSV存档，明细的来源字段都指向它们
 func TestInsertExpenseArchive(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code != http.StatusOK {
@@ -182,7 +181,7 @@ func TestInsertExpenseArchive(t *testing.T) {
 // 内容寻址：同一份CSV传两次，FileMeta每次都加，FileBlob同内容只存一份
 func TestInsertExpenseSameContent(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,1,CNY,购物,\n"
 	for i := 0; i < 2; i++ {
@@ -214,7 +213,7 @@ func TestInsertExpenseSameContent(t *testing.T) {
 // 表头必须与契约一模一样，对得上才轮到可选列留空按空
 func TestInsertExpenseHeader(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	headers := map[string]string{
 		"只带必填列": "支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n",
@@ -240,7 +239,7 @@ func TestInsertExpenseHeader(t *testing.T) {
 
 func TestInsertExpenseInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	cases := map[string]string{
 		"表头混了未知列":    testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
@@ -277,14 +276,11 @@ func TestInsertExpenseMissingField(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 
-	jwt, err := tool.EnJwt(util.GenCtx(), config.GetConfig().ServerToken, clientToken, "", time.Hour)
-	if err != nil {
-		t.Fatalf("签发jwt异常: %+v", err)
-	}
+	jwt := newJwtByCurrency(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, "", time.Hour)
 	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
 		t.Errorf("jwt里没带记账币种应报错: %+v", resp)
 	}
-	if resp := insertExpense(t, engine, newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour), "", csv); resp.Code == http.StatusOK {
+	if resp := insertExpense(t, engine, newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour), "", csv); resp.Code == http.StatusOK {
 		t.Errorf("没带文件应报错: %+v", resp)
 	}
 }
@@ -301,10 +297,10 @@ func TestInsertExpenseWithoutJwt(t *testing.T) {
 // 超过上限的文件在读请求体时就被截断，落不到解析
 func TestInsertExpenseOverLimit(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
 	line := "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
-	csv := testCsvHeader + strings.Repeat(line, config.ExpenseFileLimit/len(line)+1)
+	csv := testCsvHeader + strings.Repeat(line, int(config.GetConfig(util.GenCtx()).ExpenseFileLimit)/len(line)+1)
 	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
 		t.Fatalf("超上限应被拒: %+v", resp)
 	}

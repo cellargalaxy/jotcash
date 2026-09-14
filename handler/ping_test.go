@@ -29,7 +29,7 @@ func newPingRequest(jwt string) *http.Request {
 
 func TestPing(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, clientToken, time.Hour)))
 	if resp.Code != http.StatusOK {
@@ -43,7 +43,7 @@ func TestPing(t *testing.T) {
 
 func TestPingWrongToken(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig().ServerToken
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
 
 	resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, "wrong-client-token-1", time.Hour)))
 	if resp.Code == http.StatusOK {
@@ -79,7 +79,7 @@ func TestPingWithoutJwt(t *testing.T) {
 func TestPingWithoutClientToken(t *testing.T) {
 	engine, _ := newTestEngine(t)
 
-	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig().ServerToken, "", time.Hour)))
+	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, "", time.Hour)))
 	if resp.Code == http.StatusOK {
 		t.Errorf("jwt里没有前端口令应校验不通过: %+v", resp)
 	}
@@ -90,7 +90,7 @@ func TestPingWithoutBearer(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 
 	request := httptest.NewRequest(http.MethodPost, util.PathPing, nil)
-	request.Header.Set(util.AuthorizationKey, newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour))
+	request.Header.Set(util.AuthorizationKey, newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour))
 	resp := postPing(t, engine, request)
 	if resp.Code != http.StatusUnauthorized {
 		t.Errorf("漏掉Bearer前缀应401: %+v", resp)
@@ -101,7 +101,7 @@ func TestPingWithoutBearer(t *testing.T) {
 func TestPingQueryJwt(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 
-	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	path := fmt.Sprintf("%s?%s=%s", util.PathPing, util.AuthorizationKey, jwt)
 	resp := postPing(t, engine, httptest.NewRequest(http.MethodPost, path, nil))
 	if resp.Code != http.StatusUnauthorized {
@@ -124,7 +124,7 @@ func TestPingAlgNoneJwt(t *testing.T) {
 func TestPingExpiredJwt(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 
-	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig().ServerToken, clientToken, -time.Minute)))
+	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, -time.Minute)))
 	if resp.Code == http.StatusOK {
 		t.Errorf("过期jwt应校验不通过: %+v", resp)
 	}
@@ -137,7 +137,7 @@ func TestPingTokenNotInLog(t *testing.T) {
 	t.Cleanup(func() { logrus.SetLevel(logrus.WarnLevel) })
 	buffer := catchLog(t)
 
-	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)))
+	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("口令都对应校验通过: %+v", resp)
 	}
