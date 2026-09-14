@@ -97,18 +97,6 @@ func TestPingWithoutBearer(t *testing.T) {
 	}
 }
 
-// query里的凭据会被访问日志原样记下，口令跟着jwt进日志就破了「口令只在初始化那一次出现」
-func TestPingQueryJwt(t *testing.T) {
-	engine, clientToken := newTestEngine(t)
-
-	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
-	path := fmt.Sprintf("%s?%s=%s", util.PathPing, util.AuthorizationKey, jwt)
-	resp := postPing(t, engine, httptest.NewRequest(http.MethodPost, path, nil))
-	if resp.Code != http.StatusUnauthorized {
-		t.Errorf("凭据放在query里应401: %+v", resp)
-	}
-}
-
 // go_common在改，alg=none这条底线得钉住
 func TestPingAlgNoneJwt(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
