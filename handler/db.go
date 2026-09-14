@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/db"
 	"github.com/cellargalaxy/jotcash/tool"
@@ -45,6 +46,7 @@ func Export(c *gin.Context) {
 
 func Import(c *gin.Context) {
 	logrus.WithContext(c).WithFields(logrus.Fields{"claims": tool.GetClaims(c)}).Info("数据库导入")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.ImportFileLimit)
 	fileHeader, err := c.FormFile(model.ImportFileKey)
 	if err != nil {
 		logrus.WithContext(c).WithFields(logrus.Fields{"err": err}).Error("数据库导入，取上传文件异常")
