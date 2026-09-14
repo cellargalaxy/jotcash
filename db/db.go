@@ -104,11 +104,18 @@ func Create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeSystemInit,
+		Summary:       "系统初始化，创建加密数据库",
+		Result:        model.ResultSuccess,
+	}
+	operationLogHandler := NewOperationLogInsertHandler(&operationLog)
 
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = create(ctx, dbPath, token)
+	err = create(ctx, dbPath, token, operationLogHandler)
 	if err != nil {
 		util.RemoveFile(ctx, dbPath)
 		migrated = false
@@ -116,7 +123,7 @@ func Create(ctx context.Context) error {
 	}
 	return nil
 }
-func create(ctx context.Context, dbPath, token string) error {
+func create(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
 	if existDb(ctx, dbPath) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("初始化数据库，库文件已存在")
 		return nil
@@ -132,17 +139,11 @@ func create(ctx context.Context, dbPath, token string) error {
 	if err != nil {
 		return err
 	}
-
-	operationLog := model.OperationLog{
-		Id:            util.GenId(),
-		OperationType: model.OperationTypeSystemInit,
-		Summary:       "系统初始化，创建加密数据库",
-		Result:        model.ResultSuccess,
-	}
-	operationLogHandler := NewOperationLogInsertHandler(&operationLog)
-	err = util.Transaction(ctx, gormDb, operationLogHandler)
-	if err != nil {
-		return err
+	if len(handlers) > 0 {
+		err = util.Transaction(ctx, gormDb, handlers...)
+		if err != nil {
+			return err
+		}
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Warn("系统初始化，前端口令")
@@ -204,6 +205,13 @@ func Close(ctx context.Context, gormDb *gorm.DB) error {
 
 func CheckToken(ctx context.Context) error {
 	gormDb, err := Open(ctx)
+	if err != nil {
+		return err
+	}
+	return Close(ctx, gormDb)
+}
+func checkToken(ctx context.Context, dbPath, token string) error {
+	gormDb, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}

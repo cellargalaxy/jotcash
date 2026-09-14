@@ -93,6 +93,10 @@ func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionH
 	if err != nil {
 		return err
 	}
+	err = autoMigrate(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
 
 	dbLock.RLock()
 	defer dbLock.RUnlock()
@@ -155,6 +159,12 @@ func Import(ctx context.Context, reader io.Reader, handlers ...util.TransactionH
 	return nil
 }
 func import_(ctx context.Context, dbPath, token string, reader io.Reader, handlers ...util.TransactionHandler) error {
+	//导入的是调用方自带的库，只校验它自身能打开拦不住越权：拿到后端口令就能签出jwt，再用自己加密的库把原库顶掉
+	err := checkToken(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
@@ -165,29 +175,33 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		return err
 	}
 
-	gormDb, err := open(ctx, dbPath, token)
+	//校验、补表、写审计都落在上传的这份副本上，它才是待会儿要顶上来的库
+	gormDb, err := open(ctx, backupPath, token)
 	if err != nil {
+		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 	defer Close(ctx, gormDb)
 
 	err = checkSchema(ctx, gormDb)
 	if err != nil {
+		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 	err = AutoMigrate(ctx, gormDb)
 	if err != nil {
-		return err
-	}
-	if len(handlers) == 0 {
-		return nil
-	}
-	err = util.Transaction(ctx, gormDb, handlers...)
-	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
+	if len(handlers) > 0 {
+		err = util.Transaction(ctx, gormDb, handlers...)
+		if err != nil {
+			util.RemoveFile(ctx, backupPath)
+			return err
+		}
+	}
 
+	//整库覆盖不可逆，原库先留一份，导错了还能拿它换回来
 	originPath, err := genBackupPath(ctx)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
@@ -204,6 +218,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
+	//顶上来的库刚补过表结构，标记可以直接置位
 	migrated = true
 	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
 	return nil
@@ -213,6 +228,10 @@ func ChangeToken(ctx context.Context, newToken string, handlers ...util.Transact
 	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
 	token, err := getToken(ctx)
+	if err != nil {
+		return err
+	}
+	err = autoMigrate(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
