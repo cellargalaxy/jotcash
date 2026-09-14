@@ -8,7 +8,6 @@ import (
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/db"
-	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -31,7 +30,7 @@ func (this *dbFileWriter) Write(data []byte) (int, error) {
 }
 
 func Export(c *gin.Context) {
-	logrus.WithContext(c).WithFields(logrus.Fields{"claims": tool.GetClaims(c)}).Info("数据库导出")
+	logrus.WithContext(c).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](c)}).Info("数据库导出")
 	writer := &dbFileWriter{c: c}
 	err := db.Export(c, writer)
 	if err == nil {
@@ -45,9 +44,9 @@ func Export(c *gin.Context) {
 }
 
 func Import(c *gin.Context) {
-	logrus.WithContext(c).WithFields(logrus.Fields{"claims": tool.GetClaims(c)}).Info("数据库导入")
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.ImportFileLimit)
-	fileHeader, err := c.FormFile(model.ImportFileKey)
+	logrus.WithContext(c).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](c)}).Info("数据库导入")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.GetConfig(c).ImportFileLimit)
+	fileHeader, err := c.FormFile(config.ImportFileKey)
 	if err != nil {
 		logrus.WithContext(c).WithFields(logrus.Fields{"err": err}).Error("数据库导入，取上传文件异常")
 		c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, errors.Errorf("数据库导入，取上传文件异常: %+v", err)))
