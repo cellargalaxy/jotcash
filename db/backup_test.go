@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -149,8 +150,8 @@ func TestImportOldDb(t *testing.T) {
 
 func TestTokenSpecialChar(t *testing.T) {
 	newTestDb(t)
-	//口令里的空格经url编码会变成加号，而SQLite的uri只认%XX转义，备份目标库会落到另一把口令上
-	token := "pass word 1234"
+	//备份目标库的口令是拼进uri的，这些字符都得经过转义才能原样传过去；空格转义成加号传不过去，已在口令强度里禁掉
+	token := "p+w&d=12%34#x?y"
 	ctx := newTokenCtx(token)
 	if err := create(ctx, config.DbPath, token); err != nil {
 		t.Fatalf("建库异常: %+v", err)
@@ -171,12 +172,12 @@ func TestTokenSpecialChar(t *testing.T) {
 		t.Errorf("导回后数据不符: count=%d want=1", count)
 	}
 
-	newToken := "new pass word 1234"
+	newToken := "n+w&d=56%78#z?q"
 	if err := ChangeToken(ctx, newToken); err != nil {
 		t.Fatalf("换口令异常: %+v", err)
 	}
 	if err := CheckToken(newTokenCtx(newToken)); err != nil {
-		t.Errorf("换成含空格的口令后打不开库: %+v", err)
+		t.Errorf("换成含特殊字符的口令后打不开库: %+v", err)
 	}
 }
 
@@ -325,5 +326,74 @@ func TestClearBackup(t *testing.T) {
 		if i >= 2 && !exist {
 			t.Errorf("新备份不应清理: %s", backupPaths[i])
 		}
+	}
+}
+
+// 整库覆盖前原库要先留一份，导错了还能手动导回去
+func TestImportBackupOrigin(t *testing.T) {
+	ctx := newTestCtx(t)
+	origin := newTestExpense()
+	if _, err := InsertExpense(ctx, origin); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+	buffer := new(bytes.Buffer)
+	if err := Export(ctx, buffer); err != nil {
+		t.Fatalf("导出异常: %+v", err)
+	}
+
+	//再插一笔，这笔只在原库里有，导入之后会被覆盖掉
+	lost := newTestExpense()
+	if _, err := InsertExpense(ctx, lost); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
+		t.Fatalf("导入异常: %+v", err)
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 0 {
+		t.Fatalf("导入应已整库覆盖: count=%d want=0", count)
+	}
+
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("备份目录里应只剩原库那一份: got=%d want=1", len(files))
+	}
+	originPath := filepath.Join(config.DbBackupPath, files[0].Name())
+	if err = replace(ctx, originPath, config.DbPath, testClientToken); err != nil {
+		t.Fatalf("用原库备份回滚异常: %+v", err)
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 1 {
+		t.Errorf("回滚后被覆盖掉的数据应回来: count=%d want=1", count)
+	}
+}
+
+// 后端口令泄露时攻击者能签出合法jwt，但拿自己加密的库也顶不掉原库
+func TestImportForeignDb(t *testing.T) {
+	ctx := newTestCtx(t)
+	origin := newTestExpense()
+	if _, err := InsertExpense(ctx, origin); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	foreignToken := "foreign-client-token"
+	if err := create(ctx, "foreign.db", foreignToken); err != nil {
+		t.Fatalf("建外来库异常: %+v", err)
+	}
+	data, err := util.ReadFile2Data(ctx, "foreign.db", nil)
+	if err != nil {
+		t.Fatalf("读外来库异常: %+v", err)
+	}
+
+	//外来库自身能用外来口令打开，checkImport这一关拦不住，拦住它的是原库打不开
+	if err = Import(newTokenCtx(foreignToken), bytes.NewReader(data)); err == nil {
+		t.Errorf("外来库不应能顶掉原库")
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
+		t.Errorf("原库应原封不动: count=%d want=1", count)
+	}
+	if err = CheckToken(ctx); err != nil {
+		t.Errorf("原口令应照常可用: %+v", err)
 	}
 }

@@ -57,13 +57,13 @@ func TestChangeToken(t *testing.T) {
 	}
 }
 
-// A-6：长度≥12且不得纯数字或纯字母，不合规的连库都不该动
+// A-6：长度≥12、不得纯数字或纯字母、不得带空格，不合规的连库都不该动
 func TestChangeTokenWeak(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	serverToken := config.GetConfig().ServerToken
 	jwt := newJwt(t, serverToken, clientToken, time.Hour)
 
-	for _, weak := range []string{"", "short-1", "123456789012", "abcdefghijkl"} {
+	for _, weak := range []string{"", "short-1", "123456789012", "abcdefghijkl", "pass word 1234"} {
 		if resp := changeToken(t, engine, jwt, weak); resp.Code == http.StatusOK {
 			t.Errorf("弱口令应被拒: token=%s resp=%+v", weak, resp)
 		}

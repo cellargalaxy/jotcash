@@ -60,6 +60,9 @@ func TestCheckToken(t *testing.T) {
 	if err := tool.CheckToken(ctx, ""); err == nil {
 		t.Errorf("空口令应报错")
 	}
+	if err := tool.CheckToken(ctx, "pass word 1234"); err == nil {
+		t.Errorf("带空格的口令应报错")
+	}
 	if err := tool.CheckToken(ctx, "abcdefghijk1"); err != nil {
 		t.Errorf("12位字母加数字应通过: %+v", err)
 	}

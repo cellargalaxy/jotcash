@@ -1,11 +1,18 @@
 package base_csv
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	os.RemoveAll("log")
+	os.Exit(code)
+}
 
 const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
 
@@ -18,6 +25,10 @@ func TestSupport(t *testing.T) {
 	}
 	if !parser.Support(ctx, []byte(testCsvHeader)) {
 		t.Errorf("只有表头也应认领")
+	}
+	//Excel另存的CSV开头带BOM，表头首列会被它顶掉
+	if !parser.Support(ctx, []byte("\ufeff"+testCsvHeader+",,2026-01-02,CNY,1,,,,,,\n")) {
+		t.Errorf("带BOM的表头也应认领")
 	}
 
 	//认的是表头，不是文件后缀：别家的CSV一样是.csv，不能硬解
@@ -70,6 +81,15 @@ func TestParse(t *testing.T) {
 	}
 	if objects[0].AmortizationMonths != 3 {
 		t.Errorf("摊分月数应解析到: %d", objects[0].AmortizationMonths)
+	}
+
+	//带BOM的文件要能照常解析出内容
+	objects, err = parser.Parse(ctx, []byte("\ufeff"+testCsvHeader+"招商银行,,2026-01-02,CNY,1,,,,,,\n"))
+	if err != nil {
+		t.Fatalf("带BOM的文件解析异常: %+v", err)
+	}
+	if objects[0].BankName != "招商银行" {
+		t.Errorf("带BOM时首列数据不该受影响: %+v", objects[0])
 	}
 
 	//可选列留空按空

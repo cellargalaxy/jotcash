@@ -1,12 +1,19 @@
 package expense_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	os.RemoveAll("log")
+	os.Exit(code)
+}
 
 const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
 
@@ -28,8 +35,8 @@ func TestParse(t *testing.T) {
 	if first.ExchangeRate.String() != "1" || !first.AccountingAmount.Equal(first.ExpenseAmount) {
 		t.Errorf("同币种的折算不符: %+v", first)
 	}
-	//文件里给了汇率就用文件的，记账金额=支出金额×折算汇率
-	if second.ExchangeRate.String() != "7.1234" || !second.AccountingAmount.Equal(second.ExpenseAmount.Mul(second.ExchangeRate)) {
+	//文件里给了汇率就用文件的，记账金额=支出金额×折算汇率，乘出来的-144.24885按分四舍五入
+	if second.ExchangeRate.String() != "7.1234" || second.AccountingAmount.String() != "-144.25" {
 		t.Errorf("跨币种的折算不符: %+v", second)
 	}
 	if first.AccountingCurrency != "CNY" || second.AccountingCurrency != "CNY" {

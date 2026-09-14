@@ -72,8 +72,9 @@ func TestInsertExpense(t *testing.T) {
 	if !second.ExchangeRate.Equal(decimalOf(t, "7.1234")) {
 		t.Errorf("应采用CSV里的折算汇率: %s", second.ExchangeRate)
 	}
-	if !second.AccountingAmount.Equal(second.ExpenseAmount.Mul(second.ExchangeRate)) {
-		t.Errorf("记账金额应等于支出金额×折算汇率: %s", second.AccountingAmount)
+	//-20.25×7.1234=-144.24885，记账金额按分四舍五入
+	if !second.AccountingAmount.Equal(decimalOf(t, "-144.25")) {
+		t.Errorf("记账金额应按分四舍五入: %s", second.AccountingAmount)
 	}
 	//记账币种取jwt里携带的那个
 	if second.AccountingCurrency != testAccountingCurrency {
@@ -128,7 +129,7 @@ func TestInsertExpenseAccountingCurrency(t *testing.T) {
 	}
 	//汇率留空，系统查出来再算记账金额
 	for _, one := range list.Data.Object {
-		if !one.ExchangeRate.IsPositive() || !one.AccountingAmount.Equal(one.ExpenseAmount.Mul(one.ExchangeRate)) {
+		if !one.ExchangeRate.IsPositive() || !one.AccountingAmount.Equal(one.ExpenseAmount.Mul(one.ExchangeRate).Round(2)) {
 			t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", one)
 		}
 	}
@@ -294,5 +295,20 @@ func TestInsertExpenseWithoutJwt(t *testing.T) {
 	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 	if resp := insertExpense(t, engine, "", "2609.csv", csv); resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
+	}
+}
+
+// 超过上限的文件在读请求体时就被截断，落不到解析
+func TestInsertExpenseOverLimit(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+
+	line := "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
+	csv := testCsvHeader + strings.Repeat(line, config.ExpenseFileLimit/len(line)+1)
+	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
+		t.Fatalf("超上限应被拒: %+v", resp)
+	}
+	if list := selectExpense(t, engine, jwt, model.ExpenseInquiry{}); list.Data.Count != 0 {
+		t.Errorf("被拒的文件不该入库: %+v", list.Data)
 	}
 }
