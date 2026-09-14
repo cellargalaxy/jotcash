@@ -7,6 +7,6 @@ import (
 	"github.com/cellargalaxy/jotcash/service/db"
 )
 
-func ChangeToken(ctx context.Context, request model.ChangeTokenRequest) (any, error) {
+func ChangeToken(ctx context.Context, request model.ChangeTokenReq) (any, error) {
 	return nil, db.ChangeToken(ctx, request.NewToken)
 }

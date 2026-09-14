@@ -11,7 +11,6 @@ import (
 	"github.com/cellargalaxy/jotcash/service/db"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
-	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -34,7 +33,7 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, erro
 
 func InsertExpense(ctx context.Context, filename string, reader io.Reader) (any, error) {
 	var accountingCurrency string
-	claims := tool.GetClaims(ctx)
+	claims := util.GetClaims[*model.Claims](ctx)
 	if claims != nil {
 		accountingCurrency = claims.AccountingCurrency
 	}

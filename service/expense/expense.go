@@ -103,7 +103,7 @@ func getExchangeRate(ctx context.Context, object *model.Expense) (decimal.Decima
 	rate := object.ExchangeRate
 	if rate.IsZero() {
 		var err error
-		rate, err = exchange_rate.GetExchangeRate(ctx, object.ExpenseDate, object.ExpenseCurrency, object.AccountingCurrency)
+		rate, err = exchange_rate.GetExchangeRate(ctx, object.ExpenseCurrency, object.AccountingCurrency, object.ExpenseDate)
 		if err != nil {
 			return decimal.Zero, err
 		}
