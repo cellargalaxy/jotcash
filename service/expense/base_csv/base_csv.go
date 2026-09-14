@@ -14,15 +14,17 @@ import (
 )
 
 var columns = []string{
-	model.CsvBankName,        //银行名称
-	model.CsvCardLast4,       //卡号后四位
-	model.CsvExpenseDate,     //支出日期
-	model.CsvExpenseCurrency, //支出币种
-	model.CsvExpenseAmount,   //支出金额
-	model.CsvCounterparty,    //交易对手方
-	model.CsvRemark,          //交易备注
-	model.CsvExchangeRate,    //折算汇率
-	model.CsvExpenseType,     //支出类型
+	model.CsvBankName,           //银行名称
+	model.CsvCardLast4,          //卡号后四位
+	model.CsvExpenseDate,        //支出日期
+	model.CsvExpenseCurrency,    //支出币种
+	model.CsvExpenseAmount,      //支出金额
+	model.CsvCounterparty,       //交易对手方
+	model.CsvRemark,             //交易备注
+	model.CsvExchangeRate,       //折算汇率
+	model.CsvAccountingCurrency, //记账币种
+	model.CsvExpenseType,        //支出类型
+	model.CsvAmortizationMonths, //摊分月数
 }
 
 func init() {
@@ -84,10 +86,15 @@ func parseExpense(ctx context.Context, line []string) (*model.Expense, error) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析CSV，支出金额非法")
 		return nil, errors.Errorf("支出金额非法: %+v", err)
 	}
-	//汇率列留空是允许的，留个0让上层按支出日期去取
+	//汇率列留空是允许的，留个0让上层按记账币种去查
 	exchangeRate := decimal.Zero
+	accountingCurrency := csvValue(line, model.CsvAccountingCurrency)
 	value := csvValue(line, model.CsvExchangeRate)
 	if value != "" {
+		if accountingCurrency == "" {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("解析CSV，填了折算汇率却没填记账币种")
+			return nil, errors.Errorf("填了折算汇率就必须填记账币种")
+		}
 		exchangeRate, err = decimal.NewFromString(value)
 		if err != nil {
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析CSV，折算汇率非法")
@@ -98,17 +105,29 @@ func parseExpense(ctx context.Context, line []string) (*model.Expense, error) {
 			return nil, errors.Errorf("折算汇率非正: %s", exchangeRate)
 		}
 	}
+	//摊分月数留空由上层取默认值，填了就得是不小于1的整数
+	amortizationMonths := 0
+	value = csvValue(line, model.CsvAmortizationMonths)
+	if value != "" {
+		amortizationMonths = util.Str2Int[int](value)
+		if amortizationMonths < 1 {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"months": value}).Warn("解析CSV，摊分月数非法")
+			return nil, errors.Errorf("摊分月数非法: %s", value)
+		}
+	}
 
 	object := model.Expense{
-		BankName:        csvValue(line, model.CsvBankName),
-		CardLast4:       csvValue(line, model.CsvCardLast4),
-		ExpenseDate:     expenseDate,
-		ExpenseCurrency: csvValue(line, model.CsvExpenseCurrency),
-		ExpenseAmount:   expenseAmount,
-		Counterparty:    csvValue(line, model.CsvCounterparty),
-		Remark:          csvValue(line, model.CsvRemark),
-		ExchangeRate:    exchangeRate,
-		ExpenseType:     csvValue(line, model.CsvExpenseType),
+		BankName:           csvValue(line, model.CsvBankName),
+		CardLast4:          csvValue(line, model.CsvCardLast4),
+		ExpenseDate:        expenseDate,
+		ExpenseCurrency:    csvValue(line, model.CsvExpenseCurrency),
+		ExpenseAmount:      expenseAmount,
+		Counterparty:       csvValue(line, model.CsvCounterparty),
+		Remark:             csvValue(line, model.CsvRemark),
+		ExchangeRate:       exchangeRate,
+		AccountingCurrency: accountingCurrency,
+		ExpenseType:        csvValue(line, model.CsvExpenseType),
+		AmortizationMonths: amortizationMonths,
 	}
 	return &object, nil
 }
