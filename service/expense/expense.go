@@ -78,7 +78,7 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 	}
 	object.Id = util.GenId()
 	object.ExchangeRate = rate
-	object.AccountingAmount = object.ExpenseAmount.Mul(rate)
+	object.AccountingAmount = object.ExpenseAmount.Mul(rate).Round(2)
 	object.AmortizationStartMonth = time.Date(object.ExpenseDate.Year(), object.ExpenseDate.Month(), 1, 0, 0, 0, 0, object.ExpenseDate.Location())
 	object.AmortizationEndMonth = object.AmortizationStartMonth.AddDate(0, object.AmortizationMonths-1, 0)
 	//摊分月数没有上限，但大到让AddDate绕回去就会写出结束月早于起始月的脏数据
