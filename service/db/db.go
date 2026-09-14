@@ -25,7 +25,8 @@ func ChangeToken(ctx context.Context, newToken string) error {
 		Summary:       "数据库已用新口令重新加密",
 		Result:        model.ResultSuccess,
 	}
-	return db.ChangeToken(ctx, newToken, db.NewOperationLogInsertHandler(&operationLog))
+	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	return db.ChangeToken(ctx, newToken, operationLogHandler)
 }
 
 func Export(ctx context.Context, writer io.Writer) error {
@@ -35,7 +36,8 @@ func Export(ctx context.Context, writer io.Writer) error {
 		Summary:       "导出加密数据库快照",
 		Result:        model.ResultSuccess,
 	}
-	return db.Export(ctx, writer, db.NewOperationLogInsertHandler(&operationLog))
+	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	return db.Export(ctx, writer, operationLogHandler)
 }
 
 func Import(ctx context.Context, reader io.Reader) error {
@@ -45,5 +47,6 @@ func Import(ctx context.Context, reader io.Reader) error {
 		Summary:       "导入加密数据库，整库覆盖",
 		Result:        model.ResultSuccess,
 	}
-	return db.Import(ctx, reader, db.NewOperationLogInsertHandler(&operationLog))
+	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	return db.Import(ctx, reader, operationLogHandler)
 }
