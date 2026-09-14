@@ -31,7 +31,7 @@ func InsertExpense(ctx context.Context, operationId int64, expenses []*model.Exp
 		Result:        model.ResultSuccess,
 	}
 
-	fileBlobHandler := db.NewFileBlobInsertIgnoreHandler(fileBlob)
+	fileBlobHandler := db.NewFileBlobInsertHandler(fileBlob)
 	fileMetaHandler := db.NewFileMetaInsertHandler(fileMeta)
 	expenseHandler := db.NewExpenseInsertHandler(expenses...)
 	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
