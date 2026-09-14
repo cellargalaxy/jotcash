@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func EnJwt(ctx context.Context, serverToken, clientToken string, expire time.Duration) (string, error) {
+func EnJwt(ctx context.Context, serverToken, clientToken, accountingCurrency string, expire time.Duration) (string, error) {
 	if serverToken == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("签发jwt，后端口令为空")
 		return "", errors.Errorf("签发jwt，后端口令为空")
@@ -24,6 +24,7 @@ func EnJwt(ctx context.Context, serverToken, clientToken string, expire time.Dur
 	claims.ServerName = util.GetServerName()
 	claims.LogId = util.GetLogId(ctx)
 	claims.ClientToken = clientToken
+	claims.AccountingCurrency = accountingCurrency
 	return util.EnJwt(ctx, serverToken, claims)
 }
 
