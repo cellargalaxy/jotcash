@@ -25,7 +25,7 @@ func Register(parser Parser) {
 }
 
 func Parse(ctx context.Context, data []byte, accountingCurrency string) ([]*model.Expense, error) {
-	err := checkCurrency(ctx, accountingCurrency)
+	err := checkCurrency(ctx, model.CsvAccountingCurrency, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -60,11 +60,11 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 	if object.AccountingCurrency == "" {
 		object.AccountingCurrency = accountingCurrency
 	}
-	err := checkCurrency(ctx, object.AccountingCurrency)
+	err := checkCurrency(ctx, model.CsvAccountingCurrency, object.AccountingCurrency)
 	if err != nil {
 		return err
 	}
-	err = checkCurrency(ctx, object.ExpenseCurrency)
+	err = checkCurrency(ctx, model.CsvExpenseCurrency, object.ExpenseCurrency)
 	if err != nil {
 		return err
 	}
@@ -81,6 +81,11 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 	object.AccountingAmount = object.ExpenseAmount.Mul(rate)
 	object.AmortizationStartMonth = time.Date(object.ExpenseDate.Year(), object.ExpenseDate.Month(), 1, 0, 0, 0, 0, object.ExpenseDate.Location())
 	object.AmortizationEndMonth = object.AmortizationStartMonth.AddDate(0, object.AmortizationMonths-1, 0)
+	//摊分月数没有上限，但大到让AddDate绕回去就会写出结束月早于起始月的脏数据
+	if object.AmortizationEndMonth.Before(object.AmortizationStartMonth) {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("解析明细，摊分月数过大")
+		return errors.Errorf("摊分月数过大: %d", object.AmortizationMonths)
+	}
 	object.Version = 1
 	return nil
 }
@@ -107,10 +112,10 @@ func getExchangeRate(ctx context.Context, object *model.Expense) (decimal.Decima
 	return rate, nil
 }
 
-func checkCurrency(ctx context.Context, code string) error {
+func checkCurrency(ctx context.Context, name, code string) error {
 	if code != "" && currency.IsValid(code) {
 		return nil
 	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"currency": code}).Warn("币种，不在枚举内")
-	return errors.Errorf("币种，不在枚举内: %s", code)
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"name": name, "currency": code}).Warn("币种，不在枚举内")
+	return errors.Errorf("%s，不在枚举内: %s", name, code)
 }

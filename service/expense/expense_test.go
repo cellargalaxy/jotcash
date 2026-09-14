@@ -95,6 +95,10 @@ func TestParseInvalid(t *testing.T) {
 	if _, err := expense.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,USD,1,,,1,XYZ,,\n"), "CNY"); err == nil {
 		t.Errorf("文件里的记账币种不在枚举内应报错")
 	}
+	//月数大到让结束月绕回起始月之前，宁可报错也不能把脏数据写进去
+	if _, err := expense.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,99999999999999999999\n"), "CNY"); err == nil {
+		t.Errorf("摊分月数过大应报错")
+	}
 	//别家的CSV没有解析器认领，不能当成本系统的格式硬解
 	if _, err := expense.Parse(ctx, []byte("交易日期,摘要,发生额\n2026-01-02,消费,100.50\n"), "CNY"); err == nil {
 		t.Errorf("没有解析器认领应报错")
