@@ -18,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n"
+const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
 
 func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) common_model.HttpResp {
 	t.Helper()
@@ -51,8 +51,8 @@ func TestInsertExpense(t *testing.T) {
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
 	csv := testCsvHeader +
-		"招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n" +
-		"中国银行,4321,2026-03-04,USD,-20.25,苹果,退款,7.1234,数码\n"
+		"招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n" +
+		"中国银行,4321,2026-03-04,USD,-20.25,苹果,退款,7.1234,CNY,数码,3\n"
 	resp := insertExpense(t, engine, jwt, "2609.csv", csv)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("入库应成功: %+v", resp)
@@ -79,7 +79,7 @@ func TestInsertExpense(t *testing.T) {
 	if second.AccountingCurrency != testAccountingCurrency {
 		t.Errorf("记账币种应取jwt携带值: %s", second.AccountingCurrency)
 	}
-	//摊分月数默认1，起始月=支出日期所属月，结束月=起始月+月数-1
+	//摊分月数留空默认1，起始月=支出日期所属月，结束月=起始月+月数-1
 	if first.AmortizationMonths != 1 {
 		t.Errorf("摊分月数应默认1: %d", first.AmortizationMonths)
 	}
@@ -88,6 +88,12 @@ func TestInsertExpense(t *testing.T) {
 	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationEndMonth, nil)
 	if startMonth != "2026-01-01" || endMonth != "2026-01-01" {
 		t.Errorf("摊分起止月不符: %s %s", startMonth, endMonth)
+	}
+	//CSV里填了摊分月数就照填的算
+	startMonth = util.Time2Str(ctx, util.DateLayout_2006_01_02, second.AmortizationStartMonth, nil)
+	endMonth = util.Time2Str(ctx, util.DateLayout_2006_01_02, second.AmortizationEndMonth, nil)
+	if second.AmortizationMonths != 3 || startMonth != "2026-03-01" || endMonth != "2026-05-01" {
+		t.Errorf("CSV里的摊分月数不符: months=%d %s %s", second.AmortizationMonths, startMonth, endMonth)
 	}
 	//可选列有值就带上，金额往返不丢精度
 	if first.BankName != "招商银行" || first.Counterparty != "亚马逊" || first.ExpenseType != "购物" {
@@ -98,12 +104,42 @@ func TestInsertExpense(t *testing.T) {
 	}
 }
 
+// 记账币种两个来源：CSV列逐笔给，没给才用jwt里那个
+func TestInsertExpenseAccountingCurrency(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
+
+	csv := testCsvHeader +
+		"招商银行,6789,2026-01-02,USD,100,亚马逊,买书,,JPY,购物,\n" +
+		"招商银行,6789,2026-03-04,USD,100,亚马逊,买书,,,购物,\n"
+	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code != http.StatusOK {
+		t.Fatalf("入库应成功: %+v", resp)
+	}
+
+	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{Sort: "expense_date asc"})
+	if list.Data.Count != 2 {
+		t.Fatalf("应入库2笔: %+v", list.Data)
+	}
+	if list.Data.Object[0].AccountingCurrency != "JPY" {
+		t.Errorf("CSV里的记账币种应优先: %+v", list.Data.Object[0])
+	}
+	if list.Data.Object[1].AccountingCurrency != testAccountingCurrency {
+		t.Errorf("CSV里没给记账币种应用jwt里的: %+v", list.Data.Object[1])
+	}
+	//汇率留空，系统查出来再算记账金额
+	for _, one := range list.Data.Object {
+		if !one.ExchangeRate.IsPositive() || !one.AccountingAmount.Equal(one.ExpenseAmount.Mul(one.ExchangeRate)) {
+			t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", one)
+		}
+	}
+}
+
 // 一条「数据入库」审计 + 一份CSV存档，明细的来源字段都指向它们
 func TestInsertExpenseArchive(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
-	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n"
+	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code != http.StatusOK {
 		t.Fatalf("入库应成功: %+v", resp)
 	}
@@ -147,7 +183,7 @@ func TestInsertExpenseSameContent(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
-	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,1,购物\n"
+	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,1,CNY,购物,\n"
 	for i := 0; i < 2; i++ {
 		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code != http.StatusOK {
 			t.Fatalf("第%d次入库应成功: %+v", i+1, resp)
@@ -181,7 +217,7 @@ func TestInsertExpenseHeader(t *testing.T) {
 
 	headers := map[string]string{
 		"只带必填列": "支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n",
-		"表头换顺序": "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,\n",
+		"表头换顺序": "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,,,\n",
 	}
 	for name, csv := range headers {
 		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
@@ -189,7 +225,7 @@ func TestInsertExpenseHeader(t *testing.T) {
 		}
 	}
 
-	if resp := insertExpense(t, engine, jwt, "2609.csv", testCsvHeader+",,2026-01-02,CNY,100.50,,,,\n"); resp.Code != http.StatusOK {
+	if resp := insertExpense(t, engine, jwt, "2609.csv", testCsvHeader+",,2026-01-02,CNY,100.50,,,,,,\n"); resp.Code != http.StatusOK {
 		t.Fatalf("表头对得上、可选列留空应成功: %+v", resp)
 	}
 	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
@@ -206,15 +242,18 @@ func TestInsertExpenseInvalid(t *testing.T) {
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
 	cases := map[string]string{
-		"表头混了未知列": testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
-		"表头重复列":   "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
-		"只有表头":    testCsvHeader,
-		"支出日期非法":  testCsvHeader + ",,2026/01/02,CNY,1,,,,\n",
-		"支出金额非法":  testCsvHeader + ",,2026-01-02,CNY,abc,,,,\n",
-		"支出币种为空":  testCsvHeader + ",,2026-01-02,,1,,,,\n",
-		"支出币种非法":  testCsvHeader + ",,2026-01-02,XYZ,1,,,1,\n",
-		"折算汇率非正":  testCsvHeader + ",,2026-01-02,USD,1,,,0,\n",
-		"折算汇率非法":  testCsvHeader + ",,2026-01-02,USD,1,,,abc,\n",
+		"表头混了未知列":    testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
+		"表头重复列":      "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
+		"只有表头":       testCsvHeader,
+		"支出日期非法":     testCsvHeader + ",,2026/01/02,CNY,1,,,,,,\n",
+		"支出金额非法":     testCsvHeader + ",,2026-01-02,CNY,abc,,,,,,\n",
+		"支出币种为空":     testCsvHeader + ",,2026-01-02,,1,,,,,,\n",
+		"支出币种非法":     testCsvHeader + ",,2026-01-02,XYZ,1,,,1,CNY,,\n",
+		"折算汇率非正":     testCsvHeader + ",,2026-01-02,USD,1,,,0,CNY,,\n",
+		"折算汇率非法":     testCsvHeader + ",,2026-01-02,USD,1,,,abc,CNY,,\n",
+		"填了汇率没填记账币种": testCsvHeader + ",,2026-01-02,USD,1,,,7.1234,,,\n",
+		"记账币种非法":     testCsvHeader + ",,2026-01-02,USD,1,,,1,XYZ,,\n",
+		"摊分月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
 	}
 	for name, csv := range cases {
 		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
@@ -235,7 +274,7 @@ func TestInsertExpenseInvalid(t *testing.T) {
 
 func TestInsertExpenseMissingField(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n"
+	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 
 	jwt, err := tool.EnJwt(util.GenCtx(), config.GetConfig().ServerToken, clientToken, "", time.Hour)
 	if err != nil {
@@ -252,7 +291,7 @@ func TestInsertExpenseMissingField(t *testing.T) {
 func TestInsertExpenseWithoutJwt(t *testing.T) {
 	engine, _ := newTestEngine(t)
 
-	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,购物\n"
+	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
 	if resp := insertExpense(t, engine, "", "2609.csv", csv); resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
 	}
