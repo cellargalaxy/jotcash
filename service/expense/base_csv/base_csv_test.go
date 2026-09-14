@@ -7,13 +7,13 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 )
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n"
+const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
 
 func TestSupport(t *testing.T) {
 	ctx := util.GenCtx()
 	parser := new(Parser)
 
-	if !parser.Support(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,\n")) {
+	if !parser.Support(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,\n")) {
 		t.Errorf("本契约的表头应认领")
 	}
 	if !parser.Support(ctx, []byte(testCsvHeader)) {
@@ -41,7 +41,7 @@ func TestParse(t *testing.T) {
 	ctx := util.GenCtx()
 	parser := new(Parser)
 
-	objects, err := parser.Parse(ctx, []byte(testCsvHeader+"招商银行,6789,2026-01-02,USD,-20.25,亚马逊,买书,7.1234,购物\n"))
+	objects, err := parser.Parse(ctx, []byte(testCsvHeader+"招商银行,6789,2026-01-02,USD,-20.25,亚马逊,买书,7.1234,CNY,购物,\n"))
 	if err != nil {
 		t.Fatalf("解析异常: %+v", err)
 	}
@@ -55,24 +55,34 @@ func TestParse(t *testing.T) {
 	if util.Time2Str(ctx, util.DateLayout_2006_01_02, object.ExpenseDate, nil) != "2026-01-02" {
 		t.Errorf("支出日期不符: %v", object.ExpenseDate)
 	}
-	if object.ExpenseAmount.String() != "-20.25" || object.ExchangeRate.String() != "7.1234" {
-		t.Errorf("金额或汇率不符: %+v", object)
+	if object.ExpenseAmount.String() != "-20.25" || object.ExchangeRate.String() != "7.1234" || object.AccountingCurrency != "CNY" {
+		t.Errorf("金额、汇率或记账币种不符: %+v", object)
 	}
-	if object.Id != 0 || object.AccountingCurrency != "" || !object.AccountingAmount.IsZero() || object.AmortizationMonths != 0 || object.Version != 0 {
+	//记账金额是系统算的，不在CSV里
+	if object.Id != 0 || !object.AccountingAmount.IsZero() || object.Version != 0 || !object.AmortizationStartMonth.IsZero() {
 		t.Errorf("派生字段不该由解析器填: %+v", object)
 	}
 
+	//摊分月数填了就照填的来，留空留0让上层取默认
+	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,3\n"))
+	if err != nil {
+		t.Fatalf("解析异常: %+v", err)
+	}
+	if objects[0].AmortizationMonths != 3 {
+		t.Errorf("摊分月数应解析到: %d", objects[0].AmortizationMonths)
+	}
+
 	//可选列留空按空
-	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,100.50,,,,\n"))
+	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,100.50,,,,,,\n"))
 	if err != nil {
 		t.Fatalf("可选列留空应能解析: %+v", err)
 	}
 	if objects[0].BankName != "" || objects[0].Counterparty != "" || objects[0].ExpenseAmount.String() != "100.5" {
 		t.Errorf("留空的可选列应为空: %+v", objects[0])
 	}
-	//汇率列留空留个0，上层据此兜底
-	if !objects[0].ExchangeRate.IsZero() {
-		t.Errorf("汇率列留空应留0: %s", objects[0].ExchangeRate)
+	//汇率与摊分月数留空都留0，上层据此兜底
+	if !objects[0].ExchangeRate.IsZero() || objects[0].AmortizationMonths != 0 {
+		t.Errorf("汇率与摊分月数留空应留0: %+v", objects[0])
 	}
 
 	//只有表头解析出0笔，是否报错由上层定
@@ -90,12 +100,19 @@ func TestParseInvalid(t *testing.T) {
 		"空文件":    "",
 		"表头少一列":  "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率\n,,2026-01-02,CNY,1,,,\n",
 		"表头多一列":  testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
-		"表头换顺序":  "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,\n",
-		"支出日期非法": testCsvHeader + ",,2026/01/02,CNY,1,,,,\n",
-		"支出日期为空": testCsvHeader + ",,,CNY,1,,,,\n",
-		"支出金额非法": testCsvHeader + ",,2026-01-02,CNY,abc,,,,\n",
-		"折算汇率非法": testCsvHeader + ",,2026-01-02,USD,1,,,abc,\n",
-		"折算汇率非正": testCsvHeader + ",,2026-01-02,USD,1,,,0,\n",
+		"表头换顺序":  "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,,,\n",
+		"支出日期非法": testCsvHeader + ",,2026/01/02,CNY,1,,,,,,\n",
+		"支出日期为空": testCsvHeader + ",,,CNY,1,,,,,,\n",
+		"支出金额非法": testCsvHeader + ",,2026-01-02,CNY,abc,,,,,,\n",
+		"折算汇率非法": testCsvHeader + ",,2026-01-02,USD,1,,,abc,CNY,,\n",
+		"折算汇率非正": testCsvHeader + ",,2026-01-02,USD,1,,,0,CNY,,\n",
+		//汇率是「支出币种兑记账币种」，没有记账币种就不知道兑给谁
+		"填了汇率没填记账币种": testCsvHeader + ",,2026-01-02,USD,1,,,7.1234,,,\n",
+		"摊分月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
+		"摊分月数为0":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,0\n",
+		"摊分月数为负":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,-1\n",
+		//记账金额只能由系统算，进不了契约
+		"表头带了记账金额": "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,记账金额,支出类型,摊分月数\n,,2026-01-02,CNY,1,,,,,1,,\n",
 	}
 	for name, csv := range cases {
 		if _, err := parser.Parse(ctx, []byte(csv)); err == nil {
@@ -104,7 +121,7 @@ func TestParseInvalid(t *testing.T) {
 	}
 
 	//行内的错误要带上行号，不然几十行的CSV没法定位
-	_, err := parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,\n,,2026-01-02,CNY,abc,,,,\n"))
+	_, err := parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,\n,,2026-01-02,CNY,abc,,,,,,\n"))
 	if err == nil {
 		t.Fatalf("第2行金额非法应报错")
 	}
@@ -118,7 +135,7 @@ func TestParseCurrency(t *testing.T) {
 	ctx := util.GenCtx()
 	parser := new(Parser)
 
-	objects, err := parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,XYZ,1,,,1,\n"))
+	objects, err := parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,XYZ,1,,,1,CNY,,\n"))
 	if err != nil {
 		t.Fatalf("解析异常: %+v", err)
 	}
