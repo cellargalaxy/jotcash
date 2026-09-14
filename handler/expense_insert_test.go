@@ -174,21 +174,30 @@ func TestInsertExpenseSameContent(t *testing.T) {
 	}
 }
 
-// 按列名匹配不依赖顺序，可选列缺失按空
-func TestInsertExpenseColumnOrder(t *testing.T) {
+// 表头必须与契约一模一样，对得上才轮到可选列留空按空
+func TestInsertExpenseHeader(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
-	csv := "支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n"
-	if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code != http.StatusOK {
-		t.Fatalf("只带必填列、顺序打乱也应成功: %+v", resp)
+	headers := map[string]string{
+		"只带必填列": "支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n",
+		"表头换顺序": "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,\n",
+	}
+	for name, csv := range headers {
+		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
+			t.Errorf("%s应报错: %+v", name, resp)
+		}
+	}
+
+	if resp := insertExpense(t, engine, jwt, "2609.csv", testCsvHeader+",,2026-01-02,CNY,100.50,,,,\n"); resp.Code != http.StatusOK {
+		t.Fatalf("表头对得上、可选列留空应成功: %+v", resp)
 	}
 	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
 	if list.Data.Count != 1 {
 		t.Fatalf("应入库1笔: %+v", list.Data)
 	}
 	if list.Data.Object[0].BankName != "" || list.Data.Object[0].Counterparty != "" {
-		t.Errorf("缺失的可选列应为空: %+v", list.Data.Object[0])
+		t.Errorf("留空的可选列应为空: %+v", list.Data.Object[0])
 	}
 }
 
@@ -197,16 +206,15 @@ func TestInsertExpenseInvalid(t *testing.T) {
 	jwt := newJwt(t, config.GetConfig().ServerToken, clientToken, time.Hour)
 
 	cases := map[string]string{
-		"未知列":    "支出日期,支出币种,支出金额,乱七八糟\n2026-01-02,CNY,1,x\n",
-		"缺必填列":   "支出日期,支出币种\n2026-01-02,CNY\n",
-		"重复列":    "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
-		"只有表头":   testCsvHeader,
-		"支出日期非法": testCsvHeader + ",,2026/01/02,CNY,1,,,,\n",
-		"支出金额非法": testCsvHeader + ",,2026-01-02,CNY,abc,,,,\n",
-		"支出币种为空": testCsvHeader + ",,2026-01-02,,1,,,,\n",
-		"支出币种非法": testCsvHeader + ",,2026-01-02,XYZ,1,,,1,\n",
-		"折算汇率非正": testCsvHeader + ",,2026-01-02,USD,1,,,0,\n",
-		"折算汇率非法": testCsvHeader + ",,2026-01-02,USD,1,,,abc,\n",
+		"表头混了未知列": testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
+		"表头重复列":   "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
+		"只有表头":    testCsvHeader,
+		"支出日期非法":  testCsvHeader + ",,2026/01/02,CNY,1,,,,\n",
+		"支出金额非法":  testCsvHeader + ",,2026-01-02,CNY,abc,,,,\n",
+		"支出币种为空":  testCsvHeader + ",,2026-01-02,,1,,,,\n",
+		"支出币种非法":  testCsvHeader + ",,2026-01-02,XYZ,1,,,1,\n",
+		"折算汇率非正":  testCsvHeader + ",,2026-01-02,USD,1,,,0,\n",
+		"折算汇率非法":  testCsvHeader + ",,2026-01-02,USD,1,,,abc,\n",
 	}
 	for name, csv := range cases {
 		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
