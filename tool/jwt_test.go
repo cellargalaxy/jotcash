@@ -15,7 +15,7 @@ const testServerToken = "test-server-token-1"
 func TestJwtClientToken(t *testing.T) {
 	ctx := util.GenCtx()
 
-	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", time.Hour)
+	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", "CNY", time.Hour)
 	if err != nil {
 		t.Fatalf("签发异常: %+v", err)
 	}
@@ -31,7 +31,7 @@ func TestJwtClientToken(t *testing.T) {
 func TestJwtServerToken(t *testing.T) {
 	ctx := util.GenCtx()
 
-	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", time.Hour)
+	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", "CNY", time.Hour)
 	if err != nil {
 		t.Fatalf("签发异常: %+v", err)
 	}
@@ -41,7 +41,7 @@ func TestJwtServerToken(t *testing.T) {
 	if _, err = tool.DeJwt(ctx, testServerToken, "not-a-jwt"); err == nil {
 		t.Errorf("非法jwt应验不过")
 	}
-	if _, err = tool.EnJwt(ctx, "", "test-client-token-1", time.Hour); err == nil {
+	if _, err = tool.EnJwt(ctx, "", "test-client-token-1", "CNY", time.Hour); err == nil {
 		t.Errorf("后端口令为空应拒绝签发")
 	}
 	if _, err = tool.DeJwt(ctx, "", token); err == nil {
@@ -52,7 +52,7 @@ func TestJwtServerToken(t *testing.T) {
 func TestJwtExpire(t *testing.T) {
 	ctx := util.GenCtx()
 
-	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", -time.Minute)
+	token, err := tool.EnJwt(ctx, testServerToken, "test-client-token-1", "CNY", -time.Minute)
 	if err != nil {
 		t.Fatalf("签发异常: %+v", err)
 	}
