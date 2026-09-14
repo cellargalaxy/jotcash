@@ -17,6 +17,9 @@ const (
 	DbPath        = "resource/jotcash.db"
 	DbBackupPath  = "resource/db_backup"
 	DbBackupLimit = 5
+
+	ExpenseFileLimit = 10 * 1024 * 1024   //明细文件上限10MB
+	ImportFileLimit  = 1024 * 1024 * 1024 //数据库文件上限1GB
 )
 
 var configService *util.ConfigService
