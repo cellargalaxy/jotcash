@@ -33,7 +33,7 @@ func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, accountingCu
 		}
 	}
 	if accountingCurrency != "" {
-		if err := writer.WriteField(model.ExpenseAccountingCurKey, accountingCurrency); err != nil {
+		if err := writer.WriteField(model.AccountingCurrencyKey, accountingCurrency); err != nil {
 			t.Fatalf("写记账币种异常: %+v", err)
 		}
 	}
@@ -87,8 +87,11 @@ func TestInsertExpense(t *testing.T) {
 	if first.AmortizationMonths != 1 {
 		t.Errorf("摊分月数应默认1: %d", first.AmortizationMonths)
 	}
-	if first.AmortizationStartMonth.Format("2006-01-02") != "2026-01-01" || first.AmortizationEndMonth.Format("2006-01-02") != "2026-01-01" {
-		t.Errorf("摊分起止月不符: %v %v", first.AmortizationStartMonth, first.AmortizationEndMonth)
+	ctx := util.GenCtx()
+	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationStartMonth, nil)
+	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationEndMonth, nil)
+	if startMonth != "2026-01-01" || endMonth != "2026-01-01" {
+		t.Errorf("摊分起止月不符: %s %s", startMonth, endMonth)
 	}
 	//可选列有值就带上，金额往返不丢精度
 	if first.BankName != "招商银行" || first.Counterparty != "亚马逊" || first.ExpenseType != "购物" {
