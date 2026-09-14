@@ -16,15 +16,17 @@ const (
 
 // CSV表头的列名
 const (
-	CsvBankName        = "银行名称"
-	CsvCardLast4       = "卡号后四位"
-	CsvExpenseDate     = "支出日期"
-	CsvExpenseCurrency = "支出币种"
-	CsvExpenseAmount   = "支出金额"
-	CsvCounterparty    = "交易对手方"
-	CsvRemark          = "交易备注"
-	CsvExchangeRate    = "折算汇率"
-	CsvExpenseType     = "支出类型"
+	CsvBankName           = "银行名称"
+	CsvCardLast4          = "卡号后四位"
+	CsvExpenseDate        = "支出日期"
+	CsvExpenseCurrency    = "支出币种"
+	CsvExpenseAmount      = "支出金额"
+	CsvCounterparty       = "交易对手方"
+	CsvRemark             = "交易备注"
+	CsvExchangeRate       = "折算汇率"
+	CsvAccountingCurrency = "记账币种"
+	CsvExpenseType        = "支出类型"
+	CsvAmortizationMonths = "摊分月数"
 )
 
 // decimal.Decimal只能声明为varchar：SQLite按声明类型做亲和判定，decimal/numeric落到NUMERIC亲和，会把数字文本转成浮点数丢精度
