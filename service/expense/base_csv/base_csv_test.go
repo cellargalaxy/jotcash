@@ -13,14 +13,25 @@ func TestSupport(t *testing.T) {
 	ctx := util.GenCtx()
 	parser := new(Parser)
 
-	for _, filename := range []string{"2609.csv", "2609.CSV"} {
-		if !parser.Support(ctx, filename, nil) {
-			t.Errorf("CSV应认领: %s", filename)
-		}
+	if !parser.Support(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,\n")) {
+		t.Errorf("本契约的表头应认领")
 	}
-	for _, filename := range []string{"2609.xlsx", "2609", ""} {
-		if parser.Support(ctx, filename, nil) {
-			t.Errorf("不是CSV不该认领: %s", filename)
+	if !parser.Support(ctx, []byte(testCsvHeader)) {
+		t.Errorf("只有表头也应认领")
+	}
+
+	//认的是表头，不是文件后缀：别家的CSV一样是.csv，不能硬解
+	rejects := map[string]string{
+		"别家CSV": "交易日期,摘要,发生额,余额\n2026-01-02,消费,100.50,0\n",
+		"空文件":   "",
+		"不是CSV": "%PDF-1.7\n二进制内容",
+		"少一列":   "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率\n",
+		"多一列":   testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n",
+		"换个顺序":  "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n",
+	}
+	for name, data := range rejects {
+		if parser.Support(ctx, []byte(data)) {
+			t.Errorf("%s不该认领", name)
 		}
 	}
 }
@@ -51,13 +62,13 @@ func TestParse(t *testing.T) {
 		t.Errorf("派生字段不该由解析器填: %+v", object)
 	}
 
-	//列顺序无关，可选列缺失按空
-	objects, err = parser.Parse(ctx, []byte("支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n"))
+	//可选列留空按空
+	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,100.50,,,,\n"))
 	if err != nil {
-		t.Fatalf("只带必填列应能解析: %+v", err)
+		t.Fatalf("可选列留空应能解析: %+v", err)
 	}
-	if objects[0].BankName != "" || objects[0].ExpenseAmount.String() != "100.5" {
-		t.Errorf("缺失的可选列应为空: %+v", objects[0])
+	if objects[0].BankName != "" || objects[0].Counterparty != "" || objects[0].ExpenseAmount.String() != "100.5" {
+		t.Errorf("留空的可选列应为空: %+v", objects[0])
 	}
 	//汇率列留空留个0，上层据此兜底
 	if !objects[0].ExchangeRate.IsZero() {
@@ -77,9 +88,9 @@ func TestParseInvalid(t *testing.T) {
 
 	cases := map[string]string{
 		"空文件":    "",
-		"未知列":    "支出日期,支出币种,支出金额,乱七八糟\n2026-01-02,CNY,1,x\n",
-		"缺必填列":   "支出日期,支出币种\n2026-01-02,CNY\n",
-		"重复列":    "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
+		"表头少一列":  "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率\n,,2026-01-02,CNY,1,,,\n",
+		"表头多一列":  testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
+		"表头换顺序":  "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,\n",
 		"支出日期非法": testCsvHeader + ",,2026/01/02,CNY,1,,,,\n",
 		"支出日期为空": testCsvHeader + ",,,CNY,1,,,,\n",
 		"支出金额非法": testCsvHeader + ",,2026-01-02,CNY,abc,,,,\n",
