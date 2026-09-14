@@ -31,14 +31,14 @@ func NewEngine(ctx context.Context) *gin.Engine {
 
 	engine.GET(util.PathPing, util.Ping)
 	engine.POST(util.PathPing, validate, Ping)
-	engine.POST(model.PathExpenseInsert, validate, InsertExpense)
-	engine.POST(model.PathExpenseSelect, validate, util.NewGinPost("明细查询", service.SelectExpense))
-	engine.POST(model.PathExpenseDelete, validate, util.NewGinPost("明细删除", service.DeleteExpense))
-	engine.POST(model.PathOperationLogSelect, validate, util.NewGinPost("审计查看", service.SelectOperationLog))
-	engine.POST(model.PathFileMetaSelect, validate, util.NewGinPost("文件列表", service.SelectFileMeta))
-	engine.POST(model.PathChangeToken, validate, util.NewGinPost("更换口令", service.ChangeToken))
-	engine.POST(model.PathExportDb, validate, Export)
-	engine.POST(model.PathImportDb, validate, Import)
+	engine.POST(config.PathExpenseInsert, validate, InsertExpense)
+	engine.POST(config.PathExpenseSelect, validate, util.NewGinPost("明细查询", service.SelectExpense))
+	engine.POST(config.PathExpenseDelete, validate, util.NewGinPost("明细删除", service.DeleteExpense))
+	engine.POST(config.PathOperationLogSelect, validate, util.NewGinPost("审计查看", service.SelectOperationLog))
+	engine.POST(config.PathFileMetaSelect, validate, util.NewGinPost("文件列表", service.SelectFileMeta))
+	engine.POST(config.PathChangeToken, validate, util.NewGinPost("更换口令", service.ChangeToken))
+	engine.POST(config.PathExportDb, validate, Export)
+	engine.POST(config.PathImportDb, validate, Import)
 
 	engine.Use(staticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))
@@ -52,5 +52,5 @@ func staticCache(c *gin.Context) {
 }
 
 func validate(ctx *gin.Context) {
-	util.ValidateGin(ctx, config.GetConfig().ServerToken, new(model.Claims))
+	util.ValidateGin(ctx, config.GetConfig(ctx).ServerToken, new(model.Claims))
 }

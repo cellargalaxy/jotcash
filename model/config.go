@@ -4,10 +4,10 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 )
 
-const DefaultServerName = "jotcash"
+const serverName = "jotcash"
 
 func init() {
-	util.Init(DefaultServerName)
+	util.Init(serverName)
 }
 
 type Config struct {

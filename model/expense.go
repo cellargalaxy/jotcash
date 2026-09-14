@@ -29,7 +29,6 @@ const (
 	CsvAmortizationMonths = "摊分月数"
 )
 
-// decimal.Decimal只能声明为varchar：SQLite按声明类型做亲和判定，decimal/numeric落到NUMERIC亲和，会把数字文本转成浮点数丢精度
 type Expense struct {
 	Id                     int64           `json:"id" gorm:"column:id;primaryKey;autoIncrement:false"`
 	BankName               string          `json:"bank_name" gorm:"column:bank_name;index"`

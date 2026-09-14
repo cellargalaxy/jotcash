@@ -4,11 +4,11 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 )
 
-type ChangeTokenRequest struct {
+type ChangeTokenReq struct {
 	NewToken string `json:"new_token"`
 }
 
-func (this ChangeTokenRequest) String() string {
+func (this ChangeTokenReq) String() string {
 	this.NewToken = ""
 	return util.JsonStruct2Str(this)
 }
