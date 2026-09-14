@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"math/big"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -43,9 +44,14 @@ func CheckToken(ctx context.Context, token string) error {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"len": len([]rune(token))}).Warn("校验口令，长度不足")
 		return errors.Errorf("校验口令，长度不足%d位", TokenMinLen)
 	}
+	//空格会被URI编码成加号，而SQLite的uri只认%XX转义，带空格的口令换到副本库上就成了另一把
+	if strings.Contains(token, " ") {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("校验口令，不能包含空格")
+		return errors.Errorf("校验口令，不能包含空格")
+	}
 	var hasDigit, hasOther bool
-	for _, one := range token {
-		if '0' <= one && one <= '9' {
+	for _, char := range token {
+		if '0' <= char && char <= '9' {
 			hasDigit = true
 		} else {
 			hasOther = true
