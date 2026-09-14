@@ -7,7 +7,8 @@ import (
 
 type Claims struct {
 	model.Claims
-	ClientToken string `json:"client_token,omitempty"`
+	ClientToken        string `json:"client_token,omitempty"`
+	AccountingCurrency string `json:"accounting_currency"`
 }
 
 func (this Claims) String() string {
