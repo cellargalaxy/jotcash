@@ -195,10 +195,11 @@ func TestAutoMigrate(t *testing.T) {
 			t.Errorf("表未建出来: %T", object)
 		}
 	}
-	if err = AutoMigrate(ctx, gormDb); err != nil {
+	handler := NewMigrateHandler()
+	if err = handler.Exec(ctx, gormDb); err != nil {
 		t.Errorf("重复自动建表异常: %+v", err)
 	}
-	if err = AutoMigrate(ctx, nil); err == nil {
+	if err = handler.Exec(ctx, nil); err == nil {
 		t.Errorf("连接为空时自动建表应报错")
 	}
 }
@@ -215,13 +216,8 @@ func TestCreateRollbackWithHandler(t *testing.T) {
 		t.Fatalf("handler失败时建库应报错")
 	}
 
-	gormDb, err := connect(ctx, dbPath, testClientToken)
-	if err != nil {
-		t.Fatalf("打开残库异常: %+v", err)
-	}
-	defer Close(ctx, gormDb)
-	if err = checkSchema(ctx, gormDb); err == nil {
-		t.Errorf("handler失败时建表应一并回滚，库里不该有表")
+	if util.GetFileInfo(ctx, dbPath) != nil {
+		t.Errorf("handler失败时回滚链应把没建成的库文件删掉")
 	}
 }
 

@@ -39,7 +39,7 @@ func TestExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导回后打开数据库异常: %+v", err)
 	}
-	if err = checkSchema(ctx, gormDb); err != nil {
+	if err = NewSchemaCheckHandler().Exec(ctx, gormDb); err != nil {
 		t.Errorf("导入后应把表结构补齐: %+v", err)
 	}
 	Close(ctx, gormDb)
