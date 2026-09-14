@@ -30,7 +30,7 @@ func TestFileBlobCrud(t *testing.T) {
 	}
 }
 
-// D-2：内容寻址去重，同一哈希重复插要跳过而不是撞主键报错
+// 内容寻址去重，同一哈希重复插要跳过而不是撞主键报错
 func TestFileBlobInsertIgnore(t *testing.T) {
 	ctx := newTestCtx(t)
 

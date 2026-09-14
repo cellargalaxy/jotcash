@@ -18,6 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const testAccountingCurrency = "CNY"
+
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	logrus.SetLevel(logrus.WarnLevel)
@@ -68,9 +70,10 @@ func newTestEngine(t *testing.T) (*gin.Engine, string) {
 	return handler.NewEngine(ctx), clientToken
 }
 
+// 每个请求都自带口令与记账币种，两样都签进jwt
 func newJwt(t *testing.T, serverToken, clientToken string, expire time.Duration) string {
 	t.Helper()
-	jwt, err := tool.EnJwt(util.GenCtx(), serverToken, clientToken, expire)
+	jwt, err := tool.EnJwt(util.GenCtx(), serverToken, clientToken, testAccountingCurrency, expire)
 	if err != nil {
 		t.Fatalf("签发jwt异常: %+v", err)
 	}
