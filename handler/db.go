@@ -30,34 +30,36 @@ func (this *dbFileWriter) Write(data []byte) (int, error) {
 }
 
 func Export(c *gin.Context) {
-	logrus.WithContext(c).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](c)}).Info("数据库导出")
+	ctx := c.Request.Context()
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("数据库导出")
 	writer := &dbFileWriter{c: c}
-	err := db.Export(c, writer)
+	err := db.Export(ctx, writer)
 	if err == nil {
 		return
 	}
 	if writer.written {
-		logrus.WithContext(c).WithFields(logrus.Fields{"err": err}).Error("数据库导出，已开始写出，改不回错误响应")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("数据库导出，已开始写出，改不回错误响应")
 		return
 	}
 	c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, err))
 }
 
 func Import(c *gin.Context) {
-	logrus.WithContext(c).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](c)}).Info("数据库导入")
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.GetConfig(c).ImportFileLimit)
+	ctx := c.Request.Context()
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("数据库导入")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.GetConfig(ctx).ImportFileLimit)
 	fileHeader, err := c.FormFile(config.ImportFileKey)
 	if err != nil {
-		logrus.WithContext(c).WithFields(logrus.Fields{"err": err}).Error("数据库导入，取上传文件异常")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("数据库导入，取上传文件异常")
 		c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, errors.Errorf("数据库导入，取上传文件异常: %+v", err)))
 		return
 	}
 	file, err := fileHeader.Open()
 	if err != nil {
-		logrus.WithContext(c).WithFields(logrus.Fields{"err": err}).Error("数据库导入，打开上传文件异常")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("数据库导入，打开上传文件异常")
 		c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, errors.Errorf("数据库导入，打开上传文件异常: %+v", err)))
 		return
 	}
-	defer util.CloseIo(c, file)
-	c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, db.Import(c, file)))
+	defer util.CloseIo(ctx, file)
+	c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, db.Import(ctx, file)))
 }

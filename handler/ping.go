@@ -12,7 +12,8 @@ import (
 )
 
 func Ping(c *gin.Context) {
-	logrus.WithContext(c).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](c)}).Info("Ping")
-	err := db.CheckToken(c)
+	ctx := c.Request.Context()
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("Ping")
+	err := db.CheckToken(ctx)
 	c.JSON(http.StatusOK, util.NewHttpRespByErr(model.PingData{Ip: util.GetIP(), ServerName: util.GetServerName(), Timestamp: time.Now().Unix()}, err))
 }
