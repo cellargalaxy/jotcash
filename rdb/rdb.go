@@ -175,12 +175,22 @@ func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	}
 	return gormDb, nil
 }
+
 func CheckToken(ctx context.Context) error {
-	db, err := Open(ctx)
+	dbPath := config.DbPath
+	token, err := tool.GetToken(ctx)
 	if err != nil {
 		return err
 	}
-	return util.CloseDb(ctx, db)
+
+	dbLock.RLock()
+	defer dbLock.RUnlock()
+
+	err = checkToken(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 func checkToken(ctx context.Context, dbPath, token string) error {
 	db, err := open(ctx, dbPath, token)
@@ -196,7 +206,8 @@ func NewTransaction(ctx context.Context) (*DbTransaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	//读锁挡的是导入/换口令的os.Rename与建库的截断删除，读锁之间共享，业务请求彼此不排队
+	//读锁挡的是导入/换口令的os.Rename与建库的截断删除，读锁之间共享，业务请求彼此不排队。
+	//同一协程内不得嵌套：RWMutex在有写者排队时新读者也要排在写者后面，外层攥着读锁、内层再要一把就是死锁
 	dbLock.RLock()
 	object, err := newTransaction(ctx, dbPath, token)
 	if err != nil {
