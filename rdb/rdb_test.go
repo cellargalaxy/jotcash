@@ -729,3 +729,26 @@ func TestTransactionUnlockOnFail(t *testing.T) {
 		t.Fatalf("开事务失败没还回读锁，换口令被永久挡住")
 	}
 }
+
+// 开连接失败时读锁同样要还回去，否则之后任何要写锁的操作都会永久卡住
+func TestOpenUnlockOnFail(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if object, err := Open(newTokenCtx("wrong-client-token")); err == nil {
+		object.Close(ctx)
+		t.Fatalf("错误口令开连接应报错")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ChangeToken(ctx, "new-client-token-8")
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("换口令异常: %+v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("开连接失败没还回读锁，换口令被永久挡住")
+	}
+}
