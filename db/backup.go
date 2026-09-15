@@ -188,9 +188,9 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		AddCommit(NewSchemaCheckHandler()).
 		AddCommit(NewMigrateHandler()).
 		AddCommit(handlers...).
-		AddRollback(NewDbRemoveHandler(backupPath)).
 		Exec(ctx)
 	if err != nil {
+		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 

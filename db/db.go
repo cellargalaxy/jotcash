@@ -115,6 +115,12 @@ func create(ctx context.Context, dbPath, token string) error {
 	if info != nil && info.Size() > 0 {
 		return nil
 	}
+	dbLock.Lock()
+	defer dbLock.Unlock()
+	info = util.GetFileInfo(ctx, dbPath)
+	if info != nil && info.Size() > 0 {
+		return nil
+	}
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库")
 
 	err := util.WriteData2File(ctx, nil, dbPath)
@@ -135,7 +141,6 @@ func create(ctx context.Context, dbPath, token string) error {
 		Result:        model.ResultSuccess,
 	}
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		//todo，为什么要遍历一遍migrateModels转到models里
 		models := make([]any, 0, len(migrateModels))
 		for i := range migrateModels {
 			models = append(models, migrateModels[i])
