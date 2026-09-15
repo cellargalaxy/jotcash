@@ -17,7 +17,7 @@ const (
 )
 
 const (
-	dbBackupCron     = "0 0 4 * * *"      //数据库备份时间：每天凌晨4点
+	dbBackupCron     = "0 4 * * *"        //数据库备份时间：每天凌晨4点
 	dbBackupLimit    = 5                  //数据库备份上限
 	expenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
 	importFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB

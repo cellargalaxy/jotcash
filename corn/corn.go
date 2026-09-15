@@ -13,14 +13,14 @@ import (
 func Init(ctx context.Context) error {
 	var err error
 	object := cron.New()
-	defer object.Start()
 
 	_, err = object.AddJob(config.GetConfig(ctx).DbBackupCron, new(BackupDbJob))
 	if err != nil {
 		return err
 	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbBackupCron": config.GetConfig(ctx).DbBackupCron}).Info("定时任务，备份数据库")
 
+	object.Start()
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbBackupCron": config.GetConfig(ctx).DbBackupCron}).Info("定时任务，备份数据库")
 	return nil
 }
 
@@ -30,5 +30,9 @@ type BackupDbJob struct {
 func (this *BackupDbJob) Run() {
 	ctx := util.GenCtx()
 
-	service.Backup(ctx)
+	err := service.Backup(ctx)
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("定时任务，备份数据库异常")
+		return
+	}
 }
