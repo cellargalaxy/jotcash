@@ -51,11 +51,11 @@ func UpdateExpense(ctx context.Context, req model.Expense) (any, error) {
 		return nil, errors.Errorf("明细编辑，数据已落后，请刷新页面重新加载")
 	}
 
-	object := *before
-	object.BankName, object.CardLast4 = req.BankName, req.CardLast4
-	object.ExpenseDate, object.ExpenseCurrency, object.ExpenseAmount = req.ExpenseDate, req.ExpenseCurrency, req.ExpenseAmount
-	object.Counterparty, object.Remark = req.Counterparty, req.Remark
-	object.ExchangeRate, object.ExpenseType, object.AmortizationMonths = req.ExchangeRate, req.ExpenseType, req.AmortizationMonths
+	object := req
+	object.Id, object.Version = before.Id, before.Version
+	object.AccountingCurrency = before.AccountingCurrency
+	object.OperationId, object.FileId = before.OperationId, before.FileId
+	object.CreatedAt, object.UpdatedAt, object.DeletedAt = before.CreatedAt, before.UpdatedAt, before.DeletedAt
 	//汇率置零即交给自动获取：支出日期或支出币种变了要按新值重取，手填了新汇率则以手填值为准
 	if !object.ExpenseDate.Equal(before.ExpenseDate) || object.ExpenseCurrency != before.ExpenseCurrency {
 		if object.ExchangeRate.Equal(before.ExchangeRate) {

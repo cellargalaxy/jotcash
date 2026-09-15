@@ -475,6 +475,10 @@ func TestUpdateExpenseImmutable(t *testing.T) {
 	if util.Time2Str(util.GenCtx(), util.DateLayout_2006_01_02, object.AmortizationStartMonth, nil) != "2026-01-01" {
 		t.Errorf("摊分起始月应按支出日期算: %v", object.AmortizationStartMonth)
 	}
+	//响应里的创建时间与删除时间取库内值，不能把请求里塞的那份回显出去
+	if object.DeletedAt.Valid || !object.CreatedAt.Equal(before.Data.Object[0].CreatedAt) {
+		t.Errorf("响应不该回显请求里的创建时间与删除时间: created=%v deleted=%v", object.CreatedAt, object.DeletedAt)
+	}
 	//请求里塞的删除时间不能把行删掉，创建时间也不该被顶掉
 	after := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{early.Id}})
 	if after.Data.Count != 1 {
