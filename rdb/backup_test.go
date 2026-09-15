@@ -37,7 +37,7 @@ func TestExport(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导回异常: %+v", err)
 	}
-	gormDb, err := Open(ctx)
+	gormDb, err := open(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("导回后打开数据库异常: %+v", err)
 	}
@@ -46,7 +46,7 @@ func TestExport(t *testing.T) {
 			t.Errorf("导入后应把表结构补齐，缺表: %s", migrateModels[i].TableName())
 		}
 	}
-	gormDb.Close(ctx)
+	util.CloseDb(ctx, gormDb)
 
 	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"gorm.io/gorm"
 )
@@ -13,11 +14,11 @@ import (
 // 四张表都不该被物理删：明细只软删，审计与文件只增不删
 func TestMigrateTriggerForbidDelete(t *testing.T) {
 	ctx := newTestCtx(t)
-	db, err := Open(ctx)
+	db, err := open(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer db.Close(ctx)
+	defer util.CloseDb(ctx, db)
 
 	operationId, fileId := util.GenId(), util.GenId()
 	seeds := []any{
@@ -79,11 +80,11 @@ func TestMigrateTriggerAllowSoftDelete(t *testing.T) {
 // gormlite改表是「建临时表→拷数据→DROP旧表→改名」，触发器会随旧表一起没掉，建表链必须每次重挂
 func TestMigrateTriggerRebuild(t *testing.T) {
 	ctx := newTestCtx(t)
-	db, err := Open(ctx)
+	db, err := open(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer db.Close(ctx)
+	defer util.CloseDb(ctx, db)
 
 	trigger := model.Expense{}.TableName() + "_forbid_delete"
 	if err := db.WithContext(ctx).Exec("drop trigger `" + trigger + "`").Error; err != nil {

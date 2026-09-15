@@ -218,7 +218,7 @@ func TestCreate(t *testing.T) {
 	}
 
 	tokenCtx := newTokenCtx(clientToken)
-	gormDb, err := Open(tokenCtx)
+	gormDb, err := open(tokenCtx, config.DbPath, clientToken)
 	if err != nil {
 		t.Fatalf("用建库口令打开库异常: %+v", err)
 	}
@@ -227,7 +227,7 @@ func TestCreate(t *testing.T) {
 			t.Errorf("表未建出来: %T", object)
 		}
 	}
-	gormDb.Close(tokenCtx)
+	util.CloseDb(tokenCtx, gormDb)
 	objects, count, err := selectOperationLog(tokenCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
 	if err != nil {
 		t.Fatalf("查询系统初始化审计异常: %+v", err)
@@ -314,8 +314,8 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	}
 	util.RemoveFile(ctx, config.DbPath)
 
-	if gormDb, err := Open(ctx); err == nil {
-		gormDb.Close(ctx)
+	if gormDb, err := open(ctx, config.DbPath, testClientToken); err == nil {
+		util.CloseDb(ctx, gormDb)
 		t.Errorf("库文件不存在时开库应报错")
 	}
 	//NewTransaction只做普通读写，不碰建库：库文件不在就直接报错，不能拿请求带的口令悄悄建一个空库顶上
@@ -333,21 +333,21 @@ func TestOpenWithoutDbFile(t *testing.T) {
 		t.Fatalf("写0字节库文件异常: %+v", err)
 	}
 	//open只看库文件在不在，0字节按一个还没写过页的空库处理，开得起来
-	gormDb, err := Open(ctx)
+	gormDb, err := open(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Errorf("0字节库文件应能开库: %+v", err)
 	}
-	gormDb.Close(ctx)
+	util.CloseDb(ctx, gormDb)
 }
 
 func TestAutoMigrate(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	gormDb, err := Open(ctx)
+	gormDb, err := open(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer gormDb.Close(ctx)
+	defer util.CloseDb(ctx, gormDb)
 
 	for _, object := range []interface{}{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}} {
 		if !gormDb.Migrator().HasTable(object) {
@@ -355,7 +355,7 @@ func TestAutoMigrate(t *testing.T) {
 		}
 	}
 	handler := NewMigrateHandler()
-	if err = handler.Exec(ctx, gormDb.DB); err != nil {
+	if err = handler.Exec(ctx, gormDb); err != nil {
 		t.Errorf("重复自动建表异常: %+v", err)
 	}
 }
@@ -409,9 +409,9 @@ func TestCheckToken(t *testing.T) {
 func TestOpenClientToken(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	gormDb, err := Open(newTokenCtx("wrong-client-token"))
+	gormDb, err := open(ctx, config.DbPath, "wrong-client-token")
 	if err == nil {
-		gormDb.Close(ctx)
+		util.CloseDb(ctx, gormDb)
 		t.Fatalf("错误口令应报错")
 	}
 	if !strings.Contains(err.Error(), "口令错误或数据库文件损坏") {
@@ -424,8 +424,8 @@ func TestOpenClientToken(t *testing.T) {
 	if err = util.WriteData2File(ctx, []byte("我不是数据库"), config.DbPath); err != nil {
 		t.Fatalf("写坏库文件异常: %+v", err)
 	}
-	if gormDb, err = Open(ctx); err == nil {
-		gormDb.Close(ctx)
+	if gormDb, err = open(ctx, config.DbPath, testClientToken); err == nil {
+		util.CloseDb(ctx, gormDb)
 		t.Errorf("库文件损坏应报错")
 	}
 }
@@ -439,9 +439,8 @@ func TestTransactionWithoutClaims(t *testing.T) {
 	if _, _, err := selectExpense(newTokenCtx(""), model.ExpenseInquiry{}); err == nil {
 		t.Errorf("Claims无口令时查询应报错")
 	}
-	if gormDb, err := Open(util.GenCtx()); err == nil {
-		gormDb.Close(util.GenCtx())
-		t.Errorf("ctx无Claims时开库应报错")
+	if err := CheckToken(util.GenCtx()); err == nil {
+		t.Errorf("ctx无Claims时口令探针应报错")
 	}
 	if util.GetClaims[*model.Claims](util.SetClaims(util.GenCtx(), nil)) != nil {
 		t.Errorf("SetClaims传nil不应写入ctx")
@@ -581,50 +580,6 @@ func TestChangeTokenDuringTransaction(t *testing.T) {
 	}
 }
 
-// 拿着Open交出来的连接读写时换口令：读锁要是在交出连接那一刻就放掉，
-// 换口令最后一步的os.Rename会把连接指向的库文件顶掉，之后写进去的数据静默消失
-func TestOpenDuringChangeToken(t *testing.T) {
-	ctx := newTestCtx(t)
-	newToken := "new-client-token-6"
-	expense := newTestExpense()
-
-	var wg sync.WaitGroup
-	errs := make(chan error, 4)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		gormDb, err := Open(ctx)
-		if err != nil {
-			errs <- err
-			return
-		}
-		defer gormDb.Close(ctx)
-		//先把「连接已开出来」这个窗口拉开，让换口令挤进来，再往这条连接上写
-		time.Sleep(300 * time.Millisecond)
-		if err = gormDb.WithContext(ctx).Create(expense).Error; err != nil {
-			errs <- err
-		}
-	}()
-	//等连接开出来，再让换口令插进来
-	time.Sleep(100 * time.Millisecond)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := ChangeToken(ctx, newToken); err != nil {
-			errs <- err
-		}
-	}()
-	wg.Wait()
-	close(errs)
-
-	for err := range errs {
-		t.Errorf("并发异常: %+v", err)
-	}
-	if _, count, _ := selectExpense(newTokenCtx(newToken), model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
-		t.Errorf("在途连接写进去的数据不应被换口令顶掉: count=%d want=1", count)
-	}
-}
-
 func TestConcurrent(t *testing.T) {
 	ctx := newTestCtx(t)
 	if _, err := insertExpense(ctx, newTestExpense()); err != nil {
@@ -730,13 +685,12 @@ func TestTransactionUnlockOnFail(t *testing.T) {
 	}
 }
 
-// 开连接失败时读锁同样要还回去，否则之后任何要写锁的操作都会永久卡住
-func TestOpenUnlockOnFail(t *testing.T) {
+// 口令探针失败时读锁同样要还回去，否则之后任何要写锁的操作都会永久卡住
+func TestCheckTokenUnlockOnFail(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	if object, err := Open(newTokenCtx("wrong-client-token")); err == nil {
-		object.Close(ctx)
-		t.Fatalf("错误口令开连接应报错")
+	if err := CheckToken(newTokenCtx("wrong-client-token")); err == nil {
+		t.Fatalf("错误口令探针应报错")
 	}
 
 	done := make(chan error, 1)
@@ -749,6 +703,6 @@ func TestOpenUnlockOnFail(t *testing.T) {
 			t.Errorf("换口令异常: %+v", err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatalf("开连接失败没还回读锁，换口令被永久挡住")
+		t.Fatalf("口令探针失败没还回读锁，换口令被永久挡住")
 	}
 }
