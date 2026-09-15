@@ -37,6 +37,7 @@ func NewEngine(ctx context.Context) *gin.Engine {
 	engine.POST(config.PathExpenseDistinct, validate, util.NewGinPost("候选取值", service.SelectExpenseDistinct))
 	engine.POST(config.PathOperationLogSelect, validate, util.NewGinPost("审计查看", service.SelectOperationLog))
 	engine.POST(config.PathFileMetaSelect, validate, util.NewGinPost("文件列表", service.SelectFileMeta))
+	engine.POST(config.PathFileMetaDownload, validate, DownloadFile)
 	engine.POST(config.PathChangeToken, validate, util.NewGinPost("更换口令", service.ChangeToken))
 	engine.POST(config.PathExportDb, validate, Export)
 	engine.POST(config.PathImportDb, validate, Import)
