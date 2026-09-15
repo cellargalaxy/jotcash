@@ -216,7 +216,7 @@ func TestDownloadFileBroken(t *testing.T) {
 	if resp.Code == http.StatusOK {
 		t.Fatalf("内容对不上哈希应阻止下载: %+v", resp)
 	}
-	if !strings.Contains(resp.Msg, "内容校验不通过") {
+	if !strings.Contains(resp.Msg, "文件数据已损坏") {
 		t.Errorf("应给出校验不通过的原因: %+v", resp)
 	}
 }
