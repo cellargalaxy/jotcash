@@ -608,9 +608,13 @@ func TestSwitchAccountingCurrency(t *testing.T) {
 		if object.AccountingCurrency != "JPY" {
 			t.Errorf("记账币种应改成目标: %+v", object)
 		}
+		expectedRate, err := exchange_rate.GetExchangeRate(util.GenCtx(), object.ExpenseCurrency, object.AccountingCurrency, object.ExpenseDate)
+		if err != nil {
+			t.Fatalf("获取预期汇率异常: %+v", err)
+		}
 		//原汇率7.12345678被无条件覆盖成自动获取的值
-		if !object.ExchangeRate.Equal(decimalOf(t, "1")) {
-			t.Errorf("汇率应被无条件覆盖: %s", object.ExchangeRate)
+		if !object.ExchangeRate.Equal(expectedRate) {
+			t.Errorf("汇率应被无条件覆盖: got=%s want=%s", object.ExchangeRate, expectedRate)
 		}
 		if !object.AccountingAmount.Equal(object.ExpenseAmount.Mul(object.ExchangeRate).Round(scale)) {
 			t.Errorf("记账金额应重算: amount=%s expense=%s", object.AccountingAmount, object.ExpenseAmount)
