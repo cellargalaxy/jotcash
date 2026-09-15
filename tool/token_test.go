@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/tool"
 )
 
@@ -32,6 +33,10 @@ func TestGenToken(t *testing.T) {
 		}
 		if tokens[token] {
 			t.Fatalf("生成的口令重复: %s", token)
+		}
+		//字符集里刻意剔掉了0/1/l/I/O这些肉眼分不开的字符，口令是要用户手抄的
+		if strings.ContainsAny(token, "01lIO ") {
+			t.Fatalf("口令含易混字符或空格: %s", token)
 		}
 		tokens[token] = true
 	}
@@ -68,5 +73,24 @@ func TestCheckToken(t *testing.T) {
 	}
 	if err := tool.CheckToken(ctx, "口令口令口令口令口令口1"); err != nil {
 		t.Errorf("非纯数字应通过: %+v", err)
+	}
+}
+
+func TestGetToken(t *testing.T) {
+	ctx := util.GenCtx()
+
+	if _, err := tool.GetToken(ctx); err == nil {
+		t.Errorf("ctx无Claims时取口令应报错")
+	}
+	if _, err := tool.GetToken(util.SetClaims(ctx, &model.Claims{})); err == nil {
+		t.Errorf("Claims无口令时取口令应报错")
+	}
+
+	token, err := tool.GetToken(util.SetClaims(ctx, &model.Claims{ClientToken: "abcdefghijk1"}))
+	if err != nil {
+		t.Fatalf("取口令异常: %+v", err)
+	}
+	if token != "abcdefghijk1" {
+		t.Errorf("取到的口令不符: got=%s want=abcdefghijk1", token)
 	}
 }

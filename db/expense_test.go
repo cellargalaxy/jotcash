@@ -135,7 +135,12 @@ func TestExpenseVersion(t *testing.T) {
 	}
 
 	rollbackExpense := newTestExpense()
-	err = Transaction(ctx, NewExpenseInsertHandler(rollbackExpense), NewExpenseUpdateHandler(&second))
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("开事务异常: %+v", err)
+	}
+	err = transaction.AddCommit(NewExpenseInsertHandler(rollbackExpense), NewExpenseUpdateHandler(&second)).Exec(ctx)
+	transaction.Close(ctx)
 	if err == nil {
 		t.Fatalf("版本冲突应报错")
 	}
@@ -370,5 +375,79 @@ func TestExpensePage(t *testing.T) {
 	}
 	if count != 0 || len(objects) != 0 {
 		t.Errorf("未命中的筛选条件应查不到: count=%d len=%d", count, len(objects))
+	}
+}
+
+// ExpenseInquiry的等值筛选项逐个走一遍，漏接一项就是静默查全表
+func TestExpenseInquiryField(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	fileId := util.GenId()
+	hit := &model.Expense{
+		Id: util.GenId(), BankName: "招商银行", CardLast4: "6789", ExpenseDate: time.Now(),
+		ExpenseCurrency: "USD", AccountingCurrency: "CNY", ExpenseType: "购物_线上",
+		AmortizationMonths: 3, OperationId: util.GenId(), FileId: fileId, Version: 1,
+	}
+	miss := &model.Expense{
+		Id: util.GenId(), BankName: "工商银行", CardLast4: "4321", ExpenseDate: time.Now(),
+		ExpenseCurrency: "JPY", AccountingCurrency: "CNY", ExpenseType: "购物X线下",
+		AmortizationMonths: 6, OperationId: util.GenId(), FileId: util.GenId(), Version: 2,
+	}
+	if _, err := InsertExpense(ctx, hit, miss); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	for name, inquiry := range map[string]model.ExpenseInquiry{
+		"银行名称":  {BankName: []string{hit.BankName}},
+		"卡号后四位": {CardLast4: []string{hit.CardLast4}},
+		"支出币种":  {ExpenseCurrency: []string{hit.ExpenseCurrency}},
+		"记账币种":  {AccountingCurrency: []string{hit.AccountingCurrency}, BankName: []string{hit.BankName}},
+		"支出类型":  {ExpenseType: []string{hit.ExpenseType}},
+		"摊分月数":  {AmortizationMonths: []int{hit.AmortizationMonths}},
+		"操作Id":  {OperationId: []int64{hit.OperationId}},
+		"文件Id":  {FileId: []int64{fileId}},
+		"版本号":   {Version: []int{hit.Version}},
+		//下划线是like的单字符通配符，没转义就会把"购物X线下"也匹进来
+		"支出类型模糊": {ExpenseTypeLike: "购物_线"},
+	} {
+		objects, count, err := SelectExpense(ctx, inquiry)
+		if err != nil {
+			t.Fatalf("%s筛选异常: %+v", name, err)
+		}
+		if count != 1 || len(objects) != 1 || objects[0].Id != hit.Id {
+			t.Errorf("%s筛选不符: count=%d %+v", name, count, objects)
+		}
+	}
+
+	//记账币种取反把两条都排掉
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}}); count != 0 {
+		t.Errorf("记账币种取反: count=%d want=0", count)
+	}
+}
+
+// 空入参一路走到底是「什么都不做」，不能报错、更不能误伤已有数据
+func TestExpenseEmptyObject(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	origin := newTestExpense()
+	if _, err := InsertExpense(ctx, origin); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	count, err := InsertExpense(ctx)
+	if err != nil || count != 0 {
+		t.Errorf("空插入: count=%d err=%+v", count, err)
+	}
+	count, err = UpdateExpense(ctx, nil)
+	if err != nil || count != 0 {
+		t.Errorf("空更新: count=%d err=%+v", count, err)
+	}
+
+	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{})
+	if err != nil {
+		t.Fatalf("查询异常: %+v", err)
+	}
+	if count != 1 || len(objects) != 1 || objects[0].Version != origin.Version {
+		t.Errorf("空入参误伤了已有数据: count=%d %+v", count, objects)
 	}
 }

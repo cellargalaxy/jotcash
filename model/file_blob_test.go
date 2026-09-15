@@ -22,3 +22,10 @@ func TestFileBlobJson(t *testing.T) {
 		t.Errorf("FileHash应出现在序列化结果中: %s", blob.String())
 	}
 }
+
+func TestFileBlobInquiryString(t *testing.T) {
+	inquiry := model.FileBlobInquiry{FileHash: []string{"abc123"}, PageSize: 40}
+	if !strings.Contains(inquiry.String(), "\"page_size\":40") {
+		t.Errorf("FileBlobInquiry.String()异常: %s", inquiry.String())
+	}
+}

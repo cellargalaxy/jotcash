@@ -319,7 +319,12 @@ func TestTransaction(t *testing.T) {
 
 	expense := newTestExpense()
 	operationLog := &model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Result: model.ResultSuccess}
-	err := Transaction(ctx, NewExpenseInsertHandler(expense), NewOperationLogInsertHandler(operationLog))
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("开事务异常: %+v", err)
+	}
+	err = transaction.AddCommit(NewExpenseInsertHandler(expense), NewOperationLogInsertHandler(operationLog)).Exec(ctx)
+	transaction.Close(ctx)
 	if err != nil {
 		t.Fatalf("事务异常: %+v", err)
 	}
@@ -331,10 +336,15 @@ func TestTransaction(t *testing.T) {
 	}
 
 	rollbackExpense := newTestExpense()
-	err = Transaction(ctx,
+	transaction, err = NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("开事务异常: %+v", err)
+	}
+	err = transaction.AddCommit(
 		NewExpenseInsertHandler(rollbackExpense),
 		NewOperationLogInsertHandler(&model.OperationLog{Id: operationLog.Id, Result: model.ResultSuccess}),
-	)
+	).Exec(ctx)
+	transaction.Close(ctx)
 	if err == nil {
 		t.Fatalf("主键冲突应报错")
 	}
@@ -353,11 +363,17 @@ func TestConcurrentTransaction(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 8; j++ {
+				transaction, err := NewTransaction(ctx)
+				if err != nil {
+					errs <- err
+					return
+				}
 				//先读后写的混合事务，是SQLite锁升级失败的典型场景
-				err := Transaction(ctx,
+				err = transaction.AddCommit(
 					NewExpenseSelectHandler(model.ExpenseInquiry{PageSize: 1}),
 					NewExpenseInsertHandler(newTestExpense()),
-				)
+				).Exec(ctx)
+				transaction.Close(ctx)
 				if err != nil {
 					errs <- err
 					return
@@ -401,7 +417,13 @@ func TestChangeTokenDuringTransaction(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := Transaction(ctx, &slowInsertHandler{expense: expense}); err != nil {
+		transaction, err := NewTransaction(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		defer transaction.Close(ctx)
+		if err = transaction.AddCommit(&slowInsertHandler{expense: expense}).Exec(ctx); err != nil {
 			errs <- err
 		}
 	}()
@@ -472,5 +494,60 @@ func TestConcurrent(t *testing.T) {
 	}
 	if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
 		t.Errorf("并发之后查询异常: %+v", err)
+	}
+}
+
+// 提交链失败时回滚钩子要跑起来，失败审计才补得进去
+func TestTransactionRollbackHook(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	origin := newTestExpense()
+	if _, err := InsertExpense(ctx, origin); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	rollbackLog := &model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Result: model.ResultFailure}
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("开事务异常: %+v", err)
+	}
+	//第二个handler拿同一个主键再插一遍，逼提交链失败
+	err = transaction.
+		AddCommit(NewExpenseInsertHandler(newTestExpense()), NewExpenseInsertHandler(origin)).
+		AddRollback(NewOperationLogInsertHandler(rollbackLog)).
+		Exec(ctx)
+	transaction.Close(ctx)
+	if err == nil {
+		t.Fatalf("主键冲突应报错")
+	}
+
+	if _, count, _ := SelectOperationLog(ctx, model.OperationLogInquiry{Id: []int64{rollbackLog.Id}}); count != 1 {
+		t.Errorf("回滚钩子没跑，失败审计没落库: count=%d want=1", count)
+	}
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
+		t.Errorf("回滚钩子不应把提交链里的插入留下来: count=%d want=1", count)
+	}
+}
+
+// 开事务失败时读锁必须还回去，否则之后任何要写锁的操作都会永久卡住
+func TestTransactionUnlockOnFail(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if object, err := NewTransaction(newTokenCtx("wrong-client-token")); err == nil {
+		object.Close(ctx)
+		t.Fatalf("错误口令开事务应报错")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ChangeToken(ctx, "new-client-token-3")
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("换口令异常: %+v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("开事务失败没还回读锁，换口令被永久挡住")
 	}
 }

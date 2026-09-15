@@ -393,3 +393,132 @@ func TestImportForeignDb(t *testing.T) {
 		t.Errorf("原口令应照常可用: %+v", err)
 	}
 }
+
+// 四个直接操作库文件的函数，入参不合法时必须在碰盘之前就拦下来
+func TestBackupIllegalArgument(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	dstPath := "resource/backup.db"
+	if err := backup(ctx, "resource/not-exist.db", testClientToken, dstPath, testClientToken); err == nil {
+		t.Errorf("来源库文件不存在应报错")
+	}
+	if err := backup(ctx, config.DbPath, "", dstPath, testClientToken); err == nil {
+		t.Errorf("来源口令为空应报错")
+	}
+	if err := backup(ctx, config.DbPath, testClientToken, dstPath, ""); err == nil {
+		t.Errorf("目标口令为空应报错")
+	}
+	if util.GetPathInfo(ctx, dstPath) != nil {
+		t.Errorf("入参不合法时不应留下目标文件: %s", dstPath)
+	}
+
+	//目标文件已存在就得拒掉，不能把别人的库覆盖成快照
+	if err := util.WriteData2File(ctx, []byte("占位"), dstPath); err != nil {
+		t.Fatalf("写占位文件异常: %+v", err)
+	}
+	if err := backup(ctx, config.DbPath, testClientToken, dstPath, testClientToken); err == nil {
+		t.Errorf("目标文件已存在应报错")
+	}
+	data, err := util.ReadFile2Data(ctx, dstPath, nil)
+	if err != nil {
+		t.Fatalf("读占位文件异常: %+v", err)
+	}
+	if string(data) != "占位" {
+		t.Errorf("已存在的目标文件被覆盖了: %s", data)
+	}
+	util.RemoveFile(ctx, dstPath)
+
+	if err := Export(ctx, nil); err == nil {
+		t.Errorf("写出目标为空应报错")
+	}
+	if err := Import(ctx, nil); err == nil {
+		t.Errorf("读入来源为空应报错")
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("入参不合法的导入导出不应留下临时文件: %d", len(files))
+	}
+}
+
+func TestClearBackupIllegalArgument(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if err := clearBackup(ctx, "", config.GetConfig(ctx).DbBackupLimit); err == nil {
+		t.Errorf("备份目录为空应报错")
+	}
+	//保留0份等于把备份全删光，配置兜底之外再拦一道
+	if err := clearBackup(ctx, config.DbBackupPath, 0); err == nil {
+		t.Errorf("保留数量为0应报错")
+	}
+	if err := clearBackup(ctx, config.DbBackupPath, -1); err == nil {
+		t.Errorf("保留数量为负应报错")
+	}
+
+	//没到上限就一份都不该删
+	backupPath, err := genBackupPath(ctx)
+	if err != nil {
+		t.Fatalf("生成备份路径异常: %+v", err)
+	}
+	if err = util.WriteData2File(ctx, []byte("backup"), backupPath); err != nil {
+		t.Fatalf("写备份文件异常: %+v", err)
+	}
+	if err = ClearBackup(ctx); err != nil {
+		t.Fatalf("清理备份异常: %+v", err)
+	}
+	if util.GetPathInfo(ctx, backupPath) == nil {
+		t.Errorf("没到上限的备份不应被清掉: %s", backupPath)
+	}
+}
+
+// 导出/导入/换口令的口令与库文件守卫：它们挡的是越权，公开入口取不到空口令，只能直接打私有函数
+func TestBackupGuard(t *testing.T) {
+	ctx := newTestCtx(t)
+	buffer := new(bytes.Buffer)
+
+	if err := export(ctx, "resource/not-exist.db", testClientToken, buffer); err == nil {
+		t.Errorf("库文件不存在时导出应报错")
+	}
+	if err := export(ctx, config.DbPath, "", buffer); err == nil {
+		t.Errorf("口令为空时导出应报错")
+	}
+	if buffer.Len() > 0 {
+		t.Errorf("被守卫拦下的导出不应写出内容: %d", buffer.Len())
+	}
+
+	if err := import_(ctx, "resource/not-exist.db", testClientToken, bytes.NewReader(nil)); err == nil {
+		t.Errorf("库文件不存在时导入应报错")
+	}
+	if err := import_(ctx, config.DbPath, "", bytes.NewReader(nil)); err == nil {
+		t.Errorf("口令为空时导入应报错")
+	}
+
+	if err := changeToken(ctx, "resource/not-exist.db", testClientToken, "new-client-token-4"); err == nil {
+		t.Errorf("库文件不存在时换口令应报错")
+	}
+	if err := changeToken(ctx, config.DbPath, "", "new-client-token-4"); err == nil {
+		t.Errorf("旧口令为空时换口令应报错")
+	}
+	if err := changeToken(ctx, config.DbPath, testClientToken, ""); err == nil {
+		t.Errorf("新口令为空时换口令应报错")
+	}
+
+	if gormDb, err := open(ctx, config.DbPath, ""); err == nil {
+		util.CloseDb(ctx, gormDb)
+		t.Errorf("口令为空时开库应报错")
+	}
+
+	//守卫拦下的这几次都没碰过库，原口令与数据都得原样在
+	if err := CheckToken(ctx); err != nil {
+		t.Errorf("原口令应照常可用: %+v", err)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("被守卫拦下的操作不应留下临时文件: %d", len(files))
+	}
+}
