@@ -37,7 +37,7 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 	if err != nil {
 		return err
 	}
-	defer Close(ctx, gormDb)
+	defer util.CloseDb(ctx, gormDb)
 
 	sqlDb, err := gormDb.DB()
 	if err != nil {
@@ -74,7 +74,7 @@ func replace(ctx context.Context, backupPath, dbPath, token string) error {
 	if err != nil {
 		return err
 	}
-	err = Close(ctx, gormDb)
+	err = util.CloseDb(ctx, gormDb)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,12 @@ func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionH
 }
 func export(ctx context.Context, dbPath, token string, writer io.Writer, handlers ...util.TransactionHandler) error {
 	if len(handlers) > 0 {
-		err := transaction(ctx, dbPath, token, handlers...)
+		object, err := newTransaction(ctx, dbPath, token)
+		if err != nil {
+			return err
+		}
+		defer object.Close(ctx)
+		err = object.AddCommit(handlers...).Exec(ctx)
 		if err != nil {
 			return err
 		}
@@ -176,7 +181,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	defer Close(ctx, gormDb)
+	defer util.CloseDb(ctx, gormDb)
 
 	//库结构校验要排在建表前面，否则建表会把缺的表补出来，外来库就混过去了
 	err = util.NewTransaction(gormDb).
@@ -239,7 +244,13 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string, handler
 	}
 
 	if len(handlers) > 0 {
-		err = transaction(ctx, backupPath, newToken, handlers...)
+		object, err := newTransaction(ctx, backupPath, newToken)
+		if err != nil {
+			util.RemoveFile(ctx, backupPath)
+			return err
+		}
+		defer object.Close(ctx)
+		err = object.AddCommit(handlers...).Exec(ctx)
 		if err != nil {
 			util.RemoveFile(ctx, backupPath)
 			return err

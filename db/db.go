@@ -24,19 +24,6 @@ const vfsName = "adiantum"
 
 var dbLock sync.RWMutex
 
-func init() {
-	ctx := util.GenCtx()
-	err := Create(ctx)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func existDb(ctx context.Context, dbPath string) bool {
-	info := util.GetFileInfo(ctx, dbPath)
-	return info != nil && info.Size() > 0
-}
-
 func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	if token == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("连接数据库，口令为空")
@@ -81,122 +68,17 @@ func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	}
 	return gormDb, nil
 }
-
-func NewCreateDbHandler(dbPath, token string) *CreateDbHandler {
-	handler := new(CreateDbHandler)
-	handler.dbPath = dbPath
-	handler.token = token
-	return handler
-}
-
-type CreateDbHandler struct {
-	dbPath string
-	token  string
-}
-
-func (this *CreateDbHandler) Exec(ctx context.Context, tx *gorm.DB) error {
-	if existDb(ctx, this.dbPath) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": this.dbPath}).Warn("创建数据库，库文件已存在")
-		return nil
+func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
+	if util.GetFileInfo(ctx, dbPath) == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在")
+		return nil, errors.Errorf("打开数据库，库文件不存在")
 	}
-
-	db, err := connect(ctx, this.dbPath, this.token)
+	db, err := connect(ctx, dbPath, token)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer util.CloseDb(ctx, db)
-	return nil
+	return db, nil
 }
-
-func NewDbRemoveHandler(dbPath string) *DbRemoveHandler {
-	handler := new(DbRemoveHandler)
-	handler.dbPath = dbPath
-	return handler
-}
-
-type DbRemoveHandler struct {
-	dbPath string
-}
-
-func (this *DbRemoveHandler) Exec(ctx context.Context, tx *gorm.DB) error {
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": this.dbPath}).Info("删除数据库")
-	err := util.RemoveFile(ctx, this.dbPath)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func NewTokenLogHandler(dbPath, token string) *CreateDbHandler {
-	handler := new(CreateDbHandler)
-	handler.dbPath = dbPath
-	handler.token = token
-	return handler
-}
-
-type TokenLogHandler struct {
-	dbPath string
-	token  string
-}
-
-func (this *TokenLogHandler) Exec(ctx context.Context, tx *gorm.DB) error {
-	logrus.WithContext(ctx).WithFields(logrus.Fields{
-		"dbPath":      this.dbPath,
-		"serverToken": config.GetConfig(ctx).ServerToken,
-		"clientToken": this.token,
-	}).Info("创建数据库，口令")
-	return nil
-}
-
-func Create(ctx context.Context) error {
-	dbPath := config.DbPath
-	token, err := tool.GenToken(ctx, tool.TokenLen)
-	if err != nil {
-		return err
-	}
-
-	operationLog := model.OperationLog{
-		Id:            util.GenId(),
-		OperationType: model.OperationTypeSystemInit,
-		Summary:       "系统初始化，创建加密数据库",
-		Result:        model.ResultSuccess,
-	}
-	operationLogHandler := NewOperationLogInsertHandler(&operationLog)
-
-	dbLock.Lock()
-	defer dbLock.Unlock()
-
-	return create(ctx, dbPath, token, operationLogHandler)
-}
-func create(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
-	if existDb(ctx, dbPath) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库，库文件已存在")
-		return nil
-	}
-
-	gormDb, err := connect(ctx, dbPath, token)
-	if err != nil {
-		//连接是在事务之前建的库文件，它的残骸只能在事务之外清
-		util.RemoveFile(ctx, dbPath)
-		return err
-	}
-	defer util.CloseDb(ctx, gormDb)
-
-	//建表与调用方的handler同处一个提交链，回滚链负责把没建成的库文件删掉
-	err = util.NewTransaction(gormDb).
-		AddCommit(NewMigrateHandler()).
-		AddCommit(handlers...).
-		AddRollback(NewDbRemoveHandler(dbPath)).
-		Exec(ctx)
-	if err != nil {
-		return err
-	}
-
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Info("创建数据库，前端口令")
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"serverToken": config.GetConfig(ctx).ServerToken}).Info("创建数据库，后端口令")
-	return nil
-}
-
 func Open(ctx context.Context) (*gorm.DB, error) {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
@@ -207,43 +89,88 @@ func Open(ctx context.Context) (*gorm.DB, error) {
 	dbLock.RLock()
 	defer dbLock.RUnlock()
 
-	gormDb, err := open(ctx, dbPath, token)
+	db, err := open(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
 	}
-	return gormDb, nil
+	return db, nil
 }
-func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
-	if !existDb(ctx, dbPath) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在或为空")
-		return nil, errors.Errorf("打开数据库，库文件不存在或为空")
-	}
-
-	gormDb, err := connect(ctx, dbPath, token)
-	if err != nil {
-		return nil, err
-	}
-	return gormDb, nil
-}
-
 func CheckToken(ctx context.Context) error {
-	gormDb, err := Open(ctx)
+	db, err := Open(ctx)
 	if err != nil {
 		return err
 	}
-	return Close(ctx, gormDb)
+	return util.CloseDb(ctx, db)
 }
 func checkToken(ctx context.Context, dbPath, token string) error {
-	gormDb, err := open(ctx, dbPath, token)
+	db, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
-	return Close(ctx, gormDb)
+	return util.CloseDb(ctx, db)
 }
 
+func create(ctx context.Context, dbPath, token string) error {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info != nil && info.Size() > 0 {
+		return nil
+	}
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库")
+
+	err := util.WriteData2File(ctx, nil, dbPath)
+	if err != nil {
+		return err
+	}
+	db, err := open(ctx, dbPath, token)
+	if err != nil {
+		util.RemoveFile(ctx, dbPath)
+		return err
+	}
+	defer util.CloseDb(ctx, db)
+
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeSystemInit,
+		Summary:       "系统初始化，创建加密数据库",
+		Result:        model.ResultSuccess,
+	}
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		//todo，为什么要遍历一遍migrateModels转到models里
+		models := make([]any, 0, len(migrateModels))
+		for i := range migrateModels {
+			models = append(models, migrateModels[i])
+		}
+		err := tx.AutoMigrate(models...)
+		if err != nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("创建数据库，建表异常")
+			return errors.Errorf("创建数据库，建表异常: %+v", err)
+		}
+		err = tx.Create(&operationLog).Error
+		if err != nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("创建数据库，写审计异常")
+			return errors.Errorf("创建数据库，写审计异常: %+v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		util.RemoveFile(ctx, dbPath)
+		return err
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"dbPath":      dbPath,
+		"serverToken": config.GetConfig(ctx).ServerToken,
+		"clientToken": token,
+	}).Info("创建数据库，口令")
+	return nil
+}
 func NewTransaction(ctx context.Context) (*util.Transaction, error) {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = create(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
 	}
