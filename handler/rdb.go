@@ -6,14 +6,12 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
-	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
-// 导出走的是二进制流，出错要能改回JSON响应，所以响应头拖到真正写第一个字节时再设
 type dbFileWriter struct {
 	c       *gin.Context
 	written bool
@@ -31,9 +29,9 @@ func (this *dbFileWriter) Write(data []byte) (int, error) {
 
 func Export(c *gin.Context) {
 	ctx := c.Request.Context()
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("数据库导出")
+
 	writer := &dbFileWriter{c: c}
-	err := db.Export(ctx, writer)
+	err := repo.Export(ctx, writer)
 	if err == nil {
 		return
 	}
@@ -46,7 +44,7 @@ func Export(c *gin.Context) {
 
 func Import(c *gin.Context) {
 	ctx := c.Request.Context()
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("数据库导入")
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.GetConfig(ctx).ImportFileLimit)
 	fileHeader, err := c.FormFile(config.ImportFileKey)
 	if err != nil {
@@ -61,5 +59,5 @@ func Import(c *gin.Context) {
 		return
 	}
 	defer util.CloseIo(ctx, file)
-	c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, db.Import(ctx, file)))
+	c.JSON(http.StatusOK, util.NewHttpRespByErr(nil, repo.Import(ctx, file)))
 }

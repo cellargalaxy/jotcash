@@ -5,7 +5,6 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
-	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -14,7 +13,7 @@ import (
 
 func InsertExpense(c *gin.Context) {
 	ctx := c.Request.Context()
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"claims": util.GetClaims[*model.Claims](ctx)}).Info("明细入库")
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, config.GetConfig(ctx).ExpenseFileLimit)
 	fileHeader, err := c.FormFile(config.ExpenseFileKey)
 	if err != nil {

@@ -29,8 +29,8 @@ func NewEngine(ctx context.Context) *gin.Engine {
 	engine := gin.Default()
 	engine.Use(util.GinLog)
 
-	engine.GET(util.PathPing, util.Ping)
-	engine.POST(util.PathPing, validate, Ping)
+	engine.GET(util.PathPing, util.GinPing)
+	engine.POST(util.PathPing, validate, GinPing)
 	engine.POST(config.PathExpenseInsert, validate, InsertExpense)
 	engine.POST(config.PathExpenseSelect, validate, util.NewGinPost("明细查询", service.SelectExpense))
 	engine.POST(config.PathExpenseDelete, validate, util.NewGinPost("明细删除", service.DeleteExpense))

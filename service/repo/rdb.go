@@ -1,10 +1,9 @@
-package db
+package repo
 
 import (
 	"context"
 	"io"
 
-	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/cellargalaxy/jotcash/tool"
 )
 

@@ -1,4 +1,4 @@
-package db
+package repo
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
