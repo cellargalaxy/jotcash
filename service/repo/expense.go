@@ -109,6 +109,28 @@ func SelectExpenseDistinct(ctx context.Context, inquiry model.ExpenseDistinctInq
 	return distinctHandler.Object, distinctHandler.Count, nil
 }
 
+func UpdateExpense(ctx context.Context, before, object *model.Expense) error {
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeExpenseEdit,
+		ObjectType:    model.ObjectTypeExpense,
+		ObjectId:      object.Id,
+		Summary:       fmt.Sprintf("编辑明细 %d", object.Id),
+		Changes:       util.JsonStruct2Str(model.ExpenseChanges{Before: before, After: object}),
+		Result:        model.ResultSuccess,
+	}
+
+	transaction, err := rdb.NewTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer transaction.Close(ctx)
+
+	expenseHandler := rdb.NewExpenseUpdateHandler(object)
+	operationLogHandler := rdb.NewOperationLogInsertHandler(&operationLog)
+	return transaction.AddCommit(expenseHandler, operationLogHandler).Exec(ctx)
+}
+
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, error) {
 	err := checkExpenseRange(ctx, inquiry)
 	if err != nil {

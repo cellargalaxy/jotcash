@@ -12,6 +12,7 @@ import (
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
 	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/pkg/errors"
+	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,6 +30,48 @@ func SelectExpenseDistinct(ctx context.Context, inquiry model.ExpenseDistinctInq
 		return nil, err
 	}
 	return common_model.HttpData{Object: objects, Count: count}, nil
+}
+
+func UpdateExpense(ctx context.Context, req model.Expense) (any, error) {
+	objects, _, err := repo.SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{req.Id}, Deleted: model.DeletedAll})
+	if err != nil {
+		return nil, err
+	}
+	if len(objects) == 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"id": req.Id}).Warn("明细编辑，明细不存在")
+		return nil, errors.Errorf("明细编辑，明细不存在: %d", req.Id)
+	}
+	before := objects[0]
+	if before.DeletedAt.Valid {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"id": req.Id}).Warn("明细编辑，已删除明细不可编辑")
+		return nil, errors.Errorf("明细编辑，已删除明细不可编辑: %d", req.Id)
+	}
+	if before.Version != req.Version {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"id": req.Id, "version": req.Version, "dbVersion": before.Version}).Warn("明细编辑，数据已落后")
+		return nil, errors.Errorf("明细编辑，数据已落后，请刷新页面重新加载")
+	}
+
+	object := *before
+	object.BankName, object.CardLast4 = req.BankName, req.CardLast4
+	object.ExpenseDate, object.ExpenseCurrency, object.ExpenseAmount = req.ExpenseDate, req.ExpenseCurrency, req.ExpenseAmount
+	object.Counterparty, object.Remark = req.Counterparty, req.Remark
+	object.ExchangeRate, object.ExpenseType, object.AmortizationMonths = req.ExchangeRate, req.ExpenseType, req.AmortizationMonths
+	//汇率置零即交给自动获取：支出日期或支出币种变了要按新值重取，手填了新汇率则以手填值为准
+	if !object.ExpenseDate.Equal(before.ExpenseDate) || object.ExpenseCurrency != before.ExpenseCurrency {
+		if object.ExchangeRate.Equal(before.ExchangeRate) {
+			object.ExchangeRate = decimal.Zero
+		}
+	}
+	err = expense.Derive(ctx, &object)
+	if err != nil {
+		return nil, errors.Errorf("明细编辑，%s", err)
+	}
+
+	err = repo.UpdateExpense(ctx, before, &object)
+	if err != nil {
+		return nil, err
+	}
+	return common_model.HttpData{Object: &object, Count: 1}, nil
 }
 
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {

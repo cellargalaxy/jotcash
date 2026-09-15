@@ -61,6 +61,12 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 	if object.AccountingCurrency == "" {
 		object.AccountingCurrency = accountingCurrency
 	}
+	object.Id = util.GenId()
+	object.Version = 1
+	return Derive(ctx, object)
+}
+
+func Derive(ctx context.Context, object *model.Expense) error {
 	err := checkCurrency(ctx, model.CsvAccountingCurrency, object.AccountingCurrency)
 	if err != nil {
 		return err
@@ -77,16 +83,14 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 		object.AmortizationMonths = 1
 	}
 
-	object.Id = util.GenId()
 	object.ExchangeRate = rate
 	object.AccountingAmount = object.ExpenseAmount.Mul(rate).Round(config.GetConfig(ctx).AmountScale)
 	object.AmortizationStartMonth = time.Date(object.ExpenseDate.Year(), object.ExpenseDate.Month(), 1, 0, 0, 0, 0, object.ExpenseDate.Location())
 	object.AmortizationEndMonth = object.AmortizationStartMonth.AddDate(0, object.AmortizationMonths-1, 0)
 	if object.AmortizationEndMonth.Before(object.AmortizationStartMonth) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("解析明细，摊分月数过大")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("明细摊分，月数过大")
 		return errors.Errorf("摊分月数过大: %d", object.AmortizationMonths)
 	}
-	object.Version = 1
 	return nil
 }
 
