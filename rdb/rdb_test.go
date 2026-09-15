@@ -227,7 +227,7 @@ func TestCreate(t *testing.T) {
 			t.Errorf("表未建出来: %T", object)
 		}
 	}
-	util.CloseDb(tokenCtx, gormDb)
+	gormDb.Close(tokenCtx)
 	objects, count, err := selectOperationLog(tokenCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
 	if err != nil {
 		t.Fatalf("查询系统初始化审计异常: %+v", err)
@@ -315,7 +315,7 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	util.RemoveFile(ctx, config.DbPath)
 
 	if gormDb, err := Open(ctx); err == nil {
-		util.CloseDb(ctx, gormDb)
+		gormDb.Close(ctx)
 		t.Errorf("库文件不存在时开库应报错")
 	}
 	//NewTransaction只做普通读写，不碰建库：库文件不在就直接报错，不能拿请求带的口令悄悄建一个空库顶上
@@ -337,7 +337,7 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	if err != nil {
 		t.Errorf("0字节库文件应能开库: %+v", err)
 	}
-	util.CloseDb(ctx, gormDb)
+	gormDb.Close(ctx)
 }
 
 func TestAutoMigrate(t *testing.T) {
@@ -347,7 +347,7 @@ func TestAutoMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer util.CloseDb(ctx, gormDb)
+	defer gormDb.Close(ctx)
 
 	for _, object := range []interface{}{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}} {
 		if !gormDb.Migrator().HasTable(object) {
@@ -355,7 +355,7 @@ func TestAutoMigrate(t *testing.T) {
 		}
 	}
 	handler := NewMigrateHandler()
-	if err = handler.Exec(ctx, gormDb); err != nil {
+	if err = handler.Exec(ctx, gormDb.DB); err != nil {
 		t.Errorf("重复自动建表异常: %+v", err)
 	}
 }
@@ -411,7 +411,7 @@ func TestOpenClientToken(t *testing.T) {
 
 	gormDb, err := Open(newTokenCtx("wrong-client-token"))
 	if err == nil {
-		util.CloseDb(ctx, gormDb)
+		gormDb.Close(ctx)
 		t.Fatalf("错误口令应报错")
 	}
 	if !strings.Contains(err.Error(), "口令错误或数据库文件损坏") {
@@ -425,7 +425,7 @@ func TestOpenClientToken(t *testing.T) {
 		t.Fatalf("写坏库文件异常: %+v", err)
 	}
 	if gormDb, err = Open(ctx); err == nil {
-		util.CloseDb(ctx, gormDb)
+		gormDb.Close(ctx)
 		t.Errorf("库文件损坏应报错")
 	}
 }
@@ -440,7 +440,7 @@ func TestTransactionWithoutClaims(t *testing.T) {
 		t.Errorf("Claims无口令时查询应报错")
 	}
 	if gormDb, err := Open(util.GenCtx()); err == nil {
-		util.CloseDb(util.GenCtx(), gormDb)
+		gormDb.Close(util.GenCtx())
 		t.Errorf("ctx无Claims时开库应报错")
 	}
 	if util.GetClaims[*model.Claims](util.SetClaims(util.GenCtx(), nil)) != nil {
@@ -578,6 +578,50 @@ func TestChangeTokenDuringTransaction(t *testing.T) {
 	}
 	if _, count, _ := selectExpense(newTokenCtx(newToken), model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
 		t.Errorf("在途事务的数据不应被换口令顶掉: count=%d want=1", count)
+	}
+}
+
+// 拿着Open交出来的连接读写时换口令：读锁要是在交出连接那一刻就放掉，
+// 换口令最后一步的os.Rename会把连接指向的库文件顶掉，之后写进去的数据静默消失
+func TestOpenDuringChangeToken(t *testing.T) {
+	ctx := newTestCtx(t)
+	newToken := "new-client-token-6"
+	expense := newTestExpense()
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		gormDb, err := Open(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		defer gormDb.Close(ctx)
+		//先把「连接已开出来」这个窗口拉开，让换口令挤进来，再往这条连接上写
+		time.Sleep(300 * time.Millisecond)
+		if err = gormDb.WithContext(ctx).Create(expense).Error; err != nil {
+			errs <- err
+		}
+	}()
+	//等连接开出来，再让换口令插进来
+	time.Sleep(100 * time.Millisecond)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := ChangeToken(ctx, newToken); err != nil {
+			errs <- err
+		}
+	}()
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发异常: %+v", err)
+	}
+	if _, count, _ := selectExpense(newTokenCtx(newToken), model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+		t.Errorf("在途连接写进去的数据不应被换口令顶掉: count=%d want=1", count)
 	}
 }
 

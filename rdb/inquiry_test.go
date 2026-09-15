@@ -3,7 +3,6 @@ package rdb
 import (
 	"testing"
 
-	"github.com/cellargalaxy/go_common/util"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -29,7 +28,7 @@ func TestPageLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer util.CloseDb(ctx, gormDb)
+	defer gormDb.Close(ctx)
 
 	for _, page := range []int{0, -1, 1} {
 		tx, err := pageLimit(ctx, gormDb.Session(&gorm.Session{}), page, 10)
@@ -62,7 +61,7 @@ func TestSortOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer util.CloseDb(ctx, gormDb)
+	defer gormDb.Close(ctx)
 
 	orderBy := func(tx *gorm.DB) string {
 		object, ok := tx.Statement.Clauses["ORDER BY"]

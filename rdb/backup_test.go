@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
@@ -45,7 +46,7 @@ func TestExport(t *testing.T) {
 			t.Errorf("导入后应把表结构补齐，缺表: %s", migrateModels[i].TableName())
 		}
 	}
-	util.CloseDb(ctx, gormDb)
+	gormDb.Close(ctx)
 
 	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {
@@ -199,6 +200,59 @@ func TestTokenSpecialChar(t *testing.T) {
 	}
 	if err := CheckToken(newTokenCtx(newToken)); err != nil {
 		t.Errorf("换成含特殊字符的口令后打不开库: %+v", err)
+	}
+}
+
+// 卡在第一次写出上不动，把「副本正在流给客户端」这个窗口拉开
+type blockWriter struct {
+	start chan struct{}
+	block chan struct{}
+	once  sync.Once
+	data  bytes.Buffer
+}
+
+func (this *blockWriter) Write(data []byte) (int, error) {
+	this.once.Do(func() { close(this.start) })
+	<-this.block
+	return this.data.Write(data)
+}
+
+// 副本落盘之后就与库文件无关了，把它流给客户端这一段不该再占着读锁：
+// 否则一个卡在半路的下载就能把换口令这类写锁操作堵死，连带挡住排在写锁后面的所有业务请求
+func TestExportNotBlockWriteLock(t *testing.T) {
+	ctx := newTestCtx(t)
+	if _, err := insertExpense(ctx, newTestExpense()); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	writer := &blockWriter{start: make(chan struct{}), block: make(chan struct{})}
+	exported := make(chan error, 1)
+	go func() { exported <- Export(ctx, writer) }()
+	select {
+	case <-writer.start:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("导出迟迟没开始写出")
+	}
+
+	//导出正卡在写出这一步，此时换口令必须还能拿到写锁
+	changed := make(chan error, 1)
+	go func() { changed <- ChangeToken(ctx, "new-client-token-7") }()
+	select {
+	case err := <-changed:
+		if err != nil {
+			t.Errorf("换口令异常: %+v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("导出把副本流出去时还攥着读锁，换口令被挡住")
+	}
+
+	close(writer.block)
+	if err := <-exported; err != nil {
+		t.Fatalf("导出异常: %+v", err)
+	}
+	//读锁虽然提前放了，流出去的仍是换口令之前那份副本，内容不能是空的
+	if writer.data.Len() == 0 {
+		t.Errorf("导出内容为空")
 	}
 }
 
@@ -549,11 +603,18 @@ func TestBackupGuard(t *testing.T) {
 	ctx := newTestCtx(t)
 	buffer := new(bytes.Buffer)
 
-	if err := export(ctx, "resource/not-exist.db", testClientToken, buffer); err == nil {
-		t.Errorf("库文件不存在时导出应报错")
+	if backupPath, err := export(ctx, "resource/not-exist.db", testClientToken); err == nil {
+		t.Errorf("库文件不存在时导出应报错: %s", backupPath)
 	}
-	if err := export(ctx, config.DbPath, "", buffer); err == nil {
-		t.Errorf("口令为空时导出应报错")
+	if backupPath, err := export(ctx, config.DbPath, ""); err == nil {
+		t.Errorf("口令为空时导出应报错: %s", backupPath)
+	}
+	//写出目标为空的守卫挪到了公开入口上，被它拦下时连副本都不该产出
+	if err := Export(ctx, nil); err == nil {
+		t.Errorf("写出目标为空时导出应报错")
+	}
+	if err := Export(newTokenCtx("wrong-client-token"), buffer); err == nil {
+		t.Errorf("错误口令导出应报错")
 	}
 	if buffer.Len() > 0 {
 		t.Errorf("被守卫拦下的导出不应写出内容: %d", buffer.Len())

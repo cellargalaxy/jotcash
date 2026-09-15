@@ -17,7 +17,7 @@ func TestMigrateTriggerForbidDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer util.CloseDb(ctx, db)
+	defer db.Close(ctx)
 
 	operationId, fileId := util.GenId(), util.GenId()
 	seeds := []any{
@@ -83,7 +83,7 @@ func TestMigrateTriggerRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer util.CloseDb(ctx, db)
+	defer db.Close(ctx)
 
 	trigger := model.Expense{}.TableName() + "_forbid_delete"
 	if err := db.WithContext(ctx).Exec("drop trigger `" + trigger + "`").Error; err != nil {
