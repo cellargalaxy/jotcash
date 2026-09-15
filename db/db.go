@@ -24,19 +24,12 @@ const vfsName = "adiantum"
 
 var dbLock sync.RWMutex
 
-func init() {
-	ctx := util.GenCtx()
-	err := Create(ctx)
-	if err != nil {
-		panic(err)
-	}
-}
-
+// 没有init：库在第一次开事务时才建出来，口令就是那次请求带的
 func Create(ctx context.Context) error {
 	dbPath := config.DbPath
-	token, err := tool.GenToken(ctx, tool.TokenLen)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	info := util.GetFileInfo(ctx, dbPath)
@@ -196,6 +189,13 @@ func NewTransaction(ctx context.Context) (*DbTransaction, error) {
 	if err != nil {
 		return nil, err
 	}
+	//库没就绪就地建出来，上层只管拿事务做业务读写，不感知建库建表
+	err = Create(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	//建库自己要拿写锁，必须排在读锁之前，顺序反了同一条协程先读后写，RWMutex不可重入会自锁
 	dbLock.RLock()
 	object, err := newTransaction(ctx, dbPath, token)
 	if err != nil {

@@ -31,11 +31,17 @@ func InsertExpense(ctx context.Context, operationId int64, expenses []*model.Exp
 		Result:        model.ResultSuccess,
 	}
 
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer transaction.Close(ctx)
+
 	fileBlobHandler := db.NewFileBlobInsertHandler(fileBlob)
 	fileMetaHandler := db.NewFileMetaInsertHandler(fileMeta)
 	expenseHandler := db.NewExpenseInsertHandler(expenses...)
 	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
-	return db.Transaction(ctx, fileBlobHandler, fileMetaHandler, expenseHandler, operationLogHandler)
+	return transaction.AddCommit(fileBlobHandler, fileMetaHandler, expenseHandler, operationLogHandler).Exec(ctx)
 }
 
 func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.Expense, int64, error) {
@@ -84,10 +90,16 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, er
 		Result:        model.ResultSuccess,
 	}
 
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	//分页与排序对批量删除没有意义，db层的NewExpenseDeleteHandler会把它们清掉，也会强制只删未删除的行
 	deleteHandler := db.NewExpenseDeleteHandler(inquiry)
 	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
-	err = db.Transaction(ctx, deleteHandler, operationLogHandler)
+	err = transaction.AddCommit(deleteHandler, operationLogHandler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}

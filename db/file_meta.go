@@ -68,8 +68,14 @@ func NewFileMetaSelectHandler(inquiry model.FileMetaInquiry) *util.SelectHandler
 }
 
 func InsertFileMeta(ctx context.Context, object ...*model.FileMeta) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileMetaInsertHandler(object...)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -77,8 +83,14 @@ func InsertFileMeta(ctx context.Context, object ...*model.FileMeta) (int64, erro
 }
 
 func UpdateFileMeta(ctx context.Context, object *model.FileMeta) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileMetaUpdateHandler(object)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -86,8 +98,14 @@ func UpdateFileMeta(ctx context.Context, object *model.FileMeta) (int64, error) 
 }
 
 func SelectFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) ([]*model.FileMeta, int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileMetaSelectHandler(inquiry)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

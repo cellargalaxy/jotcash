@@ -48,8 +48,14 @@ func NewFileBlobSelectHandler(inquiry model.FileBlobInquiry) *util.SelectHandler
 }
 
 func InsertFileBlob(ctx context.Context, object ...*model.FileBlob) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileBlobInsertHandler(object...)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -57,8 +63,14 @@ func InsertFileBlob(ctx context.Context, object ...*model.FileBlob) (int64, erro
 }
 
 func UpdateFileBlob(ctx context.Context, object *model.FileBlob) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileBlobUpdateHandler(object)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -66,8 +78,14 @@ func UpdateFileBlob(ctx context.Context, object *model.FileBlob) (int64, error) 
 }
 
 func SelectFileBlob(ctx context.Context, inquiry model.FileBlobInquiry) ([]*model.FileBlob, int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewFileBlobSelectHandler(inquiry)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

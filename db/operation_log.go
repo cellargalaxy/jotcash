@@ -69,8 +69,14 @@ func NewOperationLogSelectHandler(inquiry model.OperationLogInquiry) *util.Selec
 }
 
 func InsertOperationLog(ctx context.Context, object ...*model.OperationLog) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewOperationLogInsertHandler(object...)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -78,8 +84,14 @@ func InsertOperationLog(ctx context.Context, object ...*model.OperationLog) (int
 }
 
 func UpdateOperationLog(ctx context.Context, object *model.OperationLog) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewOperationLogUpdateHandler(object)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -87,8 +99,14 @@ func UpdateOperationLog(ctx context.Context, object *model.OperationLog) (int64,
 }
 
 func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) ([]*model.OperationLog, int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewOperationLogSelectHandler(inquiry)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -150,8 +150,14 @@ func NewExpenseSelectHandler(inquiry model.ExpenseInquiry) *util.SelectHandler[m
 }
 
 func InsertExpense(ctx context.Context, object ...*model.Expense) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewExpenseInsertHandler(object...)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -159,8 +165,14 @@ func InsertExpense(ctx context.Context, object ...*model.Expense) (int64, error)
 }
 
 func UpdateExpense(ctx context.Context, object *model.Expense) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewExpenseUpdateHandler(object)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -168,8 +180,14 @@ func UpdateExpense(ctx context.Context, object *model.Expense) (int64, error) {
 }
 
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewExpenseDeleteHandler(inquiry)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -177,8 +195,14 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, er
 }
 
 func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.Expense, int64, error) {
+	transaction, err := NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
 	handler := NewExpenseSelectHandler(inquiry)
-	err := Transaction(ctx, handler)
+	err = transaction.AddCommit(handler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
