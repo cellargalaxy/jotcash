@@ -34,7 +34,6 @@ func checkFileMetaInquiry(ctx context.Context, inquiry model.FileMetaInquiry) (m
 	if err != nil {
 		return inquiry, err
 	}
-	inquiry.PageSize = checkPageSize(inquiry.PageSize)
 	//db层默认id asc，文件列表要的是最新在前
 	if inquiry.Sort == "" {
 		inquiry.Sort = fileMetaSortDefault

@@ -65,7 +65,6 @@ func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInq
 	if err != nil {
 		return inquiry, err
 	}
-	inquiry.PageSize = checkPageSize(inquiry.PageSize)
 	//db层默认id asc，审计列表要的是最新在前
 	if inquiry.Sort == "" {
 		inquiry.Sort = operationLogSortDefault

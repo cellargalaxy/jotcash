@@ -9,22 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	pageSizeDefault = 20
-	pageSizeMax     = 200
-)
-
-// db层的pageSize<=0是不加limit，上层不兜底就会整表拉出来
-func checkPageSize(pageSize int) int {
-	if pageSize <= 0 {
-		return pageSizeDefault
-	}
-	if pageSize > pageSizeMax {
-		return pageSizeMax
-	}
-	return pageSize
-}
-
 func checkTimeRange(ctx context.Context, start, end time.Time) error {
 	if start.IsZero() || end.IsZero() || !start.After(end) {
 		return nil

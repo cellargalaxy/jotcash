@@ -82,7 +82,6 @@ func checkExpenseInquiry(ctx context.Context, inquiry model.ExpenseInquiry) (mod
 	if err != nil {
 		return inquiry, err
 	}
-	inquiry.PageSize = checkPageSize(inquiry.PageSize)
 	//db层默认id asc，明细列表要的是支出日期最新在前
 	if inquiry.Sort == "" {
 		inquiry.Sort = expenseSortDefault
