@@ -89,6 +89,26 @@ func checkExpenseInquiry(ctx context.Context, inquiry model.ExpenseInquiry) (mod
 	return inquiry, nil
 }
 
+func SelectExpenseDistinct(ctx context.Context, inquiry model.ExpenseDistinctInquiry) ([]string, int64, error) {
+	if !expenseDeleteds[inquiry.Deleted] {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"deleted": inquiry.Deleted}).Warn("查询候选取值，删除筛选非法")
+		return nil, 0, errors.Errorf("查询候选取值，删除筛选非法: %d", inquiry.Deleted)
+	}
+
+	transaction, err := rdb.NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
+	distinctHandler := rdb.NewExpenseDistinctHandler(inquiry)
+	err = transaction.AddCommit(distinctHandler).Exec(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return distinctHandler.Object, distinctHandler.Count, nil
+}
+
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, error) {
 	err := checkExpenseRange(ctx, inquiry)
 	if err != nil {
