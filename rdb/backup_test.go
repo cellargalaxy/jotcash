@@ -603,12 +603,27 @@ func TestBackupGuard(t *testing.T) {
 	ctx := newTestCtx(t)
 	buffer := new(bytes.Buffer)
 
-	if backupPath, err := export(ctx, "resource/not-exist.db", testClientToken); err == nil {
-		t.Errorf("库文件不存在时导出应报错: %s", backupPath)
+	dstPath := "resource/export.db"
+	if err := export(ctx, "resource/not-exist.db", testClientToken, dstPath); err == nil {
+		t.Errorf("库文件不存在时导出应报错")
 	}
-	if backupPath, err := export(ctx, config.DbPath, ""); err == nil {
-		t.Errorf("口令为空时导出应报错: %s", backupPath)
+	if err := export(ctx, config.DbPath, "", dstPath); err == nil {
+		t.Errorf("口令为空时导出应报错")
 	}
+	if util.GetPathInfo(ctx, dstPath) != nil {
+		t.Errorf("被守卫拦下的导出不应留下目标文件: %s", dstPath)
+	}
+	//目标文件已存在就得拒掉，而且要拦在写导出审计之前，不能留下一条「导出成功」却没导出的审计
+	if err := util.WriteData2File(ctx, []byte("占位"), dstPath); err != nil {
+		t.Fatalf("写占位文件异常: %+v", err)
+	}
+	if err := export(ctx, config.DbPath, testClientToken, dstPath); err == nil {
+		t.Errorf("目标文件已存在应报错")
+	}
+	if _, count, _ := selectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbExport}}); count != 0 {
+		t.Errorf("被守卫拦下的导出不应记审计: count=%d want=0", count)
+	}
+	util.RemoveFile(ctx, dstPath)
 	//写出目标为空的守卫挪到了公开入口上，被它拦下时连副本都不该产出
 	if err := Export(ctx, nil); err == nil {
 		t.Errorf("写出目标为空时导出应报错")
