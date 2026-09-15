@@ -3,6 +3,7 @@ package handler_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -186,8 +187,13 @@ func TestDownloadFile(t *testing.T) {
 	if writer.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Errorf("Content-Type不符: %s", writer.Header().Get("Content-Type"))
 	}
-	if disposition := writer.Header().Get("Content-Disposition"); !strings.Contains(disposition, fileMeta.FileName) {
+	disposition := writer.Header().Get("Content-Disposition")
+	if !strings.Contains(disposition, fileMeta.FileName) {
 		t.Errorf("附件名应是原文件名: %s", disposition)
+	}
+	//中文文件名只给原始的那份会被按latin-1读成乱码，filename*那份必须在
+	if !strings.Contains(disposition, "filename*=UTF-8''"+url.QueryEscape(fileMeta.FileName)) {
+		t.Errorf("附件名应同时给出UTF-8编码的那份: %s", disposition)
 	}
 	//C-1：下载是读操作，除数据库导出外读操作一律不记审计
 	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{}); logs.Data.Count != 1 {
