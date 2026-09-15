@@ -28,9 +28,23 @@ func genBackupPath(ctx context.Context) (string, error) {
 }
 
 func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) error {
+	srcInfo := util.GetFileInfo(ctx, srcPath)
+	if srcInfo == nil || srcInfo.Size() <= 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath}).Error("备份数据库，来源文件不存在")
+		return errors.Errorf("备份数据库，来源文件不存在")
+	}
+	if srcToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，来源口令为空")
+		return errors.Errorf("备份数据库，来源口令为空")
+	}
+	dstInfo := util.GetFileInfo(ctx, dstPath)
+	if dstInfo != nil && dstInfo.Size() > 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath}).Error("备份数据库，目标文件不存在")
+		return errors.Errorf("备份数据库，目标文件不存在")
+	}
 	if dstToken == "" {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，口令为空")
-		return errors.Errorf("备份数据库，口令为空")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，目标口令为空")
+		return errors.Errorf("备份数据库，目标口令为空")
 	}
 
 	gormDb, err := open(ctx, srcPath, srcToken)
@@ -44,6 +58,8 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("备份数据库，获取连接异常")
 		return errors.Errorf("备份数据库，获取连接异常: %+v", err)
 	}
+	defer util.CloseIo(ctx, sqlDb)
+
 	conn, err := sqlDb.Conn(ctx)
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("备份数据库，占用连接异常")
@@ -69,21 +85,17 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 	return nil
 }
 
-func replace(ctx context.Context, backupPath, dbPath, token string) error {
-	gormDb, err := open(ctx, backupPath, token)
+func replace(ctx context.Context, srcPath, srcToken, dstPath string) error {
+	err := checkToken(ctx, srcPath, srcToken)
 	if err != nil {
 		return err
 	}
-	err = util.CloseDb(ctx, gormDb)
+	err = os.Rename(srcPath, dstPath)
 	if err != nil {
-		return err
-	}
-
-	err = os.Rename(backupPath, dbPath)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"backupPath": backupPath, "err": err}).Error("替换数据库，异常")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath, "dstPath": dstPath, "err": err}).Error("替换数据库，异常")
 		return errors.Errorf("替换数据库，异常: %+v", err)
 	}
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath, "dstPath": dstPath}).Info("替换数据库，完成")
 	return nil
 }
 
