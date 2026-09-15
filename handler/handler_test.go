@@ -20,11 +20,13 @@ import (
 
 const testAccountingCurrency = "CNY"
 
+const testClientToken = "test-client-token"
+
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	logrus.SetLevel(logrus.WarnLevel)
 	code := m.Run()
-	//db包的init会在测试二进制的原始工作目录建库，不清掉会污染代码目录
+	//配置文件会落在测试二进制的原始工作目录，不清掉会污染代码目录
 	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)
@@ -58,22 +60,18 @@ func findLogField(text, key string) string {
 	return text[:index]
 }
 
-// 初始前端口令只在建库那一次进日志，测试从日志里捞
+// 没有init了，库在第一次开事务时才建出来，口令就是那次开库带的
 func newTestEngine(t *testing.T) (*gin.Engine, string) {
 	t.Helper()
 	t.Chdir(t.TempDir())
 
-	ctx := util.GenCtx()
-	buffer := catchLog(t)
-	err := db.Create(ctx)
+	tokenCtx := newTokenCtx(testClientToken)
+	object, err := db.NewTransaction(tokenCtx)
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
-	clientToken := findLogField(buffer.String(), "clientToken")
-	if clientToken == "" {
-		t.Fatalf("没捞到初始前端口令: %s", buffer.String())
-	}
-	return handler.NewEngine(ctx), clientToken
+	object.Close(tokenCtx)
+	return handler.NewEngine(util.GenCtx()), testClientToken
 }
 
 // 每个请求都自带口令与记账币种，两样都签进jwt

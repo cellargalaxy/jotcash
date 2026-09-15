@@ -11,7 +11,6 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/sirupsen/logrus"
 )
 
@@ -74,41 +73,39 @@ func findLogField(text, key string) string {
 	return text[:index]
 }
 
+// 没有init了：库在第一次开事务时才建出来，口令就是那次请求带的
 func TestCreate(t *testing.T) {
 	newTestDb(t)
-	ctx := util.GenCtx()
 	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+	ctx := newTokenCtx(testClientToken)
 
 	buffer := catchLog(t)
-	if err := Create(ctx); err != nil {
-		t.Fatalf("初始化异常: %+v", err)
+	object, err := NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("首次开事务异常: %+v", err)
 	}
+	object.Close(ctx)
 	if util.GetPathInfo(ctx, config.DbPath) == nil {
-		t.Fatalf("初始化后库文件应存在: %s", config.DbPath)
+		t.Fatalf("首次开事务后库文件应存在: %s", config.DbPath)
 	}
-	clientToken := findLogField(buffer.String(), "clientToken")
-	if clientToken == "" {
-		t.Fatalf("初始前端口令没有打印: %s", buffer.String())
+	if findLogField(buffer.String(), "clientToken") != testClientToken {
+		t.Errorf("建库前端口令没有打印: %s", buffer.String())
 	}
 	if findLogField(buffer.String(), "serverToken") != serverToken {
-		t.Errorf("初始后端口令没有打印: %s", buffer.String())
-	}
-	if err := tool.CheckToken(ctx, clientToken); err != nil {
-		t.Errorf("生成的初始口令不满足强度: %+v", err)
+		t.Errorf("建库后端口令没有打印: %s", buffer.String())
 	}
 
-	tokenCtx := newTokenCtx(clientToken)
-	gormDb, err := Open(tokenCtx)
+	gormDb, err := Open(ctx)
 	if err != nil {
-		t.Fatalf("用初始口令打开库异常: %+v", err)
+		t.Fatalf("用建库口令打开库异常: %+v", err)
 	}
 	for _, object := range []interface{}{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}} {
 		if !gormDb.Migrator().HasTable(object) {
 			t.Errorf("表未建出来: %T", object)
 		}
 	}
-	util.CloseDb(tokenCtx, gormDb)
-	objects, count, err := SelectOperationLog(tokenCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
+	util.CloseDb(ctx, gormDb)
+	objects, count, err := SelectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
 	if err != nil {
 		t.Fatalf("查询系统初始化审计异常: %+v", err)
 	}
@@ -117,37 +114,73 @@ func TestCreate(t *testing.T) {
 	}
 
 	buffer2 := catchLog(t)
-	if err = Create(ctx); err != nil {
-		t.Fatalf("重复初始化异常: %+v", err)
+	object, err = NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("再次开事务异常: %+v", err)
 	}
+	object.Close(ctx)
 	if findLogField(buffer2.String(), "clientToken") != "" {
-		t.Errorf("库已存在时不应再打印初始口令: %s", buffer2.String())
+		t.Errorf("库已存在时不应再打印建库口令: %s", buffer2.String())
 	}
-	if _, count, _ = SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
-		t.Errorf("重复初始化不应再记审计: count=%d", count)
+	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{}); count != 1 {
+		t.Errorf("重复开事务不应再记审计: count=%d", count)
 	}
 }
 
 func TestCreateEmptyDbFile(t *testing.T) {
 	newTestDb(t)
-	ctx := util.GenCtx()
+	ctx := newTokenCtx(testClientToken)
 	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
 		t.Fatalf("写0字节库文件异常: %+v", err)
 	}
 
 	buffer := catchLog(t)
-	if err := Create(ctx); err != nil {
-		t.Fatalf("初始化异常: %+v", err)
+	object, err := NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("首次开事务异常: %+v", err)
 	}
-	clientToken := findLogField(buffer.String(), "clientToken")
-	if clientToken == "" {
-		t.Fatalf("0字节库文件是残骸，应当重新初始化: %s", buffer.String())
+	object.Close(ctx)
+	if findLogField(buffer.String(), "clientToken") != testClientToken {
+		t.Fatalf("0字节库文件是残骸，应当重新建库: %s", buffer.String())
 	}
-	if err := CheckToken(newTokenCtx(clientToken)); err != nil {
-		t.Errorf("重新初始化后的口令应能打开库: %+v", err)
+	if err = CheckToken(ctx); err != nil {
+		t.Errorf("重新建库后的口令应能打开库: %+v", err)
 	}
-	if err := CheckToken(newTokenCtx("wrong-client-token")); err == nil {
-		t.Errorf("重新初始化后其他口令不应能打开库")
+	if err = CheckToken(newTokenCtx("wrong-client-token")); err == nil {
+		t.Errorf("重新建库后其他口令不应能打开库")
+	}
+}
+
+// 库文件还不存在时多个请求同时开事务：建库必须独占，否则会互相截断、删掉对方刚建好的库
+func TestConcurrentCreate(t *testing.T) {
+	newTestDb(t)
+	ctx := newTokenCtx(testClientToken)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			object, err := NewTransaction(ctx)
+			if err != nil {
+				errs <- err
+				return
+			}
+			object.Close(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发建库异常: %+v", err)
+	}
+	if util.GetFileInfo(ctx, config.DbPath) == nil {
+		t.Fatalf("并发建库之后库文件不应消失")
+	}
+	if _, count, err := SelectOperationLog(ctx, model.OperationLogInquiry{}); err != nil || count != 1 {
+		t.Errorf("建库审计应当只有1条: count=%d err=%+v", count, err)
 	}
 }
 
@@ -177,7 +210,7 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
 		t.Fatalf("写0字节库文件异常: %+v", err)
 	}
-	//existDb只看文件在不在，0字节按一个还没写过页的空库处理，开得起来
+	//open只看库文件在不在，0字节按一个还没写过页的空库处理，开得起来
 	if _, err := Open(ctx); err != nil {
 		t.Errorf("0字节库文件应能开库: %+v", err)
 	}
