@@ -86,3 +86,15 @@
 .notice-bar .notice-url {
   word-break: break-all;
 }
+
+/* 复制兜底用的临时文本域：必须在视口内且可选中，execCommand 才认，所以不能 display:none */
+.notice-copy-area {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}

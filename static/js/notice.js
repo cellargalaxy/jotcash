@@ -32,9 +32,45 @@ function noticeText(level) {
     }
 }
 
-//展示的是地址本身，不带 hash——hash 是前端路由，跟着点来点去一直变，也与安全性无关
+//展示完整地址，query 与 hash 一个都不能少。
+//去掉 query 的话，像 IDE 内置服务那种把授权 token 放在 query 里的地址，
+//复制出去到别的浏览器就打不开了——之前正是这么翻的车
 function pageUrl() {
-  return location.origin + location.pathname;
+  return location.href;
+}
+
+//复制走 clipboard API，非安全上下文下它不可用，退回到老办法
+async function copyUrl() {
+  const url = pageUrl();
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(url);
+      return true;
+    }
+  } catch (err) {
+    //权限被拒就走下面的兜底，不该把整条公告带崩
+  }
+  const area = el('textarea', { class: 'notice-copy-area' });
+  area.value = url;
+  document.body.appendChild(area);
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (err) {
+    copied = false;
+  }
+  area.remove();
+  return copied;
+}
+
+function copyButton() {
+  const button = el('button', { class: 'btn btn-sm btn-outline-secondary py-0 px-2', type: 'button', text: '复制' });
+  button.addEventListener('click', async () => {
+    button.textContent = (await copyUrl()) ? '已复制' : '复制失败';
+    setTimeout(() => { button.textContent = '复制'; }, 2000);
+  });
+  return button;
 }
 
 export function renderNotice(unlocked) {
@@ -51,6 +87,7 @@ export function renderNotice(unlocked) {
     el('div', { class: 'container-fluid d-flex flex-wrap align-items-center gap-2' }, [
       el('span', { class: 'badge text-bg-light text-uppercase', text: location.protocol.replace(':', '') }),
       el('code', { class: 'notice-url', text: pageUrl() }),
+      copyButton(),
       el('span', { class: 'small', text: noticeText(level) }),
       closable
         ? el('button', {

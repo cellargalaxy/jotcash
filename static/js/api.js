@@ -149,11 +149,6 @@ export function selectDistinct(field) {
   return notImplemented('候选取值查询');
 }
 
-export function selectAccountingCurrency() {
-  if (USE_MOCK) return mock.selectAccountingCurrency();
-  return notImplemented('记账币种集合');
-}
-
 export function selectOperationLog(inquiry) {
   if (USE_MOCK) return mock.selectOperationLog(inquiry);
   return postJson(PATH_OPERATION_LOG_SELECT, cleanInquiry(inquiry));

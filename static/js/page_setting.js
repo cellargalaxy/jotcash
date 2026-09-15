@@ -21,17 +21,16 @@ function checkToken(token) {
 function currencyCard(onDone) {
   const currentSelect = currencySelect(getAccountingCurrency(), { class: 'form-select form-select-sm' });
   const targetSelect = currencySelect(getAccountingCurrency(), { class: 'form-select form-select-sm' });
-  const distribution = el('div', { class: 'small text-secondary mb-3', text: '正在统计全库记账币种…' });
+  const distribution = el('div', { class: 'small text-secondary mb-3', text: '正在读取全库记账币种…' });
 
-  api.selectAccountingCurrency()
+  //服务端只告诉「现在有哪些记账币种」，不提供每个币种的笔数
+  api.selectDistinct('accounting_currency')
     .then((result) => {
       const list = result.object || [];
-      distribution.textContent = list.length === 0
-        ? '全库暂无明细'
-        : `全库记账币种：${list.map((item) => `${item.code}（${item.count} 笔）`).join('、')}`;
+      distribution.textContent = list.length === 0 ? '全库暂无明细' : `全库记账币种：${list.join('、')}`;
     })
     .catch(() => {
-      distribution.textContent = '记账币种集合接口尚未实现，联调后这里会显示全库分布';
+      distribution.textContent = '记账币种集合接口尚未实现，联调后这里会显示全库有哪些记账币种';
     });
 
   return sectionCard(
@@ -206,8 +205,12 @@ function sessionCard() {
     '无登录、无会话、无令牌：口令与记账币种逐请求携带，只存在本标签页的 sessionStorage 里。',
     [
       el('dl', { class: 'row small mb-3' }, [
-        el('dt', { class: 'col-4 col-md-3 text-secondary', text: '接口前缀' }),
-        el('dd', { class: 'col-8 col-md-9 font-monospace', text: API_BASE }),
+        el('dt', { class: 'col-4 col-md-3 text-secondary', text: '页面地址' }),
+        el('dd', { class: 'col-8 col-md-9 font-monospace text-break', text: location.href }),
+        el('dt', { class: 'col-4 col-md-3 text-secondary', text: '接口地址' }),
+        //展示相对前缀解析之后的绝对地址：接口打到哪台服务上，这里一眼能看出来。
+        //如果它不是你启动的那个服务，说明页面是被别的服务（比如 IDE 的内置预览）托管的
+        el('dd', { class: 'col-8 col-md-9 font-monospace text-break', text: `${API_BASE} → ${new URL(API_BASE, location.href).href}` }),
         el('dt', { class: 'col-4 col-md-3 text-secondary', text: '数据来源' }),
         el('dd', { class: 'col-8 col-md-9', text: USE_MOCK ? 'mock（浏览器内存，不发请求）' : '真实后端接口' }),
         el('dt', { class: 'col-4 col-md-3 text-secondary', text: '本会话记账币种' }),

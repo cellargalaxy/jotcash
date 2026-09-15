@@ -415,16 +415,6 @@ export function selectDistinct(field) {
   return ok(object, object.length);
 }
 
-//F-5 表头提示：全库存在的记账币种集合
-export function selectAccountingCurrency() {
-  const currencies = new Map();
-  for (const row of db.expense) {
-    currencies.set(row.accounting_currency, (currencies.get(row.accounting_currency) || 0) + 1);
-  }
-  const object = [...currencies.entries()].map(([code, count]) => ({ code, count })).sort((left, right) => right.count - left.count);
-  return ok(object, object.length);
-}
-
 // ===== 审计 =====
 
 const OPERATION_LOG_SORT_WHITELIST = ['id asc', 'id desc', 'created_at asc', 'created_at desc'];

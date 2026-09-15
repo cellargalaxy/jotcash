@@ -424,8 +424,10 @@ async function loadVerify() {
 
 async function loadHeaderHint() {
   try {
+    //F-5 的表头提示要的是「库里真实存在哪些记账币种」，所以单独取一次 distinct，
+    //不跟候选下拉共用——候选会合并用户现场录入的新值，混进来这个集合就不准了
     const [currencies, ...distincts] = await Promise.all([
-      api.selectAccountingCurrency(),
+      api.selectDistinct('accounting_currency'),
       ...CANDIDATE_FIELDS.map((field) => api.selectDistinct(field)),
     ]);
     state.currencySet = currencies.object || [];
@@ -698,12 +700,12 @@ function buildToolbar() {
 //F-5：表头列出全库存在的记账币种，多于一种或与当前选择不一致就提示去切换
 function buildCurrencyHint() {
   const current = getAccountingCurrency();
-  const codes = state.currencySet.map((item) => item.code);
+  const codes = state.currencySet;
   if (codes.length === 0) return null;
   const mixed = codes.length > 1 || codes[0] !== current;
   if (!mixed) return null;
   return el('div', { class: 'alert alert-warning py-2 d-flex flex-wrap align-items-center gap-2' }, [
-    el('span', { class: 'small', text: `全库记账币种：${state.currencySet.map((item) => `${item.code}（${item.count} 笔）`).join('、')}；当前选择：${current}。混合口径会让金额统计失真。` }),
+    el('span', { class: 'small', text: `全库记账币种：${codes.join('、')}；当前选择：${current}。混合口径会让金额统计失真。` }),
     el('button', { class: 'btn btn-sm btn-warning ms-auto', type: 'button', text: '执行记账币种切换', onclick: openCurrencySwitch }),
   ]);
 }
@@ -722,7 +724,7 @@ function headerCell(field) {
   }
   return el('th', { class: 'text-nowrap' }, [
     field.name,
-    el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${state.currencySet.map((item) => item.code).join('/')}）` }),
+    el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${state.currencySet.join('/')}）` }),
   ]);
 }
 
