@@ -23,6 +23,14 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, erro
 	return common_model.HttpData{Object: objects, Count: count}, nil
 }
 
+func SelectExpenseDistinct(ctx context.Context, inquiry model.ExpenseDistinctInquiry) (any, error) {
+	objects, count, err := repo.SelectExpenseDistinct(ctx, inquiry)
+	if err != nil {
+		return nil, err
+	}
+	return common_model.HttpData{Object: objects, Count: count}, nil
+}
+
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {
 	count, err := repo.DeleteExpense(ctx, inquiry)
 	if err != nil {
