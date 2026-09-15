@@ -7,11 +7,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 const testClientToken = "test-client-token"
@@ -369,6 +371,55 @@ func TestConcurrentTransaction(t *testing.T) {
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 48 {
 		t.Errorf("并发插入条数: got=%d want=48", count)
+	}
+}
+
+// 事务里多待一会儿，把「事务在途」这个窗口拉开
+type slowInsertHandler struct {
+	expense *model.Expense
+}
+
+func (this *slowInsertHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	err := tx.Create(this.expense).Error
+	if err != nil {
+		return err
+	}
+	time.Sleep(300 * time.Millisecond)
+	return nil
+}
+
+// 业务事务在途时换口令：换口令最后一步是os.Rename，读锁没罩住整条连接的话，在途事务会提交进被顶掉的旧文件，静默丢数据
+func TestChangeTokenDuringTransaction(t *testing.T) {
+	ctx := newTestCtx(t)
+	newToken := "new-client-token2"
+	expense := newTestExpense()
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := Transaction(ctx, &slowInsertHandler{expense: expense}); err != nil {
+			errs <- err
+		}
+	}()
+	//等小红进到事务里，再让换口令插进来
+	time.Sleep(100 * time.Millisecond)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := ChangeToken(ctx, newToken); err != nil {
+			errs <- err
+		}
+	}()
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发异常: %+v", err)
+	}
+	if _, count, _ := SelectExpense(newTokenCtx(newToken), model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+		t.Errorf("在途事务的数据不应被换口令顶掉: count=%d want=1", count)
 	}
 }
 
