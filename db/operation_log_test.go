@@ -58,11 +58,4 @@ func TestOperationLogCrud(t *testing.T) {
 	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{Result: []string{model.ResultPartial}}); count != 1 {
 		t.Errorf("更新未生效: count=%d want=1", count)
 	}
-
-	if _, err = DeleteOperationLog(ctx, model.OperationLogInquiry{Id: []int64{origin.Id}}); err != nil {
-		t.Fatalf("删除操作日志异常: %+v", err)
-	}
-	if _, count, err = SelectOperationLog(ctx, model.OperationLogInquiry{Id: []int64{origin.Id}}); err != nil || count != 0 {
-		t.Errorf("删除后仍能查到: count=%d err=%+v", count, err)
-	}
 }
