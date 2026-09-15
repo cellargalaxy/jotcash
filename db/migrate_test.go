@@ -85,15 +85,15 @@ func TestMigrateTriggerRebuild(t *testing.T) {
 	}
 	defer util.CloseDb(ctx, db)
 
-	table := model.Expense{}.TableName()
-	if err := db.WithContext(ctx).Exec("drop trigger `" + triggerName(table) + "`").Error; err != nil {
+	trigger := model.Expense{}.TableName() + "_forbid_delete"
+	if err := db.WithContext(ctx).Exec("drop trigger `" + trigger + "`").Error; err != nil {
 		t.Fatalf("删触发器异常: %+v", err)
 	}
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return migrate(ctx, tx) }); err != nil {
 		t.Fatalf("重跑建表异常: %+v", err)
 	}
 	var count int64
-	db.WithContext(ctx).Raw("select count(1) from sqlite_master where type='trigger' and name=?", triggerName(table)).Scan(&count)
+	db.WithContext(ctx).Raw("select count(1) from sqlite_master where type='trigger' and name=?", trigger).Scan(&count)
 	if count != 1 {
 		t.Errorf("建表链没把触发器重挂回来: count=%d want=1", count)
 	}

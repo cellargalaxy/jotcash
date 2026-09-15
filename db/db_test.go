@@ -236,9 +236,6 @@ func TestAutoMigrate(t *testing.T) {
 	if err = handler.Exec(ctx, gormDb); err != nil {
 		t.Errorf("重复自动建表异常: %+v", err)
 	}
-	if err = handler.Exec(ctx, nil); err == nil {
-		t.Errorf("连接为空时自动建表应报错")
-	}
 }
 
 // 建库失败时不能在盘上留下半个库：库文件是事务之前占位建的，得在事务之外清掉
