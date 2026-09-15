@@ -116,8 +116,9 @@ func NewExpenseUpdateHandler(object *model.Expense) *ExpenseUpdateHandler {
 }
 
 type ExpenseUpdateHandler struct {
-	Object *model.Expense
-	Count  int64
+	Object   *model.Expense
+	Unscoped bool
+	Count    int64
 }
 
 func (this *ExpenseUpdateHandler) Exec(ctx context.Context, tx *gorm.DB) error {
@@ -128,8 +129,11 @@ func (this *ExpenseUpdateHandler) Exec(ctx context.Context, tx *gorm.DB) error {
 
 	object := *this.Object
 	object.Version = this.Object.Version + 1
-	result := tx.Model(&model.Expense{}).
-		Where("id = ? and version = ?", this.Object.Id, this.Object.Version).
+	tx = tx.Model(&model.Expense{})
+	if this.Unscoped {
+		tx = tx.Unscoped()
+	}
+	result := tx.Where("id = ? and version = ?", this.Object.Id, this.Object.Version).
 		Select("*").Omit("id", "created_at", "deleted_at").Updates(&object)
 	this.Count = result.RowsAffected
 	err := result.Error
