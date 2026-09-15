@@ -79,6 +79,7 @@ func newTestEngine(t *testing.T) (*gin.Engine, string) {
 	if clientToken == "" {
 		t.Fatalf("建库口令没有打印: %s", buffer.String())
 	}
+	handler.ResetValidateBan()
 	return handler.NewEngine(util.GenCtx()), clientToken
 }
 

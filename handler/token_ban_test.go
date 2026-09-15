@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// 失败计数是包级的，而测试里每条用例各起一套engine，计数得跟着归零，否则上一条用例的失败会把下一条封掉
+func ResetValidateBan() {
+	validateBan = new(tokenBan)
+}
+
 // 窗口内攒够次数才封，第五次落下的那一刻起封满一个封禁时长
 func TestTokenBan(t *testing.T) {
 	ban := new(tokenBan)
