@@ -52,5 +52,9 @@ func staticCache(c *gin.Context) {
 }
 
 func validate(ctx *gin.Context) {
+	if checkTokenBan(ctx) {
+		return
+	}
 	util.ValidateGin(ctx, config.GetConfig(ctx).ServerToken, new(model.Claims))
+	checkTokenFail(ctx)
 }

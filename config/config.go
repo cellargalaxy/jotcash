@@ -21,6 +21,8 @@ const (
 	expenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
 	importFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
 	amountScale      = 2                  //金额保留两位小数
+	tokenFailLimit   = 5                  //口令失败次数上限
+	tokenBanMinute   = 5                  //口令封禁时长：5分钟
 )
 
 var configService *util.ConfigService[model.Config]
@@ -55,6 +57,8 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	config.ExpenseFileLimit = expenseFileLimit
 	config.ImportFileLimit = importFileLimit
 	config.AmountScale = amountScale
+	config.TokenFailLimit = tokenFailLimit
+	config.TokenBanMinute = tokenBanMinute
 	text := util.YamlStruct2Str(ctx, config)
 	return text
 }
@@ -79,6 +83,12 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) (model.Config
 	}
 	if config.AmountScale < 0 {
 		config.AmountScale = amountScale
+	}
+	if config.TokenFailLimit <= 0 {
+		config.TokenFailLimit = tokenFailLimit
+	}
+	if config.TokenBanMinute <= 0 {
+		config.TokenBanMinute = tokenBanMinute
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")
