@@ -11,6 +11,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,32 +34,12 @@ func newTokenCtx(clientToken string) context.Context {
 	return util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: clientToken})
 }
 
-// 建库这条链已迁到service/db，db包的测试按同一条链自己把库建出来
-func newDb(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
-	//建库handler产连接、不吃tx，必须排在开事务之前
-	err := NewCreateDbHandler(dbPath).Exec(ctx, nil)
-	if err != nil {
-		return err
-	}
-	object, err := newTransaction(ctx, dbPath, token)
-	if err != nil {
-		return err
-	}
-	defer object.Close(ctx)
-	return object.
-		AddCommit(NewMigrateHandler()).
-		AddCommit(handlers...).
-		AddRollback(NewDbRemoveHandler(dbPath)).
-		Exec(ctx)
-}
-
 func newTestCtx(t *testing.T) context.Context {
 	t.Helper()
 	newTestDb(t)
 
 	ctx := newTokenCtx(testClientToken)
-	operationLog := model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeSystemInit, Result: model.ResultSuccess}
-	err := newDb(ctx, config.DbPath, testClientToken, NewOperationLogInsertHandler(&operationLog))
+	err := create(ctx, config.DbPath, testClientToken)
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
@@ -93,6 +74,83 @@ func findLogField(text, key string) string {
 	return text[:index]
 }
 
+func TestCreate(t *testing.T) {
+	newTestDb(t)
+	ctx := util.GenCtx()
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+
+	buffer := catchLog(t)
+	if err := Create(ctx); err != nil {
+		t.Fatalf("初始化异常: %+v", err)
+	}
+	if util.GetPathInfo(ctx, config.DbPath) == nil {
+		t.Fatalf("初始化后库文件应存在: %s", config.DbPath)
+	}
+	clientToken := findLogField(buffer.String(), "clientToken")
+	if clientToken == "" {
+		t.Fatalf("初始前端口令没有打印: %s", buffer.String())
+	}
+	if findLogField(buffer.String(), "serverToken") != serverToken {
+		t.Errorf("初始后端口令没有打印: %s", buffer.String())
+	}
+	if err := tool.CheckToken(ctx, clientToken); err != nil {
+		t.Errorf("生成的初始口令不满足强度: %+v", err)
+	}
+
+	tokenCtx := newTokenCtx(clientToken)
+	gormDb, err := Open(tokenCtx)
+	if err != nil {
+		t.Fatalf("用初始口令打开库异常: %+v", err)
+	}
+	for _, object := range []interface{}{&model.Expense{}, &model.OperationLog{}, &model.FileMeta{}, &model.FileBlob{}} {
+		if !gormDb.Migrator().HasTable(object) {
+			t.Errorf("表未建出来: %T", object)
+		}
+	}
+	util.CloseDb(tokenCtx, gormDb)
+	objects, count, err := SelectOperationLog(tokenCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeSystemInit}})
+	if err != nil {
+		t.Fatalf("查询系统初始化审计异常: %+v", err)
+	}
+	if count != 1 || len(objects) != 1 || objects[0].Result != model.ResultSuccess {
+		t.Errorf("系统初始化审计不符: count=%d %+v", count, objects)
+	}
+
+	buffer2 := catchLog(t)
+	if err = Create(ctx); err != nil {
+		t.Fatalf("重复初始化异常: %+v", err)
+	}
+	if findLogField(buffer2.String(), "clientToken") != "" {
+		t.Errorf("库已存在时不应再打印初始口令: %s", buffer2.String())
+	}
+	if _, count, _ = SelectOperationLog(tokenCtx, model.OperationLogInquiry{}); count != 1 {
+		t.Errorf("重复初始化不应再记审计: count=%d", count)
+	}
+}
+
+func TestCreateEmptyDbFile(t *testing.T) {
+	newTestDb(t)
+	ctx := util.GenCtx()
+	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
+		t.Fatalf("写0字节库文件异常: %+v", err)
+	}
+
+	buffer := catchLog(t)
+	if err := Create(ctx); err != nil {
+		t.Fatalf("初始化异常: %+v", err)
+	}
+	clientToken := findLogField(buffer.String(), "clientToken")
+	if clientToken == "" {
+		t.Fatalf("0字节库文件是残骸，应当重新初始化: %s", buffer.String())
+	}
+	if err := CheckToken(newTokenCtx(clientToken)); err != nil {
+		t.Errorf("重新初始化后的口令应能打开库: %+v", err)
+	}
+	if err := CheckToken(newTokenCtx("wrong-client-token")); err == nil {
+		t.Errorf("重新初始化后其他口令不应能打开库")
+	}
+}
+
 func TestOpenWithoutDbFile(t *testing.T) {
 	ctx := newTestCtx(t)
 
@@ -104,14 +162,16 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	if _, err := Open(ctx); err == nil {
 		t.Errorf("库文件不存在时开库应报错")
 	}
-	if _, _, err := SelectExpense(newTokenCtx("other-client-token"), model.ExpenseInquiry{}); err == nil {
-		t.Errorf("库文件不存在时查询应报错")
+	//建库封装进了NewTransaction：业务事务碰上库文件不在，就地把库建出来，上层不感知
+	if _, _, err := SelectExpense(newTokenCtx("other-client-token"), model.ExpenseInquiry{}); err != nil {
+		t.Errorf("库文件不存在时查询应就地建库: %+v", err)
 	}
-	if util.GetPathInfo(ctx, config.DbPath) != nil {
-		t.Errorf("库文件不应被请求重新建出来")
+	if util.GetPathInfo(ctx, config.DbPath) == nil {
+		t.Errorf("库文件应被业务事务重新建出来")
 	}
+	//重建出来的库用的是那次请求的口令，原口令自然开不了
 	if err := CheckToken(ctx); err == nil {
-		t.Errorf("库文件不存在时口令探针应报错")
+		t.Errorf("重建后原口令探针应报错")
 	}
 
 	if err := util.WriteData2File(ctx, nil, config.DbPath); err != nil {
@@ -154,7 +214,7 @@ func TestCreateRollbackWithHandler(t *testing.T) {
 
 	//同一条记录插两次，主键冲突让handler失败
 	operationLog := model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeSystemInit, Result: model.ResultSuccess}
-	if err := newDb(ctx, dbPath, testClientToken, NewOperationLogInsertHandler(&operationLog, &operationLog)); err == nil {
+	if err := create(ctx, dbPath, testClientToken, NewOperationLogInsertHandler(&operationLog, &operationLog)); err == nil {
 		t.Fatalf("handler失败时建库应报错")
 	}
 
