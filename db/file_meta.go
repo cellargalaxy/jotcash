@@ -62,12 +62,6 @@ func NewFileMetaUpdateHandler(object *model.FileMeta) *util.UpdateHandler[model.
 	return handler
 }
 
-func NewFileMetaDeleteHandler(inquiry model.FileMetaInquiry) *util.DeleteHandler[model.FileMeta] {
-	inquiry.Page, inquiry.PageSize = 0, 0
-	handler := util.NewDeleteHandler[model.FileMeta](model.FileMeta{}.TableName(), FileMetaInquiry(inquiry))
-	return handler
-}
-
 func NewFileMetaSelectHandler(inquiry model.FileMetaInquiry) *util.SelectHandler[model.FileMeta] {
 	handler := util.NewSelectHandler[model.FileMeta](model.FileMeta{}.TableName(), FileMetaInquiry(inquiry))
 	return handler
@@ -84,15 +78,6 @@ func InsertFileMeta(ctx context.Context, object ...*model.FileMeta) (int64, erro
 
 func UpdateFileMeta(ctx context.Context, object *model.FileMeta) (int64, error) {
 	handler := NewFileMetaUpdateHandler(object)
-	err := Transaction(ctx, handler)
-	if err != nil {
-		return 0, err
-	}
-	return handler.Count, nil
-}
-
-func DeleteFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) (int64, error) {
-	handler := NewFileMetaDeleteHandler(inquiry)
 	err := Transaction(ctx, handler)
 	if err != nil {
 		return 0, err

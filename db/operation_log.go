@@ -63,12 +63,6 @@ func NewOperationLogUpdateHandler(object *model.OperationLog) *util.UpdateHandle
 	return handler
 }
 
-func NewOperationLogDeleteHandler(inquiry model.OperationLogInquiry) *util.DeleteHandler[model.OperationLog] {
-	inquiry.Page, inquiry.PageSize = 0, 0
-	handler := util.NewDeleteHandler[model.OperationLog](model.OperationLog{}.TableName(), OperationLogInquiry(inquiry))
-	return handler
-}
-
 func NewOperationLogSelectHandler(inquiry model.OperationLogInquiry) *util.SelectHandler[model.OperationLog] {
 	handler := util.NewSelectHandler[model.OperationLog](model.OperationLog{}.TableName(), OperationLogInquiry(inquiry))
 	return handler
@@ -85,15 +79,6 @@ func InsertOperationLog(ctx context.Context, object ...*model.OperationLog) (int
 
 func UpdateOperationLog(ctx context.Context, object *model.OperationLog) (int64, error) {
 	handler := NewOperationLogUpdateHandler(object)
-	err := Transaction(ctx, handler)
-	if err != nil {
-		return 0, err
-	}
-	return handler.Count, nil
-}
-
-func DeleteOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) (int64, error) {
-	handler := NewOperationLogDeleteHandler(inquiry)
 	err := Transaction(ctx, handler)
 	if err != nil {
 		return 0, err

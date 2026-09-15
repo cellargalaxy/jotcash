@@ -42,12 +42,6 @@ func NewFileBlobUpdateHandler(object *model.FileBlob) *util.UpdateHandler[model.
 	return handler
 }
 
-func NewFileBlobDeleteHandler(inquiry model.FileBlobInquiry) *util.DeleteHandler[model.FileBlob] {
-	inquiry.Page, inquiry.PageSize = 0, 0
-	handler := util.NewDeleteHandler[model.FileBlob](model.FileBlob{}.TableName(), FileBlobInquiry(inquiry))
-	return handler
-}
-
 func NewFileBlobSelectHandler(inquiry model.FileBlobInquiry) *util.SelectHandler[model.FileBlob] {
 	handler := util.NewSelectHandler[model.FileBlob](model.FileBlob{}.TableName(), FileBlobInquiry(inquiry))
 	return handler
@@ -64,15 +58,6 @@ func InsertFileBlob(ctx context.Context, object ...*model.FileBlob) (int64, erro
 
 func UpdateFileBlob(ctx context.Context, object *model.FileBlob) (int64, error) {
 	handler := NewFileBlobUpdateHandler(object)
-	err := Transaction(ctx, handler)
-	if err != nil {
-		return 0, err
-	}
-	return handler.Count, nil
-}
-
-func DeleteFileBlob(ctx context.Context, inquiry model.FileBlobInquiry) (int64, error) {
-	handler := NewFileBlobDeleteHandler(inquiry)
 	err := Transaction(ctx, handler)
 	if err != nil {
 		return 0, err
