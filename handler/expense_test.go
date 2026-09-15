@@ -155,6 +155,24 @@ func TestSelectExpensePage(t *testing.T) {
 	}
 }
 
+// 前端导出csv靠不传分页参数一次拉全量，条数超过老的默认页大小也不能被截断
+func TestSelectExpenseWithoutPage(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	count := 205
+	expenses := make([]*model.Expense, 0, count)
+	for index := 0; index < count; index++ {
+		expenses = append(expenses, newTestExpense("亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), "1"))
+	}
+	execTransaction(t, clientToken, rdb.NewExpenseInsertHandler(expenses...))
+
+	resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
+	if resp.Data.Count != int64(count) || len(resp.Data.Object) != count {
+		t.Errorf("不传分页应拉全量: count=%d len=%d want=%d", resp.Data.Count, len(resp.Data.Object), count)
+	}
+}
+
 func TestSelectExpenseInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)

@@ -12,6 +12,7 @@ import (
 	common_model "github.com/cellargalaxy/go_common/model"
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -115,6 +116,52 @@ func TestPingExpiredJwt(t *testing.T) {
 	resp := postPing(t, engine, newPingRequest(newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, -time.Minute)))
 	if resp.Code == http.StatusOK {
 		t.Errorf("过期jwt应校验不通过: %+v", resp)
+	}
+}
+
+// 拿字典对着探针爆破：窗口内连着五次校验不过就封禁，封禁期内连对的口令也一并挡掉
+func TestPingBan(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+
+	for count := 1; count <= 5; count++ {
+		resp := postPing(t, engine, newPingRequest(newJwt(t, "wrong-server-token", clientToken, time.Hour)))
+		if resp.Code == http.StatusOK {
+			t.Fatalf("第%d次后端口令错应校验不通过: %+v", count, resp)
+		}
+		if resp.Code == http.StatusTooManyRequests {
+			t.Fatalf("第%d次失败就封禁，封得太早: %+v", count, resp)
+		}
+	}
+
+	resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, clientToken, time.Hour)))
+	if resp.Code != http.StatusTooManyRequests {
+		t.Fatalf("失败五次后应被封禁: %+v", resp)
+	}
+	if strings.Contains(resp.Msg, clientToken) {
+		t.Errorf("封禁文案泄露前端口令: %+v", resp)
+	}
+	//封禁挡的是口令校验这道闸，不是单个接口
+	var changed common_model.HttpResp
+	doRequest(t, engine, newRequest(config.PathChangeToken, newJwt(t, serverToken, clientToken, time.Hour), model.ChangeTokenReq{NewToken: testNewToken}), &changed)
+	if changed.Code != http.StatusTooManyRequests {
+		t.Errorf("封禁期内其他接口也应被挡: %+v", changed)
+	}
+}
+
+// 封禁数的是口令校验这道闸上的失败。前端口令错是过了闸之后在开库那一步失败的，不计入
+func TestPingBanSkipClientToken(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+
+	for count := 1; count <= 5; count++ {
+		resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, "wrong-client-token-1", time.Hour)))
+		if resp.Code == http.StatusOK {
+			t.Fatalf("第%d次前端口令错应校验不通过: %+v", count, resp)
+		}
+	}
+	if resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, clientToken, time.Hour))); resp.Code != http.StatusOK {
+		t.Errorf("前端口令错不该攒成封禁: %+v", resp)
 	}
 }
 

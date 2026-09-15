@@ -26,15 +26,15 @@ func TestCheckOperationLogInquiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("空查询条件不应报错: %+v", err)
 	}
-	if inquiry.PageSize != pageSizeDefault {
-		t.Errorf("分页应兜底: got=%d want=%d", inquiry.PageSize, pageSizeDefault)
+	if inquiry.PageSize != 0 {
+		t.Errorf("不传分页应原样留空，前端导出csv靠它拉全量: got=%d want=0", inquiry.PageSize)
 	}
 	if inquiry.Sort != operationLogSortDefault {
 		t.Errorf("排序应兜底: got=%s want=%s", inquiry.Sort, operationLogSortDefault)
 	}
 
-	if inquiry, _ = checkOperationLogInquiry(ctx, model.OperationLogInquiry{PageSize: pageSizeMax + 1}); inquiry.PageSize != pageSizeMax {
-		t.Errorf("分页应封顶: got=%d want=%d", inquiry.PageSize, pageSizeMax)
+	if inquiry, _ = checkOperationLogInquiry(ctx, model.OperationLogInquiry{PageSize: 100000}); inquiry.PageSize != 100000 {
+		t.Errorf("分页不应再封顶: got=%d want=100000", inquiry.PageSize)
 	}
 	if inquiry, _ = checkOperationLogInquiry(ctx, model.OperationLogInquiry{PageSize: 5, Sort: "id asc"}); inquiry.PageSize != 5 || inquiry.Sort != "id asc" {
 		t.Errorf("上层传了就不该被覆盖: %+v", inquiry)
