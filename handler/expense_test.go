@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -196,6 +197,93 @@ func TestSelectExpenseWithoutJwt(t *testing.T) {
 	engine, _ := newTestEngine(t)
 
 	if resp := selectExpense(t, engine, "", model.ExpenseInquiry{}); resp.Code != http.StatusUnauthorized {
+		t.Errorf("没带jwt应401: %+v", resp)
+	}
+}
+
+type distinctResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		Object []string `json:"object"`
+		Count  int64    `json:"count"`
+	} `json:"data"`
+}
+
+func selectExpenseDistinct(t *testing.T, engine *gin.Engine, jwt string, inquiry model.ExpenseDistinctInquiry) distinctResp {
+	t.Helper()
+	var resp distinctResp
+	doRequest(t, engine, newRequest(config.PathExpenseDistinct, jwt, inquiry), &resp)
+	return resp
+}
+
+// 四个组合框候选与表头币种提示都走这一个接口：按列去重、升序、空值不进候选
+func TestSelectExpenseDistinct(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	first := newTestExpense("亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), "1")
+	second := newTestExpense("苹果", time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC), "2")
+	second.BankName, second.CardLast4, second.ExpenseCurrency, second.ExpenseType = "中国银行", "0001", "CNY", "餐饮"
+	blank := newTestExpense("美团", time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC), "3")
+	blank.ExpenseType = ""
+	gone := newTestExpense("已删除的店", time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), "4")
+	gone.BankName, gone.ExpenseType = "交通银行", "医疗"
+	execTransaction(t, clientToken,
+		rdb.NewExpenseInsertHandler(first, second, blank, gone),
+		rdb.NewExpenseDeleteHandler(model.ExpenseInquiry{Id: []int64{gone.Id}}),
+	)
+
+	cases := map[string]struct {
+		inquiry model.ExpenseDistinctInquiry
+		object  []string
+	}{
+		"银行名称去重并升序": {model.ExpenseDistinctInquiry{Field: "bank_name"}, []string{"中国银行", "招商银行"}},
+		"卡号后四位":     {model.ExpenseDistinctInquiry{Field: "card_last_4"}, []string{"0001", "6789"}},
+		"支出类型跳过空值":  {model.ExpenseDistinctInquiry{Field: "expense_type"}, []string{"购物", "餐饮"}},
+		"支出币种":      {model.ExpenseDistinctInquiry{Field: "expense_currency"}, []string{"CNY", "USD"}},
+		"记账币种":      {model.ExpenseDistinctInquiry{Field: "accounting_currency"}, []string{testAccountingCurrency}},
+		"含已删除":      {model.ExpenseDistinctInquiry{Field: "bank_name", Deleted: model.DeletedAll}, []string{"中国银行", "交通银行", "招商银行"}},
+		"只看已删除":     {model.ExpenseDistinctInquiry{Field: "bank_name", Deleted: model.DeletedOnly}, []string{"交通银行"}},
+	}
+	for name, one := range cases {
+		resp := selectExpenseDistinct(t, engine, jwt, one.inquiry)
+		if resp.Code != http.StatusOK {
+			t.Errorf("%s应成功: %+v", name, resp)
+			continue
+		}
+		if resp.Data.Count != int64(len(one.object)) || !slices.Equal(resp.Data.Object, one.object) {
+			t.Errorf("%s不符: got=%v count=%d want=%v", name, resp.Data.Object, resp.Data.Count, one.object)
+		}
+	}
+}
+
+// 字段会拼进查询语句，白名单外必须直接报错，不能静默换一列查
+func TestSelectExpenseDistinctInvalid(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	inquiries := map[string]model.ExpenseDistinctInquiry{
+		"字段为空":    {},
+		"字段不在白名单": {Field: "remark"},
+		"字段带注入":   {Field: "bank_name from expense; drop table expense; --"},
+		"删除筛选非法":  {Field: "bank_name", Deleted: 99},
+	}
+	for name, inquiry := range inquiries {
+		if resp := selectExpenseDistinct(t, engine, jwt, inquiry); resp.Code == http.StatusOK {
+			t.Errorf("%s应报错: %+v", name, resp)
+		}
+	}
+	//报错之后库还在，没被注入语句打坏
+	if resp := selectExpenseDistinct(t, engine, jwt, model.ExpenseDistinctInquiry{Field: "bank_name"}); resp.Code != http.StatusOK {
+		t.Errorf("正常字段应照常可查: %+v", resp)
+	}
+}
+
+func TestSelectExpenseDistinctWithoutJwt(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	if resp := selectExpenseDistinct(t, engine, "", model.ExpenseDistinctInquiry{Field: "bank_name"}); resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
 	}
 }
