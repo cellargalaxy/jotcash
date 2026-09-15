@@ -129,8 +129,7 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
 		return errors.Errorf("导出数据库，写出目标为空")
 	}
 
-	//审计要跟着快照一起被导出去，所以先写原库再备份
-	gormDb, err := open(ctx, dbPath, token)
+	db, err := open(ctx, dbPath, token)
 	if err != nil {
 		return err
 	}
@@ -140,14 +139,13 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
 		Summary:       "导出加密数据库快照",
 		Result:        model.ResultSuccess,
 	}
-	err = gormDb.WithContext(ctx).Create(&operationLog).Error
+	err = db.WithContext(ctx).Create(&operationLog).Error
 	if err != nil {
-		util.CloseDb(ctx, gormDb)
+		util.CloseDb(ctx, db)
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导出数据库，写审计异常")
 		return errors.Errorf("导出数据库，写审计异常: %+v", err)
 	}
-	//备份要另开一条连接读同一个库文件，这条先关掉
-	err = util.CloseDb(ctx, gormDb)
+	err = util.CloseDb(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -208,7 +206,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return errors.Errorf("导入数据库，读入来源为空")
 	}
 
-	//导入的是调用方自带的库，只校验它自身能打开拦不住越权：拿到后端口令就能签出jwt，再用自己加密的库把原库顶掉
+	//避免越权，校验token合法性
 	err := checkToken(ctx, dbPath, token)
 	if err != nil {
 		return err
@@ -224,8 +222,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return err
 	}
 
-	//校验、补表、写审计都落在上传的这份副本上，它才是待会儿要顶上来的库
-	gormDb, err := open(ctx, backupPath, token)
+	db, err := open(ctx, backupPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -236,8 +233,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		Summary:       "导入加密数据库，整库覆盖",
 		Result:        model.ResultSuccess,
 	}
-	err = gormDb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		//库结构校验要排在建表前面，否则建表会把缺的表补出来，外来库就混过去了
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		migrator := tx.Migrator()
 		for i := range migrateModels {
 			table := migrateModels[i].TableName()
@@ -247,7 +243,6 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"backupPath": backupPath, "table": table}).Error("导入数据库，缺表")
 			return errors.Errorf("导入数据库，缺表: %s", table)
 		}
-		//列的差异不算结构不合法，那正是建表要补的，否则旧版本导出的库就导不回来
 		err := migrate(ctx, tx)
 		if err != nil {
 			return err
@@ -260,18 +255,16 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return nil
 	})
 	if err != nil {
-		util.CloseDb(ctx, gormDb)
+		util.CloseDb(ctx, db)
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	//副本马上要改名顶上去，连接先关掉，别让它攥着旧路径
-	err = util.CloseDb(ctx, gormDb)
+	err = util.CloseDb(ctx, db)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 
-	//整库覆盖不可逆，原库先留一份，导错了还能拿它换回来
 	originPath, err := genBackupPath(ctx)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
@@ -323,7 +316,6 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 		return errors.Errorf("更换口令，新口令为空")
 	}
 
-	//换口令就是拿新口令备份出一份副本，副本齐了再顶回去，中途出错原库一个字节不动
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
@@ -334,8 +326,7 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 		return err
 	}
 
-	//审计要落在换好口令的副本里，跟着副本一起顶上去
-	gormDb, err := open(ctx, backupPath, newToken)
+	db, err := open(ctx, backupPath, newToken)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -346,15 +337,14 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 		Summary:       "数据库已用新口令重新加密",
 		Result:        model.ResultSuccess,
 	}
-	err = gormDb.WithContext(ctx).Create(&operationLog).Error
+	err = db.WithContext(ctx).Create(&operationLog).Error
 	if err != nil {
-		util.CloseDb(ctx, gormDb)
+		util.CloseDb(ctx, db)
 		util.RemoveFile(ctx, backupPath)
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("更换口令，写审计异常")
 		return errors.Errorf("更换口令，写审计异常: %+v", err)
 	}
-	//副本马上要改名顶上去，连接先关掉，别让它攥着旧路径
-	err = util.CloseDb(ctx, gormDb)
+	err = util.CloseDb(ctx, db)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -411,12 +401,10 @@ func clearBackup(ctx context.Context, backupPath string, limit int) error {
 	if len(filenames) <= limit {
 		return nil
 	}
-	//备份文件名是GenId，定长16位，按字符串升序排出来就是按时间从旧到新
 	sort.Strings(filenames)
 
 	for i := 0; i < len(filenames)-limit; i++ {
 		filePath := filepath.Join(backupPath, filenames[i])
-		//删一个算一个，中间有删不掉的先记下来，最后再抛
 		eee := util.RemoveFile(ctx, filePath)
 		if eee != nil {
 			err = eee
