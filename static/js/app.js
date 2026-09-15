@@ -5,6 +5,7 @@ import { render as renderFileMeta } from './page_file_meta.js';
 import { render as renderOperationLog } from './page_operation_log.js';
 import { render as renderSetting } from './page_setting.js';
 import { renderUnlock } from './page_unlock.js';
+import { renderNotice } from './notice.js';
 import { getAccountingCurrency, isUnlocked, lock } from './store.js';
 import { clear, el, query } from './util.js';
 
@@ -61,6 +62,7 @@ function renderSession() {
 
 function renderRoute() {
   const host = query('#page-host');
+  renderNotice(isUnlocked());
   if (!isUnlocked()) {
     query('#nav-wrap').hidden = true;
     renderSession();

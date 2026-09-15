@@ -55,6 +55,13 @@ function buildCombo(getOptions, value, attrs, append) {
   const menu = el('ul', { class: 'dropdown-menu dropdown-menu-end combo-menu' });
   const node = el('div', { class: 'input-group input-group-sm' }, [input, toggle, menu]);
 
+  //菜单必须用 fixed 定位。编辑器嵌在 .table-responsive 里，那层是 overflow-x:auto，
+  //按 CSS 规范另一个方向的 visible 会被一并算成 auto——菜单一展开就把容器撑出纵向滚动条，
+  //表格随之变窄、页面跳一下。fixed 定位的菜单不参与祖先的滚动区计算，撑不出滚动条
+  new bootstrap.Dropdown(toggle, {
+    popperConfig: (config) => ({ ...config, strategy: 'fixed' }),
+  });
+
   //展开时才建菜单：候选会随着用户录入新值而变，建一次就对不上了
   node.addEventListener('show.bs.dropdown', () => {
     clear(menu);

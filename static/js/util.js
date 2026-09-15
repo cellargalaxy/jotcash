@@ -231,30 +231,47 @@ export function parseCsv(text) {
 
 // ===== 下载 =====
 
-export function download(filename, data, type) {
+export function blobUrl(data, type) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: type || 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = el('a', { href: url, download: filename });
+  return URL.createObjectURL(blob);
+}
+
+//下载按钮的首选形态：让用户点的就是一个真正的 <a download>。
+//程序里 click() 出来的下载会被时序和浏览器策略卡住，用户亲手点的不会
+export function downloadLink(filename, url, text, attrs) {
+  return el('a', { href: url, download: filename, rel: 'noopener', text, ...attrs });
+}
+
+export function download(filename, data, type) {
+  const url = blobUrl(data, type);
+  const link = downloadLink(filename, url, '', { style: 'display:none' });
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  //blob 地址不能在点击的同一轮事件循环里撤销：浏览器弹「另存为」时下载还没真正开始，
-  //撤早了这一下就静默失败，表现正是「点了没反应」
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  //点完不能立刻收摊。click() 只是把下载排进队列，浏览器真正去读这个 blob 是异步的：
+  //锚点被摘掉、或者 blob 地址被撤销得太早，这一下就静默失败，表现正是「点了没反应」。
+  //上一版只延后了撤销、没延后摘锚点，所以还是不下载
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 120000);
+  return url;
 }
 
 // ===== 提示 =====
 
-export function toast(message, level) {
+//message 可以是字符串，也可以是节点——下载完要在提示里挂一个手动兜底链接
+export function toast(message, level, delay) {
   const container = query('#toast-container');
+  const body = el('div', { class: 'toast-body' });
+  appendChildren(body, [message instanceof Node ? message : document.createTextNode(String(message))]);
   const node = el('div', { class: `toast align-items-center text-bg-${level || 'primary'} border-0`, role: 'alert' }, [
     el('div', { class: 'd-flex' }, [
-      el('div', { class: 'toast-body', text: message }),
+      body,
       el('button', { type: 'button', class: 'btn-close btn-close-white me-2 m-auto', 'data-bs-dismiss': 'toast' }),
     ]),
   ]);
   container.appendChild(node);
-  const toastApi = new bootstrap.Toast(node, { delay: level === 'danger' ? 8000 : 3000 });
+  const toastApi = new bootstrap.Toast(node, { delay: delay || (level === 'danger' ? 8000 : 3000) });
   node.addEventListener('hidden.bs.toast', () => node.remove());
   toastApi.show();
 }

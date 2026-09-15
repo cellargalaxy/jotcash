@@ -30,17 +30,20 @@ import { getAccountingCurrency, getColumns, setColumns } from './store.js';
 import {
   addMonth,
   appendChildren,
+  blobUrl,
   clear,
   confirmModal,
   compact,
   dateToRfc3339,
   download,
+  downloadLink,
   el,
   formatDate,
   isDecimal,
   isPositiveDecimal,
   monthOf,
   multiplyAmount,
+  toast,
   toCsv,
   toastErr,
   toastOk,
@@ -323,14 +326,20 @@ async function exportFiltered() {
       const value = row[key];
       return value === null || value === undefined ? '' : String(value);
     }));
-    download(csvFilename('jotcash-expense'), `\ufeff${toCsv(csvHeader(), lines)}`);
-    toastOk(`已导出 ${rows.length} 笔`);
+    const filename = csvFilename('jotcash-expense');
+    const url = download(filename, `\ufeff${toCsv(csvHeader(), lines)}`);
+    //浏览器策略、拦截插件都可能把程序发起的下载吃掉，再给一条用户亲手点的路径兜底
+    toast(el('span', {}, [
+      `已导出 ${rows.length} 笔。没有自动下载的话，`,
+      downloadLink(filename, url, '点这里保存', { class: 'link-light fw-bold' }),
+      '。',
+    ]), 'success', 20000);
   } catch (err) {
     toastErr(err);
   }
 }
 
-function downloadTemplate() {
+function templateCsv() {
   const sample = CSV_FIELDS.map((key) => {
     switch (key) {
       case 'expense_date': return formatDate(new Date());
@@ -343,7 +352,17 @@ function downloadTemplate() {
       default: return '';
     }
   });
-  download('jotcash-template.csv', `﻿${toCsv(csvHeader(), [sample])}`);
+  return `﻿${toCsv(csvHeader(), [sample])}`;
+}
+
+//模板内容是死的，blob 建一次就够，工具条每次重绘都复用同一个地址
+let templateUrl = '';
+
+//做成真正的 <a download>：用户亲手点的是链接本身，不经过程序里的 click()，
+//也就没有「下载还没排进队列，锚点就已经被摘掉」这类时序问题
+function templateButton() {
+  if (!templateUrl) templateUrl = blobUrl(templateCsv());
+  return downloadLink('jotcash-template.csv', templateUrl, '下载导入模板', { class: 'btn btn-sm btn-outline-secondary' });
 }
 
 // ===== 数据加载 =====
@@ -647,7 +666,7 @@ function buildToolbar() {
       },
     }),
     el('button', { class: 'btn btn-sm btn-outline-primary', type: 'button', text: '上传账单文件', onclick: openUpload }),
-    el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '下载导入模板', onclick: downloadTemplate }),
+    templateButton(),
     el('button', {
       class: 'btn btn-sm btn-outline-secondary',
       type: 'button',

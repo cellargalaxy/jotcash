@@ -81,3 +81,8 @@
 .filter-item .form-text {
   margin-top: 0.25rem;
 }
+
+/* 顶部公告：紧贴导航栏，通栏不留圆角，长地址在窄屏上换行而不是撑出横向滚动 */
+.notice-bar .notice-url {
+  word-break: break-all;
+}
