@@ -2,6 +2,7 @@ package rdb
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
@@ -22,6 +23,14 @@ var expenseSortMap = map[string]string{
 }
 
 const expenseSortDefault = "id asc"
+
+var expenseDistinctMap = map[string]string{
+	"bank_name":           "bank_name",
+	"card_last_4":         "card_last_4",
+	"expense_currency":    "expense_currency",
+	"accounting_currency": "accounting_currency",
+	"expense_type":        "expense_type",
+}
 
 type ExpenseInquiry model.ExpenseInquiry
 
@@ -147,4 +156,38 @@ func NewExpenseDeleteHandler(inquiry model.ExpenseInquiry) *util.DeleteHandler[m
 func NewExpenseSelectHandler(inquiry model.ExpenseInquiry) *util.SelectHandler[model.Expense] {
 	handler := util.NewSelectHandler[model.Expense](model.Expense{}.TableName(), ExpenseInquiry(inquiry))
 	return handler
+}
+
+func NewExpenseDistinctHandler(inquiry model.ExpenseDistinctInquiry) *ExpenseDistinctHandler {
+	handler := new(ExpenseDistinctHandler)
+	handler.Inquiry = inquiry
+	return handler
+}
+
+type ExpenseDistinctHandler struct {
+	Inquiry model.ExpenseDistinctInquiry
+	Object  []string
+	Count   int64
+}
+
+func (this *ExpenseDistinctHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	column := expenseDistinctMap[this.Inquiry.Field]
+	if column == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"field": this.Inquiry.Field}).Error("查询expense候选，不在白名单内")
+		return errors.Errorf("查询expense候选，不在白名单内: %s", this.Inquiry.Field)
+	}
+
+	tx, err := ExpenseInquiry(model.ExpenseInquiry{Deleted: this.Inquiry.Deleted}).Where(ctx, tx.Model(&model.Expense{}))
+	if err != nil {
+		return err
+	}
+	//空串不是候选，列为NULL的老行也一并被这条比较筛掉
+	err = tx.Where(fmt.Sprintf("%s != ''", column)).Distinct().Order(column).Pluck(column, &this.Object).Error
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("查询expense候选，异常")
+		return errors.Errorf("查询expense候选，异常: %+v", err)
+	}
+	this.Count = int64(len(this.Object))
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"count": this.Count}).Info("查询expense候选，完成")
+	return nil
 }
