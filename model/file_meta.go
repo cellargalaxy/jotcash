@@ -38,3 +38,11 @@ type FileMetaInquiry struct {
 func (this FileMetaInquiry) String() string {
 	return util.JsonStruct2Str(this)
 }
+
+type FileDownloadReq struct {
+	Id int64 `json:"id"`
+}
+
+func (this FileDownloadReq) String() string {
+	return util.JsonStruct2Str(this)
+}
