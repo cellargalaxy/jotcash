@@ -20,8 +20,6 @@ import (
 
 const testAccountingCurrency = "CNY"
 
-const testClientToken = "test-client-token"
-
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	logrus.SetLevel(logrus.WarnLevel)
@@ -60,18 +58,42 @@ func findLogField(text, key string) string {
 	return text[:index]
 }
 
-// 没有init了，库在第一次开事务时才建出来，口令就是那次开库带的
+// 服务起来就建库，口令由建库那一步生成，测试从日志里把它捞出来当这条链路的前端口令
 func newTestEngine(t *testing.T) (*gin.Engine, string) {
 	t.Helper()
 	t.Chdir(t.TempDir())
 
-	tokenCtx := newTokenCtx(testClientToken)
-	object, err := db.NewTransaction(tokenCtx)
+	buffer := new(bytes.Buffer)
+	origin, originLevel := logrus.StandardLogger().Out, logrus.GetLevel()
+	logrus.SetOutput(buffer)
+	//建库口令是Info级，TestMain把全局级别压到了Warn，只放开捞口令这一小段，别把整条用例的日志都吞进buffer
+	logrus.SetLevel(logrus.InfoLevel)
+	err := db.Create(util.GenCtx())
+	logrus.SetOutput(origin)
+	logrus.SetLevel(originLevel)
 	if err != nil {
 		t.Fatalf("建测试库异常: %+v", err)
 	}
-	object.Close(tokenCtx)
-	return handler.NewEngine(util.GenCtx()), testClientToken
+
+	clientToken := findLogField(buffer.String(), "clientToken")
+	if clientToken == "" {
+		t.Fatalf("建库口令没有打印: %s", buffer.String())
+	}
+	return handler.NewEngine(util.GenCtx()), clientToken
+}
+
+// /db的静态增删查改已经收归/service/db，测试夹具要铺数据就自己开一次事务
+func execTransaction(t *testing.T, clientToken string, handlers ...util.TransactionHandler) {
+	t.Helper()
+	ctx := newTokenCtx(clientToken)
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		t.Fatalf("开事务异常: %+v", err)
+	}
+	defer transaction.Close(ctx)
+	if err = transaction.AddCommit(handlers...).Exec(ctx); err != nil {
+		t.Fatalf("事务异常: %+v", err)
+	}
 }
 
 // 每个请求都自带口令与记账币种，两样都签进jwt

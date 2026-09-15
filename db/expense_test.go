@@ -37,7 +37,7 @@ func TestExpenseCrud(t *testing.T) {
 	ctx := newTestCtx(t)
 	origin := newTestExpense()
 
-	count, err := InsertExpense(ctx, origin)
+	count, err := insertExpense(ctx, origin)
 	if err != nil {
 		t.Fatalf("插入支出明细异常: %+v", err)
 	}
@@ -48,7 +48,7 @@ func TestExpenseCrud(t *testing.T) {
 		t.Errorf("CreatedAt/UpdatedAt应由gorm按约定自动填充")
 	}
 
-	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
 	if err != nil {
 		t.Fatalf("查询支出明细异常: %+v", err)
 	}
@@ -76,14 +76,14 @@ func TestExpenseCrud(t *testing.T) {
 	}
 
 	loaded.Remark = "改过的备注"
-	count, err = UpdateExpense(ctx, loaded)
+	count, err = updateExpense(ctx, loaded)
 	if err != nil {
 		t.Fatalf("更新支出明细异常: %+v", err)
 	}
 	if count != 1 {
 		t.Errorf("更新影响行数: got=%d want=1", count)
 	}
-	objects, _, err = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
+	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
 	if err != nil {
 		t.Fatalf("更新后查询异常: %+v", err)
 	}
@@ -98,10 +98,10 @@ func TestExpenseCrud(t *testing.T) {
 	}
 
 	loaded.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
-	if _, err = UpdateExpense(ctx, loaded); err != nil {
+	if _, err = updateExpense(ctx, loaded); err != nil {
 		t.Fatalf("更新支出明细异常: %+v", err)
 	}
-	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
+	if _, count, _ = selectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
 		t.Errorf("编辑把明细软删掉了，软删是终态只能走删除接口")
 	}
 }
@@ -110,7 +110,7 @@ func TestExpenseVersion(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	origin := newTestExpense()
-	if _, err := InsertExpense(ctx, origin); err != nil {
+	if _, err := insertExpense(ctx, origin); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestExpenseVersion(t *testing.T) {
 	second := *origin
 
 	first.Remark = "先提交的改动"
-	count, err := UpdateExpense(ctx, &first)
+	count, err := updateExpense(ctx, &first)
 	if err != nil {
 		t.Fatalf("更新异常: %+v", err)
 	}
@@ -127,7 +127,7 @@ func TestExpenseVersion(t *testing.T) {
 	}
 
 	second.Remark = "后提交的改动"
-	if _, err = UpdateExpense(ctx, &second); err == nil {
+	if _, err = updateExpense(ctx, &second); err == nil {
 		t.Errorf("版本冲突应报错")
 	}
 	if second.Version != origin.Version {
@@ -144,11 +144,11 @@ func TestExpenseVersion(t *testing.T) {
 	if err == nil {
 		t.Fatalf("版本冲突应报错")
 	}
-	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{rollbackExpense.Id}}); count != 0 {
+	if _, count, _ = selectExpense(ctx, model.ExpenseInquiry{Id: []int64{rollbackExpense.Id}}); count != 0 {
 		t.Errorf("版本冲突未回滚同事务的插入")
 	}
 
-	objects, _, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
+	objects, _, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}})
 	if err != nil {
 		t.Fatalf("查询异常: %+v", err)
 	}
@@ -162,56 +162,56 @@ func TestExpenseDelete(t *testing.T) {
 
 	deleted := newTestExpense()
 	kept := newTestExpense()
-	if _, err := InsertExpense(ctx, deleted, kept); err != nil {
+	if _, err := insertExpense(ctx, deleted, kept); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	if _, err := DeleteExpense(ctx, model.ExpenseInquiry{}); err == nil {
+	if _, err := deleteExpense(ctx, model.ExpenseInquiry{}); err == nil {
 		t.Errorf("无条件删除应报错")
 	}
 
-	count, err := DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}})
+	count, err := deleteExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}})
 	if err != nil {
 		t.Fatalf("删除支出明细异常: %+v", err)
 	}
 	if count != 1 {
 		t.Errorf("删除影响行数: got=%d want=1", count)
 	}
-	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}})
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}})
 	if err != nil {
 		t.Fatalf("删除后查询异常: %+v", err)
 	}
 	if count != 0 || len(objects) != 0 {
 		t.Errorf("软删除后默认不应查到: count=%d len=%d", count, len(objects))
 	}
-	objects, count, err = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}, Deleted: model.DeletedOnly})
+	objects, count, err = selectExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}, Deleted: model.DeletedOnly})
 	if err != nil {
 		t.Fatalf("查询已删除异常: %+v", err)
 	}
 	if count != 1 || len(objects) != 1 || !objects[0].DeletedAt.Valid {
 		t.Errorf("只查已删除未命中: count=%d len=%d", count, len(objects))
 	}
-	if _, count, err = SelectExpense(ctx, model.ExpenseInquiry{Deleted: model.DeletedAll}); err != nil || count != 2 {
+	if _, count, err = selectExpense(ctx, model.ExpenseInquiry{Deleted: model.DeletedAll}); err != nil || count != 2 {
 		t.Errorf("含已删除查询: count=%d err=%+v", count, err)
 	}
 
-	count, err = DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}, Deleted: model.DeletedAll})
+	count, err = deleteExpense(ctx, model.ExpenseInquiry{Id: []int64{deleted.Id}, Deleted: model.DeletedAll})
 	if err != nil {
 		t.Fatalf("重复删除异常: %+v", err)
 	}
 	if count != 0 {
 		t.Errorf("已删除行应跳过: count=%d want=0", count)
 	}
-	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Deleted: model.DeletedAll}); count != 2 {
+	if _, count, _ = selectExpense(ctx, model.ExpenseInquiry{Deleted: model.DeletedAll}); count != 2 {
 		t.Errorf("软删除的行被物理删掉了: count=%d want=2", count)
 	}
 
 	pageOne := newTestExpense()
 	pageTwo := newTestExpense()
-	if _, err = InsertExpense(ctx, pageOne, pageTwo); err != nil {
+	if _, err = insertExpense(ctx, pageOne, pageTwo); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
-	count, err = DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{pageOne.Id, pageTwo.Id}, Page: 1, PageSize: 1})
+	count, err = deleteExpense(ctx, model.ExpenseInquiry{Id: []int64{pageOne.Id, pageTwo.Id}, Page: 1, PageSize: 1})
 	if err != nil {
 		t.Fatalf("删除支出明细异常: %+v", err)
 	}
@@ -233,12 +233,12 @@ func TestExpenseInquiry(t *testing.T) {
 			Counterparty:       "亚马逊",
 			Remark:             "100%退款",
 		}
-		if _, err := InsertExpense(ctx, object); err != nil {
+		if _, err := insertExpense(ctx, object); err != nil {
 			t.Fatalf("插入支出明细异常: %+v", err)
 		}
 	}
 
-	_, count, err := SelectExpense(ctx, model.ExpenseInquiry{
+	_, count, err := selectExpense(ctx, model.ExpenseInquiry{
 		ExpenseDateStart: time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC),
 		ExpenseDateEnd:   time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
 	})
@@ -251,7 +251,7 @@ func TestExpenseInquiry(t *testing.T) {
 
 	min := decimal.RequireFromString("10")
 	max := decimal.RequireFromString("1000")
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{ExpenseAmountMin: &min, ExpenseAmountMax: &max})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{ExpenseAmountMin: &min, ExpenseAmountMax: &max})
 	if err != nil {
 		t.Fatalf("金额区间查询异常: %+v", err)
 	}
@@ -259,7 +259,7 @@ func TestExpenseInquiry(t *testing.T) {
 		t.Errorf("金额区间: count=%d want=2", count)
 	}
 	zero := decimal.Zero
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{ExpenseAmountMax: &zero})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{ExpenseAmountMax: &zero})
 	if err != nil {
 		t.Fatalf("负数金额查询异常: %+v", err)
 	}
@@ -267,21 +267,21 @@ func TestExpenseInquiry(t *testing.T) {
 		t.Errorf("金额<=0: count=%d want=1", count)
 	}
 
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{CounterpartyLike: "马逊"})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{CounterpartyLike: "马逊"})
 	if err != nil {
 		t.Fatalf("模糊查询异常: %+v", err)
 	}
 	if count != 4 {
 		t.Errorf("对手方模糊: count=%d want=4", count)
 	}
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{RemarkLike: "100%退"})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{RemarkLike: "100%退"})
 	if err != nil {
 		t.Fatalf("模糊查询异常: %+v", err)
 	}
 	if count != 4 {
 		t.Errorf("备注模糊: count=%d want=4", count)
 	}
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{RemarkLike: "100%不存在"})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{RemarkLike: "100%不存在"})
 	if err != nil {
 		t.Fatalf("模糊查询异常: %+v", err)
 	}
@@ -289,7 +289,7 @@ func TestExpenseInquiry(t *testing.T) {
 		t.Errorf("通配符未转义，被当成了模式匹配: count=%d want=0", count)
 	}
 
-	_, count, err = SelectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}, Deleted: model.DeletedAll})
+	_, count, err = selectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}, Deleted: model.DeletedAll})
 	if err != nil {
 		t.Fatalf("记账币种取反查询异常: %+v", err)
 	}
@@ -304,26 +304,26 @@ func TestExpenseSort(t *testing.T) {
 	amounts := []string{"9.99", "100.10", "-1"}
 	for i := range amounts {
 		object := &model.Expense{Id: util.GenId(), ExpenseAmount: decimal.RequireFromString(amounts[i])}
-		if _, err := InsertExpense(ctx, object); err != nil {
+		if _, err := insertExpense(ctx, object); err != nil {
 			t.Fatalf("插入支出明细异常: %+v", err)
 		}
 	}
 
-	objects, _, err := SelectExpense(ctx, model.ExpenseInquiry{Sort: "expense_amount desc"})
+	objects, _, err := selectExpense(ctx, model.ExpenseInquiry{Sort: "expense_amount desc"})
 	if err != nil {
 		t.Fatalf("排序查询异常: %+v", err)
 	}
 	if len(objects) != 3 || objects[0].ExpenseAmount.String() != "100.1" || objects[2].ExpenseAmount.String() != "-1" {
 		t.Errorf("金额倒序不符: %+v", objects)
 	}
-	objects, _, err = SelectExpense(ctx, model.ExpenseInquiry{Sort: "id desc"})
+	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{Sort: "id desc"})
 	if err != nil {
 		t.Fatalf("排序查询异常: %+v", err)
 	}
 	if len(objects) != 3 || objects[0].Id < objects[2].Id {
 		t.Errorf("ID倒序不符: %+v", objects)
 	}
-	objects, _, err = SelectExpense(ctx, model.ExpenseInquiry{})
+	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{})
 	if err != nil {
 		t.Fatalf("默认排序查询异常: %+v", err)
 	}
@@ -332,14 +332,14 @@ func TestExpenseSort(t *testing.T) {
 	}
 
 	for _, sort := range []string{"id asc; drop table expense", "expense_amount", "bank_name asc", "1"} {
-		if _, _, err = SelectExpense(ctx, model.ExpenseInquiry{Sort: sort}); err == nil {
+		if _, _, err = selectExpense(ctx, model.ExpenseInquiry{Sort: sort}); err == nil {
 			t.Errorf("非法排序应报错: %s", sort)
 		}
 	}
-	if _, err = DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{objects[0].Id}, Sort: "bank_name asc"}); err == nil {
+	if _, err = deleteExpense(ctx, model.ExpenseInquiry{Id: []int64{objects[0].Id}, Sort: "bank_name asc"}); err == nil {
 		t.Errorf("非法排序的删除应报错")
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 3 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{}); count != 3 {
 		t.Errorf("非法排序的删除不应删掉数据: count=%d want=3", count)
 	}
 }
@@ -350,26 +350,26 @@ func TestExpensePage(t *testing.T) {
 	operationId := util.GenId()
 	for i := 0; i < 3; i++ {
 		object := &model.Expense{Id: util.GenId(), OperationId: operationId, ExpenseCurrency: "CNY"}
-		if _, err := InsertExpense(ctx, object); err != nil {
+		if _, err := insertExpense(ctx, object); err != nil {
 			t.Fatalf("插入支出明细异常: %+v", err)
 		}
 	}
 
-	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{OperationId: []int64{operationId}, Page: 1, PageSize: 2})
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{OperationId: []int64{operationId}, Page: 1, PageSize: 2})
 	if err != nil {
 		t.Fatalf("分页查询异常: %+v", err)
 	}
 	if count != 3 || len(objects) != 2 {
 		t.Errorf("第1页: count=%d len=%d want=3/2", count, len(objects))
 	}
-	objects, count, err = SelectExpense(ctx, model.ExpenseInquiry{OperationId: []int64{operationId}, Page: 2, PageSize: 2})
+	objects, count, err = selectExpense(ctx, model.ExpenseInquiry{OperationId: []int64{operationId}, Page: 2, PageSize: 2})
 	if err != nil {
 		t.Fatalf("分页查询异常: %+v", err)
 	}
 	if count != 3 || len(objects) != 1 {
 		t.Errorf("第2页: count=%d len=%d want=3/1", count, len(objects))
 	}
-	objects, count, err = SelectExpense(ctx, model.ExpenseInquiry{ExpenseCurrency: []string{"USD"}})
+	objects, count, err = selectExpense(ctx, model.ExpenseInquiry{ExpenseCurrency: []string{"USD"}})
 	if err != nil {
 		t.Fatalf("查询异常: %+v", err)
 	}
@@ -393,7 +393,7 @@ func TestExpenseInquiryField(t *testing.T) {
 		ExpenseCurrency: "JPY", AccountingCurrency: "CNY", ExpenseType: "购物X线下",
 		AmortizationMonths: 6, OperationId: util.GenId(), FileId: util.GenId(), Version: 2,
 	}
-	if _, err := InsertExpense(ctx, hit, miss); err != nil {
+	if _, err := insertExpense(ctx, hit, miss); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -410,7 +410,7 @@ func TestExpenseInquiryField(t *testing.T) {
 		//下划线是like的单字符通配符，没转义就会把"购物X线下"也匹进来
 		"支出类型模糊": {ExpenseTypeLike: "购物_线"},
 	} {
-		objects, count, err := SelectExpense(ctx, inquiry)
+		objects, count, err := selectExpense(ctx, inquiry)
 		if err != nil {
 			t.Fatalf("%s筛选异常: %+v", name, err)
 		}
@@ -420,7 +420,7 @@ func TestExpenseInquiryField(t *testing.T) {
 	}
 
 	//记账币种取反把两条都排掉
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}}); count != 0 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{"CNY"}}); count != 0 {
 		t.Errorf("记账币种取反: count=%d want=0", count)
 	}
 }
@@ -430,20 +430,20 @@ func TestExpenseEmptyObject(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	origin := newTestExpense()
-	if _, err := InsertExpense(ctx, origin); err != nil {
+	if _, err := insertExpense(ctx, origin); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	count, err := InsertExpense(ctx)
+	count, err := insertExpense(ctx)
 	if err != nil || count != 0 {
 		t.Errorf("空插入: count=%d err=%+v", count, err)
 	}
-	count, err = UpdateExpense(ctx, nil)
+	count, err = updateExpense(ctx, nil)
 	if err != nil || count != 0 {
 		t.Errorf("空更新: count=%d err=%+v", count, err)
 	}
 
-	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{})
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{})
 	if err != nil {
 		t.Fatalf("查询异常: %+v", err)
 	}

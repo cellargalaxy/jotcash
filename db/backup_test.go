@@ -15,7 +15,7 @@ import (
 func TestExport(t *testing.T) {
 	ctx := newTestCtx(t)
 	expense := newTestExpense()
-	if _, err := InsertExpense(ctx, expense); err != nil {
+	if _, err := insertExpense(ctx, expense); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -47,7 +47,7 @@ func TestExport(t *testing.T) {
 	}
 	util.CloseDb(ctx, gormDb)
 
-	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {
 		t.Fatalf("导回后查询异常: %+v", err)
 	}
@@ -55,10 +55,10 @@ func TestExport(t *testing.T) {
 		t.Errorf("导回后的数据不符: count=%d %+v", count, objects)
 	}
 	//导出审计写在原库上，所以它跟着快照一起被导出、又跟着快照导了回来
-	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbExport}}); count != 1 {
+	if _, count, _ = selectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbExport}}); count != 1 {
 		t.Errorf("导出审计应跟着快照一起导回来: count=%d want=1", count)
 	}
-	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbImport}}); count != 1 {
+	if _, count, _ = selectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbImport}}); count != 1 {
 		t.Errorf("导入审计应落在顶上来的新库里: count=%d want=1", count)
 	}
 }
@@ -66,7 +66,7 @@ func TestExport(t *testing.T) {
 // B-2「结构合法」：口令对得上但不是本系统的库，不能拿来把用户数据覆盖成空库
 func TestImportWrongSchema(t *testing.T) {
 	ctx := newTestCtx(t)
-	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+	if _, err := insertExpense(ctx, newTestExpense()); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestImportWrongSchema(t *testing.T) {
 	if err = Import(ctx, bytes.NewReader(data)); err == nil {
 		t.Fatalf("结构不合法的库应拒绝导入")
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Errorf("被拒的导入不应影响原库: count=%d", count)
 	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)
@@ -111,7 +111,7 @@ func TestImportWrongSchema(t *testing.T) {
 
 func TestImportOldDb(t *testing.T) {
 	ctx := newTestCtx(t)
-	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+	if _, err := insertExpense(ctx, newTestExpense()); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestImportOldDb(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
 				//建表标记要是在锁外从true翻回false，这里就会撞上缺表
-				if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
+				if _, _, err := selectExpense(ctx, model.ExpenseInquiry{}); err != nil {
 					errs <- err
 					return
 				}
@@ -178,7 +178,7 @@ func TestTokenSpecialChar(t *testing.T) {
 		t.Fatalf("建库异常: %+v", err)
 	}
 	expense := newTestExpense()
-	if _, err := InsertExpense(ctx, expense); err != nil {
+	if _, err := insertExpense(ctx, expense); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -189,7 +189,7 @@ func TestTokenSpecialChar(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导出的库用同一口令导不回来: %+v", err)
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
 		t.Errorf("导回后数据不符: count=%d want=1", count)
 	}
 
@@ -214,7 +214,7 @@ func TestExportWrongToken(t *testing.T) {
 func TestChangeToken(t *testing.T) {
 	ctx := newTestCtx(t)
 	expense := newTestExpense()
-	if _, err := InsertExpense(ctx, expense); err != nil {
+	if _, err := insertExpense(ctx, expense); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -224,7 +224,7 @@ func TestChangeToken(t *testing.T) {
 	if err := ChangeToken(ctx, ""); err == nil {
 		t.Errorf("新口令为空应报错")
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Fatalf("失败的换口令不应影响原库: count=%d", count)
 	}
 
@@ -237,14 +237,14 @@ func TestChangeToken(t *testing.T) {
 		t.Errorf("换口令后旧口令应打不开库")
 	}
 	newCtx := newTokenCtx(newToken)
-	objects, count, err := SelectExpense(newCtx, model.ExpenseInquiry{Id: []int64{expense.Id}})
+	objects, count, err := selectExpense(newCtx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {
 		t.Fatalf("换口令后查询异常: %+v", err)
 	}
 	if count != 1 || len(objects) != 1 || objects[0].Counterparty != expense.Counterparty {
 		t.Errorf("换口令后数据不符: count=%d %+v", count, objects)
 	}
-	if _, count, _ = SelectOperationLog(newCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeClientTokenSwap}}); count != 1 {
+	if _, count, _ = selectOperationLog(newCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeClientTokenSwap}}); count != 1 {
 		t.Errorf("更换口令审计应落在新库里: count=%d want=1", count)
 	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)
@@ -258,7 +258,7 @@ func TestChangeToken(t *testing.T) {
 
 func TestImportIllegal(t *testing.T) {
 	ctx := newTestCtx(t)
-	if _, err := InsertExpense(ctx, newTestExpense()); err != nil {
+	if _, err := insertExpense(ctx, newTestExpense()); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestImportIllegal(t *testing.T) {
 	if err := Import(ctx, bytes.NewReader(nil)); err == nil {
 		t.Errorf("0字节文件应拒绝导入")
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{}); count != 1 {
 		t.Errorf("导入失败不应影响原库: count=%d", count)
 	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)
@@ -329,7 +329,7 @@ func TestClearBackup(t *testing.T) {
 func TestImportBackupOrigin(t *testing.T) {
 	ctx := newTestCtx(t)
 	origin := newTestExpense()
-	if _, err := InsertExpense(ctx, origin); err != nil {
+	if _, err := insertExpense(ctx, origin); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 	buffer := new(bytes.Buffer)
@@ -339,13 +339,13 @@ func TestImportBackupOrigin(t *testing.T) {
 
 	//再插一笔，这笔只在原库里有，导入之后会被覆盖掉
 	lost := newTestExpense()
-	if _, err := InsertExpense(ctx, lost); err != nil {
+	if _, err := insertExpense(ctx, lost); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 	if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
 		t.Fatalf("导入异常: %+v", err)
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 0 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 0 {
 		t.Fatalf("导入应已整库覆盖: count=%d want=0", count)
 	}
 
@@ -360,7 +360,7 @@ func TestImportBackupOrigin(t *testing.T) {
 	if err = os.Rename(originPath, config.DbPath); err != nil {
 		t.Fatalf("用原库备份回滚异常: %+v", err)
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 1 {
 		t.Errorf("回滚后被覆盖掉的数据应回来: count=%d want=1", count)
 	}
 }
@@ -369,7 +369,7 @@ func TestImportBackupOrigin(t *testing.T) {
 func TestImportForeignDb(t *testing.T) {
 	ctx := newTestCtx(t)
 	origin := newTestExpense()
-	if _, err := InsertExpense(ctx, origin); err != nil {
+	if _, err := insertExpense(ctx, origin); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -386,7 +386,7 @@ func TestImportForeignDb(t *testing.T) {
 	if err = Import(newTokenCtx(foreignToken), bytes.NewReader(data)); err == nil {
 		t.Errorf("外来库不应能顶掉原库")
 	}
-	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{origin.Id}}); count != 1 {
 		t.Errorf("原库应原封不动: count=%d want=1", count)
 	}
 	if err = CheckToken(ctx); err != nil {

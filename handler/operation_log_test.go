@@ -30,13 +30,10 @@ func newTokenCtx(clientToken string) context.Context {
 func newTestOperationLog(t *testing.T, clientToken string) {
 	t.Helper()
 	now := time.Now()
-	_, err := db.InsertOperationLog(newTokenCtx(clientToken),
+	execTransaction(t, clientToken, db.NewOperationLogInsertHandler(
 		&model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Summary: "入库 37 笔，来源 2609.csv", Result: model.ResultSuccess, CreatedAt: now.Add(time.Minute)},
 		&model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeExpenseEdit, Summary: "编辑明细", Result: model.ResultFailure, CreatedAt: now.Add(2 * time.Minute)},
-	)
-	if err != nil {
-		t.Fatalf("插入测试审计异常: %+v", err)
-	}
+	))
 }
 
 func selectOperationLog(t *testing.T, engine *gin.Engine, jwt string, inquiry model.OperationLogInquiry) operationLogResp {

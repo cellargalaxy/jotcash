@@ -10,11 +10,11 @@ func TestFileBlobCrud(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	origin := &model.FileBlob{FileHash: "deadbeefcafebabe", FileData: []byte{0x00, 0x01, 0xFF, 0x10}}
-	if _, err := InsertFileBlob(ctx, origin); err != nil {
+	if _, err := insertFileBlob(ctx, origin); err != nil {
 		t.Fatalf("插入文件内容异常: %+v", err)
 	}
 
-	objects, count, err := SelectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
+	objects, count, err := selectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
 	if err != nil {
 		t.Fatalf("查询文件内容异常: %+v", err)
 	}
@@ -47,14 +47,14 @@ func TestFileBlobInsertRepeat(t *testing.T) {
 	}
 
 	//库里已有的哈希，再插一次不报错也不覆盖原内容
-	count, err := InsertFileBlob(ctx, &model.FileBlob{FileHash: origin.FileHash, FileData: []byte("其他内容")})
+	count, err := insertFileBlob(ctx, &model.FileBlob{FileHash: origin.FileHash, FileData: []byte("其他内容")})
 	if err != nil {
 		t.Fatalf("重复内容哈希不应报错: %+v", err)
 	}
 	if count != 0 {
 		t.Errorf("重复内容哈希不应插入: count=%d", count)
 	}
-	objects, count, err := SelectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
+	objects, count, err := selectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
 	if err != nil {
 		t.Fatalf("查询文件内容异常: %+v", err)
 	}
@@ -70,20 +70,20 @@ func TestFileBlobUpdate(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	origin := &model.FileBlob{FileHash: "deadbeefcafebabe", FileData: []byte("原件")}
-	if _, err := InsertFileBlob(ctx, origin); err != nil {
+	if _, err := insertFileBlob(ctx, origin); err != nil {
 		t.Fatalf("插入文件内容异常: %+v", err)
 	}
 
 	//内容寻址下改内容等于换哈希，这里只钉住更新链路本身能走通
 	origin.FileData = []byte("改过的原件")
-	count, err := UpdateFileBlob(ctx, origin)
+	count, err := updateFileBlob(ctx, origin)
 	if err != nil {
 		t.Fatalf("更新文件内容异常: %+v", err)
 	}
 	if count != 1 {
 		t.Errorf("更新影响行数: got=%d want=1", count)
 	}
-	objects, count, err := SelectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
+	objects, count, err := selectFileBlob(ctx, model.FileBlobInquiry{FileHash: []string{origin.FileHash}})
 	if err != nil {
 		t.Fatalf("更新后查询异常: %+v", err)
 	}
@@ -91,11 +91,11 @@ func TestFileBlobUpdate(t *testing.T) {
 		t.Errorf("更新未生效: %+v", objects)
 	}
 
-	if _, _, err = SelectFileBlob(ctx, model.FileBlobInquiry{Sort: "file_data asc"}); err == nil {
+	if _, _, err = selectFileBlob(ctx, model.FileBlobInquiry{Sort: "file_data asc"}); err == nil {
 		t.Errorf("白名单外的排序应报错")
 	}
 	//全表查一遍，顺带把默认排序与分页走到
-	if objects, count, err = SelectFileBlob(ctx, model.FileBlobInquiry{Page: 1, PageSize: 10}); err != nil || count != 1 || len(objects) != 1 {
+	if objects, count, err = selectFileBlob(ctx, model.FileBlobInquiry{Page: 1, PageSize: 10}); err != nil || count != 1 || len(objects) != 1 {
 		t.Errorf("分页查询: count=%d len=%d err=%+v", count, len(objects), err)
 	}
 }

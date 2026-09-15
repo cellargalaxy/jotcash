@@ -61,17 +61,17 @@ func TestMigrateTriggerAllowSoftDelete(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	object := &model.Expense{Id: util.GenId(), ExpenseDate: time.Now(), ExpenseCurrency: "CNY", OperationId: util.GenId()}
-	if _, err := InsertExpense(ctx, object); err != nil {
+	if _, err := insertExpense(ctx, object); err != nil {
 		t.Fatalf("插入明细异常: %+v", err)
 	}
-	count, err := DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{object.Id}})
+	count, err := deleteExpense(ctx, model.ExpenseInquiry{Id: []int64{object.Id}})
 	if err != nil {
 		t.Fatalf("软删明细异常: %+v", err)
 	}
 	if count != 1 {
 		t.Errorf("软删影响行数: got=%d want=1", count)
 	}
-	if _, count, _ = SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{object.Id}, Deleted: model.DeletedOnly}); count != 1 {
+	if _, count, _ = selectExpense(ctx, model.ExpenseInquiry{Id: []int64{object.Id}, Deleted: model.DeletedOnly}); count != 1 {
 		t.Errorf("软删后应能用DeletedOnly查到: count=%d want=1", count)
 	}
 }

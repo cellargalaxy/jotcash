@@ -14,7 +14,19 @@ func SelectFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) ([]*mode
 	if err != nil {
 		return nil, 0, err
 	}
-	return db.SelectFileMeta(ctx, inquiry)
+
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
+	fileMetaHandler := db.NewFileMetaSelectHandler(inquiry)
+	err = transaction.AddCommit(fileMetaHandler).Exec(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return fileMetaHandler.Object, fileMetaHandler.Count, nil
 }
 
 func checkFileMetaInquiry(ctx context.Context, inquiry model.FileMetaInquiry) (model.FileMetaInquiry, error) {

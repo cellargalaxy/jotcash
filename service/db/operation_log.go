@@ -33,7 +33,19 @@ func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) 
 	if err != nil {
 		return nil, 0, err
 	}
-	return db.SelectOperationLog(ctx, inquiry)
+
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
+	operationLogHandler := db.NewOperationLogSelectHandler(inquiry)
+	err = transaction.AddCommit(operationLogHandler).Exec(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return operationLogHandler.Object, operationLogHandler.Count, nil
 }
 
 func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInquiry) (model.OperationLogInquiry, error) {

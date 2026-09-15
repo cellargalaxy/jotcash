@@ -46,16 +46,14 @@ func newTestExpense(counterparty string, date time.Time, amount string) *model.E
 // 铺三条：两条未删除（日期与金额都错开），一条已软删除
 func newTestExpenses(t *testing.T, clientToken string) (*model.Expense, *model.Expense, *model.Expense) {
 	t.Helper()
-	ctx := newTokenCtx(clientToken)
 	early := newTestExpense("亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), "-100.50")
 	late := newTestExpense("苹果", time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), "200.25")
 	gone := newTestExpense("已删除的店", time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC), "50")
-	if _, err := db.InsertExpense(ctx, early, late, gone); err != nil {
-		t.Fatalf("插入测试明细异常: %+v", err)
-	}
-	if _, err := db.DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{gone.Id}}); err != nil {
-		t.Fatalf("软删除测试明细异常: %+v", err)
-	}
+	//铺数据与软删除一次事务做完，少开一次库
+	execTransaction(t, clientToken,
+		db.NewExpenseInsertHandler(early, late, gone),
+		db.NewExpenseDeleteHandler(model.ExpenseInquiry{Id: []int64{gone.Id}}),
+	)
 	return early, late, gone
 }
 

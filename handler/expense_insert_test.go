@@ -169,12 +169,13 @@ func TestInsertExpenseArchive(t *testing.T) {
 	}
 
 	//存档的是上传的原样CSV，不加工
-	blobs, _, err := db.SelectFileBlob(newTokenCtx(clientToken), model.FileBlobInquiry{FileHash: []string{files.Data.Object[0].FileHash}})
-	if err != nil || len(blobs) != 1 {
-		t.Fatalf("取存档内容异常: err=%+v len=%d", err, len(blobs))
+	fileBlobHandler := db.NewFileBlobSelectHandler(model.FileBlobInquiry{FileHash: []string{files.Data.Object[0].FileHash}})
+	execTransaction(t, clientToken, fileBlobHandler)
+	if len(fileBlobHandler.Object) != 1 {
+		t.Fatalf("取存档内容异常: len=%d", len(fileBlobHandler.Object))
 	}
-	if string(blobs[0].FileData) != csv {
-		t.Errorf("存档内容应与上传的一致: %s", blobs[0].FileData)
+	if string(fileBlobHandler.Object[0].FileData) != csv {
+		t.Errorf("存档内容应与上传的一致: %s", fileBlobHandler.Object[0].FileData)
 	}
 }
 
@@ -197,10 +198,9 @@ func TestInsertExpenseSameContent(t *testing.T) {
 	if files.Data.Object[0].FileHash != files.Data.Object[1].FileHash {
 		t.Errorf("同内容的哈希应相同: %+v", files.Data.Object)
 	}
-	blobs, count, err := db.SelectFileBlob(newTokenCtx(clientToken), model.FileBlobInquiry{})
-	if err != nil {
-		t.Fatalf("查文件内容异常: %+v", err)
-	}
+	fileBlobHandler := db.NewFileBlobSelectHandler(model.FileBlobInquiry{})
+	execTransaction(t, clientToken, fileBlobHandler)
+	blobs, count := fileBlobHandler.Object, fileBlobHandler.Count
 	if count != 1 || len(blobs) != 1 {
 		t.Errorf("同内容只该存一份，FileBlob应为1条: count=%d", count)
 	}

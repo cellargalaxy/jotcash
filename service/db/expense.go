@@ -49,7 +49,19 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.
 	if err != nil {
 		return nil, 0, err
 	}
-	return db.SelectExpense(ctx, inquiry)
+
+	transaction, err := db.NewTransaction(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer transaction.Close(ctx)
+
+	expenseHandler := db.NewExpenseSelectHandler(inquiry)
+	err = transaction.AddCommit(expenseHandler).Exec(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return expenseHandler.Object, expenseHandler.Count, nil
 }
 
 func checkExpenseRange(ctx context.Context, inquiry model.ExpenseInquiry) error {
