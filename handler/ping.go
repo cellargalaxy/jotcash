@@ -6,7 +6,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/model"
 	"github.com/cellargalaxy/go_common/util"
-	"github.com/cellargalaxy/jotcash/service/db"
+	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )

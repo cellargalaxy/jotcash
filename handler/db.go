@@ -7,7 +7,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/db"
+	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

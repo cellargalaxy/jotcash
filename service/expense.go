@@ -8,9 +8,9 @@ import (
 	common_model "github.com/cellargalaxy/go_common/model"
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/db"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
+	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
