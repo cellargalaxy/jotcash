@@ -11,6 +11,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/ncruces/go-sqlite3/driver"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -87,13 +88,8 @@ func replace(ctx context.Context, backupPath, dbPath, token string) error {
 }
 
 func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionHandler) error {
-	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
-	token, err := getToken(ctx)
-	if err != nil {
-		return err
-	}
-	err = autoMigrate(ctx, dbPath, token)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -142,9 +138,8 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer, handler
 }
 
 func Import(ctx context.Context, reader io.Reader, handlers ...util.TransactionHandler) error {
-	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
-	token, err := getToken(ctx)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -183,22 +178,15 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 	}
 	defer Close(ctx, gormDb)
 
-	err = checkSchema(ctx, gormDb)
+	//库结构校验要排在建表前面，否则建表会把缺的表补出来，外来库就混过去了
+	err = util.NewTransaction(gormDb).
+		AddCommit(NewSchemaCheckHandler()).
+		AddCommit(NewMigrateHandler()).
+		AddCommit(handlers...).
+		AddRollback(NewDbRemoveHandler(backupPath)).
+		Exec(ctx)
 	if err != nil {
-		util.RemoveFile(ctx, backupPath)
 		return err
-	}
-	err = AutoMigrate(ctx, gormDb)
-	if err != nil {
-		util.RemoveFile(ctx, backupPath)
-		return err
-	}
-	if len(handlers) > 0 {
-		err = util.Transaction(ctx, gormDb, handlers...)
-		if err != nil {
-			util.RemoveFile(ctx, backupPath)
-			return err
-		}
 	}
 
 	//整库覆盖不可逆，原库先留一份，导错了还能拿它换回来
@@ -218,20 +206,13 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	//顶上来的库刚补过表结构，标记可以直接置位
-	migrated = true
 	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
 	return nil
 }
 
 func ChangeToken(ctx context.Context, newToken string, handlers ...util.TransactionHandler) error {
-	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
-	token, err := getToken(ctx)
-	if err != nil {
-		return err
-	}
-	err = autoMigrate(ctx, dbPath, token)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -276,7 +257,7 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string, handler
 
 func ClearBackup(ctx context.Context) error {
 	backupPath := config.DbBackupPath
-	limit := config.GetConfig().DbBackupLimit
+	limit := config.GetConfig(ctx).DbBackupLimit
 
 	dbLock.Lock()
 	defer dbLock.Unlock()

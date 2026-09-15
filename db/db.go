@@ -82,6 +82,72 @@ func connect(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	return gormDb, nil
 }
 
+func NewCreateDbHandler(dbPath, token string) *CreateDbHandler {
+	handler := new(CreateDbHandler)
+	handler.dbPath = dbPath
+	handler.token = token
+	return handler
+}
+
+type CreateDbHandler struct {
+	dbPath string
+	token  string
+}
+
+func (this *CreateDbHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	if existDb(ctx, this.dbPath) {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": this.dbPath}).Warn("创建数据库，库文件已存在")
+		return nil
+	}
+
+	db, err := connect(ctx, this.dbPath, this.token)
+	if err != nil {
+		return err
+	}
+	defer util.CloseDb(ctx, db)
+	return nil
+}
+
+func NewDbRemoveHandler(dbPath string) *DbRemoveHandler {
+	handler := new(DbRemoveHandler)
+	handler.dbPath = dbPath
+	return handler
+}
+
+type DbRemoveHandler struct {
+	dbPath string
+}
+
+func (this *DbRemoveHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": this.dbPath}).Info("删除数据库")
+	err := util.RemoveFile(ctx, this.dbPath)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func NewTokenLogHandler(dbPath, token string) *CreateDbHandler {
+	handler := new(CreateDbHandler)
+	handler.dbPath = dbPath
+	handler.token = token
+	return handler
+}
+
+type TokenLogHandler struct {
+	dbPath string
+	token  string
+}
+
+func (this *TokenLogHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	logrus.WithContext(ctx).WithFields(logrus.Fields{
+		"dbPath":      this.dbPath,
+		"serverToken": config.GetConfig(ctx).ServerToken,
+		"clientToken": this.token,
+	}).Info("创建数据库，口令")
+	return nil
+}
+
 func Create(ctx context.Context) error {
 	dbPath := config.DbPath
 	token, err := tool.GenToken(ctx, tool.TokenLen)
@@ -100,13 +166,7 @@ func Create(ctx context.Context) error {
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = create(ctx, dbPath, token, operationLogHandler)
-	if err != nil {
-		util.RemoveFile(ctx, dbPath)
-		migrated = false
-		return err
-	}
-	return nil
+	return create(ctx, dbPath, token, operationLogHandler)
 }
 func create(ctx context.Context, dbPath, token string, handlers ...util.TransactionHandler) error {
 	if existDb(ctx, dbPath) {
@@ -116,19 +176,20 @@ func create(ctx context.Context, dbPath, token string, handlers ...util.Transact
 
 	gormDb, err := connect(ctx, dbPath, token)
 	if err != nil {
+		//连接是在事务之前建的库文件，它的残骸只能在事务之外清
+		util.RemoveFile(ctx, dbPath)
 		return err
 	}
-	defer Close(ctx, gormDb)
+	defer util.CloseDb(ctx, gormDb)
 
-	err = AutoMigrate(ctx, gormDb)
+	//建表与调用方的handler同处一个提交链，回滚链负责把没建成的库文件删掉
+	err = util.NewTransaction(gormDb).
+		AddCommit(NewMigrateHandler()).
+		AddCommit(handlers...).
+		AddRollback(NewDbRemoveHandler(dbPath)).
+		Exec(ctx)
 	if err != nil {
 		return err
-	}
-	if len(handlers) > 0 {
-		err = util.Transaction(ctx, gormDb, handlers...)
-		if err != nil {
-			return err
-		}
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"clientToken": token}).Info("创建数据库，前端口令")
@@ -137,13 +198,8 @@ func create(ctx context.Context, dbPath, token string, handlers ...util.Transact
 }
 
 func Open(ctx context.Context) (*gorm.DB, error) {
-	ctx = detachCtx(ctx)
 	dbPath := config.DbPath
-	token, err := getToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-	err = autoMigrate(ctx, dbPath, token)
+	token, err := tool.GetToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,24 +226,6 @@ func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	return gormDb, nil
 }
 
-func Close(ctx context.Context, gormDb *gorm.DB) error {
-	if gormDb == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("关闭数据库，连接为空")
-		return nil
-	}
-	sqlDb, err := gormDb.DB()
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("关闭数据库，获取连接异常")
-		return errors.Errorf("关闭数据库，获取连接异常: %+v", err)
-	}
-	err = sqlDb.Close()
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("关闭数据库，异常")
-		return errors.Errorf("关闭数据库，异常: %+v", err)
-	}
-	return nil
-}
-
 func CheckToken(ctx context.Context) error {
 	gormDb, err := Open(ctx)
 	if err != nil {
@@ -209,10 +247,17 @@ func NewTransaction(ctx context.Context) (*util.Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
+	object, err := newTransaction(ctx, dbPath, token)
+	if err != nil {
+		return nil, err
+	}
+	return object, nil
+}
+func newTransaction(ctx context.Context, dbPath, token string) (*util.Transaction, error) {
 	db, err := open(ctx, dbPath, token)
 	if err != nil {
 		return nil, err
 	}
-	transaction := util.NewTransaction(db)
-	return transaction, nil
+	object := util.NewTransaction(db)
+	return object, nil
 }
