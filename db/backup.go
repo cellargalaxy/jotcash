@@ -85,20 +85,6 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 	return nil
 }
 
-func replace(ctx context.Context, srcPath, srcToken, dstPath string) error {
-	err := checkToken(ctx, srcPath, srcToken)
-	if err != nil {
-		return err
-	}
-	err = os.Rename(srcPath, dstPath)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath, "dstPath": dstPath, "err": err}).Error("替换数据库，异常")
-		return errors.Errorf("替换数据库，异常: %+v", err)
-	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath, "dstPath": dstPath}).Info("替换数据库，完成")
-	return nil
-}
-
 func Export(ctx context.Context, writer io.Writer) error {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
@@ -129,7 +115,7 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
 		return errors.Errorf("导出数据库，写出目标为空")
 	}
 
-	db, err := open(ctx, dbPath, token)
+	db, err := open(ctx, dbPath, token) //包含token合法性校验，避免越权
 	if err != nil {
 		return err
 	}
@@ -206,8 +192,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return errors.Errorf("导入数据库，读入来源为空")
 	}
 
-	//避免越权，校验token合法性
-	err := checkToken(ctx, dbPath, token)
+	err := checkToken(ctx, dbPath, token) //包含token合法性校验，避免越权
 	if err != nil {
 		return err
 	}
@@ -276,10 +261,11 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		return err
 	}
 
-	err = replace(ctx, backupPath, token, dbPath)
+	err = os.Rename(backupPath, dbPath)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
-		return err
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导入数据库，替换异常")
+		return errors.Errorf("导入数据库，替换异常: %+v", err)
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "originPath": originPath}).Info("导入数据库，完成")
@@ -320,7 +306,7 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 	if err != nil {
 		return err
 	}
-	err = backup(ctx, dbPath, oldToken, backupPath, newToken)
+	err = backup(ctx, dbPath, oldToken, backupPath, newToken) //包含token合法性校验，避免越权
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -350,10 +336,11 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 		return err
 	}
 
-	err = replace(ctx, backupPath, newToken, dbPath)
+	err = os.Rename(backupPath, dbPath)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
-		return err
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("更换口令，替换异常")
+		return errors.Errorf("更换口令，替换异常: %+v", err)
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("更换口令，完成")
