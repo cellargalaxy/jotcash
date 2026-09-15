@@ -9,6 +9,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/exchange_rate"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/gin-gonic/gin"
@@ -413,8 +414,13 @@ func TestUpdateExpenseRate(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("改支出日期应成功: %+v", resp)
 	}
-	if !resp.Data.Object.ExchangeRate.Equal(decimalOf(t, "1")) || !resp.Data.Object.AccountingAmount.Equal(decimalOf(t, "100")) {
-		t.Errorf("改支出日期应重取汇率: rate=%s amount=%s", resp.Data.Object.ExchangeRate, resp.Data.Object.AccountingAmount)
+	expectedRate, err := exchange_rate.GetExchangeRate(util.GenCtx(), req.ExpenseCurrency, req.AccountingCurrency, req.ExpenseDate)
+	if err != nil {
+		t.Fatalf("获取预期汇率异常: %+v", err)
+	}
+	expectedAmount := auto.ExpenseAmount.Mul(expectedRate).Round(config.GetConfig(util.GenCtx()).AmountScale)
+	if !resp.Data.Object.ExchangeRate.Equal(expectedRate) || !resp.Data.Object.AccountingAmount.Equal(expectedAmount) {
+		t.Errorf("改支出日期应重取汇率: rate=%s wantRate=%s amount=%s wantAmount=%s", resp.Data.Object.ExchangeRate, expectedRate, resp.Data.Object.AccountingAmount, expectedAmount)
 	}
 
 	//同一次编辑里手填了汇率，以手填值为准，不去自动获取
