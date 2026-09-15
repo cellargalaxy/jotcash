@@ -669,3 +669,143 @@ func TestBackupGuard(t *testing.T) {
 		t.Errorf("被守卫拦下的操作不应留下临时文件: %d", len(files))
 	}
 }
+
+// 定时备份手上没有口令，只能整文件复制：副本要与库文件逐字节相同，要仍是密文，且原口令得能把它打开
+func TestBackupDb(t *testing.T) {
+	ctx := newTestCtx(t)
+	expense := newTestExpense()
+	if _, err := insertExpense(ctx, expense); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	if err := BackupDb(util.GenCtx()); err != nil {
+		t.Fatalf("全量备份异常: %+v", err)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("备份目录里应有一份备份: got=%d want=1", len(files))
+	}
+	backupPath := filepath.Join(config.DbBackupPath, files[0].Name())
+
+	dbData, err := os.ReadFile(config.DbPath)
+	if err != nil {
+		t.Fatalf("读库文件异常: %+v", err)
+	}
+	backupData, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatalf("读备份文件异常: %+v", err)
+	}
+	if !bytes.Equal(dbData, backupData) {
+		t.Errorf("备份与库文件不是逐字节相同: db=%d backup=%d", len(dbData), len(backupData))
+	}
+	if bytes.Contains(backupData, []byte("SQLite format 3")) || bytes.Contains(backupData, []byte(expense.Counterparty)) {
+		t.Errorf("备份是明文，加密没跟着复制过来")
+	}
+	if _, err = open(ctx, backupPath, "wrong-client-token"); err == nil {
+		t.Errorf("错误口令不应打得开备份")
+	}
+
+	//备份顶回库位置，原口令与数据都得完好
+	if err = os.Rename(backupPath, config.DbPath); err != nil {
+		t.Fatalf("用备份回滚异常: %+v", err)
+	}
+	objects, count, err := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
+	if err != nil {
+		t.Fatalf("回滚后查询异常: %+v", err)
+	}
+	if count != 1 || len(objects) != 1 || !objects[0].ExpenseAmount.Equal(expense.ExpenseAmount) {
+		t.Errorf("备份里的数据不符: count=%d %+v", count, objects)
+	}
+	//备份开不了库，自然也记不了审计，库里只该有建库那一条
+	if _, count, _ = selectOperationLog(ctx, model.OperationLogInquiry{}); count != 1 {
+		t.Errorf("全量备份不应记审计: count=%d want=1", count)
+	}
+}
+
+// 业务事务在途时备份：写锁没罩住整条连接的话，复制到的会是一个提交到一半的库文件
+func TestBackupDbDuringTransaction(t *testing.T) {
+	ctx := newTestCtx(t)
+	expense := newTestExpense()
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		transaction, err := NewTransaction(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		defer transaction.Close(ctx)
+		if err = transaction.AddCommit(&slowInsertHandler{expense: expense}).Exec(ctx); err != nil {
+			errs <- err
+		}
+	}()
+	//等事务进到在途窗口里，再让备份插进来
+	time.Sleep(100 * time.Millisecond)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := BackupDb(util.GenCtx()); err != nil {
+			errs <- err
+		}
+	}()
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("并发异常: %+v", err)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("备份目录里应有一份备份: got=%d want=1", len(files))
+	}
+	backupPath := filepath.Join(config.DbBackupPath, files[0].Name())
+	gormDb, err := open(ctx, backupPath, testClientToken)
+	if err != nil {
+		t.Fatalf("在途事务期间产出的备份应能打开: %+v", err)
+	}
+	util.CloseDb(ctx, gormDb)
+}
+
+func TestBackupDbGuard(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	if err := backupDb(ctx, "resource/not-exist.db", "resource/backup.db"); err == nil {
+		t.Errorf("库文件不存在时全量备份应报错")
+	}
+	//来源不在就得拦在碰盘之前，不能把目标文件建出来再报错
+	if util.GetPathInfo(ctx, "resource/backup.db") != nil {
+		t.Errorf("被守卫拦下的全量备份不应留下目标文件")
+	}
+	if err := util.WriteData2File(ctx, []byte("占位"), "resource/backup.db"); err != nil {
+		t.Fatalf("写占位文件异常: %+v", err)
+	}
+	if err := backupDb(ctx, config.DbPath, "resource/backup.db"); err == nil {
+		t.Errorf("目标文件已存在时全量备份应报错")
+	}
+	if data, _ := util.ReadFile2Str(ctx, "resource/backup.db", ""); data != "占位" {
+		t.Errorf("被守卫拦下的全量备份不应覆盖目标文件: %s", data)
+	}
+	util.RemoveFile(ctx, "resource/backup.db")
+
+	//库文件不在时公开入口同样要报错，且不能在备份目录里留下半份
+	util.RemoveFile(ctx, config.DbPath)
+	if err := BackupDb(util.GenCtx()); err == nil {
+		t.Errorf("库文件不存在时全量备份应报错")
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("失败的全量备份不应留下文件: %d", len(files))
+	}
+}
