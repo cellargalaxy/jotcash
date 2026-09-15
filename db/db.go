@@ -164,7 +164,7 @@ func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 		return nil, errors.Errorf("连接数据库，口令错误或数据库文件损坏")
 	}
 
-	db, err := gorm.Open(gormlite.OpenDB(sqlDb), &gorm.Config{
+	gormDb, err := gorm.Open(gormlite.OpenDB(sqlDb), &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{SingularTable: true},
 		Logger:         util.NewDefaultGormLog(),
 	})
@@ -173,7 +173,7 @@ func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "err": err}).Error("连接数据库，gorm初始化异常")
 		return nil, errors.Errorf("连接数据库，gorm初始化异常: %+v", err)
 	}
-	return db, nil
+	return gormDb, nil
 }
 func CheckToken(ctx context.Context) error {
 	db, err := Open(ctx)
