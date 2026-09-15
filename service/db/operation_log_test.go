@@ -13,7 +13,7 @@ import (
 func TestMain(m *testing.M) {
 	logrus.SetLevel(logrus.WarnLevel)
 	code := m.Run()
-	//本包的init会在测试二进制的工作目录建库
+	//db包的init会在测试二进制的工作目录建库
 	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)

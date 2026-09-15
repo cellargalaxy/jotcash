@@ -206,20 +206,19 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
-// 建表与调用方handler同处一个事务：handler失败，表结构要跟着回滚，不能留下半个库
-func TestCreateRollbackWithHandler(t *testing.T) {
+// 建库失败时不能在盘上留下半个库：库文件是事务之前占位建的，得在事务之外清掉
+func TestCreateRollback(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
 	dbPath := "resource/rollback.db"
 
-	//同一条记录插两次，主键冲突让handler失败
-	operationLog := model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeSystemInit, Result: model.ResultSuccess}
-	if err := create(ctx, dbPath, testClientToken, NewOperationLogInsertHandler(&operationLog, &operationLog)); err == nil {
-		t.Fatalf("handler失败时建库应报错")
+	//口令为空，占位文件已经建出来了，连库这一步才失败
+	if err := create(ctx, dbPath, ""); err == nil {
+		t.Fatalf("口令为空时建库应报错")
 	}
 
 	if util.GetFileInfo(ctx, dbPath) != nil {
-		t.Errorf("handler失败时回滚链应把没建成的库文件删掉")
+		t.Errorf("建库失败时应把已占位的库文件清掉")
 	}
 }
 
