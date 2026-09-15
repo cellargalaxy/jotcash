@@ -11,6 +11,7 @@ const (
 	PathExpenseDistinct    = "/api/expense/distinct"
 	PathOperationLogSelect = "/api/operation_log/select"
 	PathFileMetaSelect     = "/api/file_meta/select"
+	PathFileMetaDownload   = "/api/file_meta/download"
 	PathChangeToken        = "/api/token/change"
 	PathExportDb           = "/api/db/export"
 	PathImportDb           = "/api/db/import"
