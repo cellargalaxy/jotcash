@@ -98,6 +98,23 @@ func (this ExpenseChanges) String() string {
 	return util.JsonStruct2Str(this)
 }
 
+type CurrencySwitchReq struct {
+	AccountingCurrency string `json:"accounting_currency"`
+}
+
+func (this CurrencySwitchReq) String() string {
+	return util.JsonStruct2Str(this)
+}
+
+type CurrencySwitchResult struct {
+	Done   int64 `json:"done"`
+	Failed int64 `json:"failed"`
+}
+
+func (this CurrencySwitchResult) String() string {
+	return util.JsonStruct2Str(this)
+}
+
 type ExpenseDistinctInquiry struct {
 	Field   string `json:"field"`
 	Deleted int    `json:"deleted"`
