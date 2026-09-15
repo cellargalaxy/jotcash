@@ -105,6 +105,7 @@ func create(ctx context.Context, dbPath, token string) error {
 		return nil
 	})
 	if err != nil {
+		util.CloseDb(ctx, db)
 		util.RemoveFile(ctx, dbPath)
 		return err
 	}

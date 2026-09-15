@@ -194,7 +194,8 @@ func TestOpenWithoutDbFile(t *testing.T) {
 	}
 	util.RemoveFile(ctx, config.DbPath)
 
-	if _, err := Open(ctx); err == nil {
+	if gormDb, err := Open(ctx); err == nil {
+		util.CloseDb(ctx, gormDb)
 		t.Errorf("库文件不存在时开库应报错")
 	}
 	//建库封装进了NewTransaction：业务事务碰上库文件不在，就地把库建出来，上层不感知
@@ -213,9 +214,11 @@ func TestOpenWithoutDbFile(t *testing.T) {
 		t.Fatalf("写0字节库文件异常: %+v", err)
 	}
 	//open只看库文件在不在，0字节按一个还没写过页的空库处理，开得起来
-	if _, err := Open(ctx); err != nil {
+	gormDb, err := Open(ctx)
+	if err != nil {
 		t.Errorf("0字节库文件应能开库: %+v", err)
 	}
+	util.CloseDb(ctx, gormDb)
 }
 
 func TestAutoMigrate(t *testing.T) {
@@ -287,7 +290,8 @@ func TestOpenClientToken(t *testing.T) {
 	if err = util.WriteData2File(ctx, []byte("我不是数据库"), config.DbPath); err != nil {
 		t.Fatalf("写坏库文件异常: %+v", err)
 	}
-	if _, err = Open(ctx); err == nil {
+	if gormDb, err = Open(ctx); err == nil {
+		util.CloseDb(ctx, gormDb)
 		t.Errorf("库文件损坏应报错")
 	}
 }
@@ -301,7 +305,8 @@ func TestTransactionWithoutClaims(t *testing.T) {
 	if _, _, err := SelectExpense(newTokenCtx(""), model.ExpenseInquiry{}); err == nil {
 		t.Errorf("Claims无口令时查询应报错")
 	}
-	if _, err := Open(util.GenCtx()); err == nil {
+	if gormDb, err := Open(util.GenCtx()); err == nil {
+		util.CloseDb(util.GenCtx(), gormDb)
 		t.Errorf("ctx无Claims时开库应报错")
 	}
 	if util.GetClaims[*model.Claims](util.SetClaims(util.GenCtx(), nil)) != nil {

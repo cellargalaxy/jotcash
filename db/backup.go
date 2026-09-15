@@ -58,7 +58,6 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("备份数据库，获取连接异常")
 		return errors.Errorf("备份数据库，获取连接异常: %+v", err)
 	}
-	defer util.CloseIo(ctx, sqlDb)
 
 	conn, err := sqlDb.Conn(ctx)
 	if err != nil {
