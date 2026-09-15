@@ -131,6 +131,18 @@ func UpdateExpense(ctx context.Context, before, object *model.Expense) error {
 	return transaction.AddCommit(expenseHandler, operationLogHandler).Exec(ctx)
 }
 
+func SwitchAccountingCurrency(ctx context.Context, object *model.Expense) error {
+	transaction, err := rdb.NewTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer transaction.Close(ctx)
+
+	expenseHandler := rdb.NewExpenseUpdateHandler(object)
+	expenseHandler.Unscoped = true
+	return transaction.AddCommit(expenseHandler).Exec(ctx)
+}
+
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, error) {
 	err := checkExpenseRange(ctx, inquiry)
 	if err != nil {
