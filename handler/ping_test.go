@@ -119,12 +119,13 @@ func TestPingExpiredJwt(t *testing.T) {
 	}
 }
 
-// 拿字典对着探针爆破：窗口内连着五次校验不过就封禁，封禁期内连对的口令也一并挡掉
+// 拿字典对着探针爆破：连着攒够配置的失败次数就封禁，封禁期内连对的口令也一并挡掉
 func TestPingBan(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+	object := config.GetConfig(util.GenCtx())
+	serverToken := object.ServerToken
 
-	for count := 1; count <= 5; count++ {
+	for count := 1; count <= object.TokenFailLimit; count++ {
 		resp := postPing(t, engine, newPingRequest(newJwt(t, "wrong-server-token", clientToken, time.Hour)))
 		if resp.Code == http.StatusOK {
 			t.Fatalf("第%d次后端口令错应校验不通过: %+v", count, resp)
@@ -136,7 +137,7 @@ func TestPingBan(t *testing.T) {
 
 	resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, clientToken, time.Hour)))
 	if resp.Code != http.StatusTooManyRequests {
-		t.Fatalf("失败五次后应被封禁: %+v", resp)
+		t.Fatalf("失败攒够%d次后应被封禁: %+v", object.TokenFailLimit, resp)
 	}
 	if strings.Contains(resp.Msg, clientToken) {
 		t.Errorf("封禁文案泄露前端口令: %+v", resp)
@@ -152,9 +153,10 @@ func TestPingBan(t *testing.T) {
 // 封禁数的是口令校验这道闸上的失败。前端口令错是过了闸之后在开库那一步失败的，不计入
 func TestPingBanSkipClientToken(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
-	serverToken := config.GetConfig(util.GenCtx()).ServerToken
+	object := config.GetConfig(util.GenCtx())
+	serverToken := object.ServerToken
 
-	for count := 1; count <= 5; count++ {
+	for count := 1; count <= object.TokenFailLimit; count++ {
 		resp := postPing(t, engine, newPingRequest(newJwt(t, serverToken, "wrong-client-token-1", time.Hour)))
 		if resp.Code == http.StatusOK {
 			t.Fatalf("第%d次前端口令错应校验不通过: %+v", count, resp)
