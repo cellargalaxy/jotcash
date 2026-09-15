@@ -74,6 +74,54 @@ func UpdateExpense(ctx context.Context, req model.Expense) (any, error) {
 	return common_model.HttpData{Object: &object, Count: 1}, nil
 }
 
+func SwitchAccountingCurrency(ctx context.Context, req model.CurrencySwitchReq) (any, error) {
+	err := expense.CheckCurrency(ctx, model.CsvAccountingCurrency, req.AccountingCurrency)
+	if err != nil {
+		return nil, err
+	}
+	objects, _, err := repo.SelectExpense(ctx, model.ExpenseInquiry{AccountingCurrencyNot: []string{req.AccountingCurrency}, Deleted: model.DeletedAll})
+	if err != nil {
+		return nil, err
+	}
+
+	var switched model.CurrencySwitchResult
+	for i := range objects {
+		object := *objects[i]
+		object.AccountingCurrency = req.AccountingCurrency
+		object.ExchangeRate = decimal.Zero
+		err = expense.Derive(ctx, &object)
+		if err == nil {
+			err = repo.SwitchAccountingCurrency(ctx, &object)
+		}
+		if err != nil {
+			switched.Failed++
+			continue
+		}
+		switched.Done++
+	}
+
+	var result string
+	switch {
+	case switched.Failed == 0:
+		result = model.ResultSuccess
+	case switched.Done == 0:
+		result = model.ResultFailure
+	default:
+		result = model.ResultPartial
+	}
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeCurrencySwitch,
+		Summary:       fmt.Sprintf("切换记账币种为 %s，成功 %d 笔，失败 %d 笔", req.AccountingCurrency, switched.Done, switched.Failed),
+		Result:        result,
+	}
+	err = repo.InsertOperationLog(ctx, &operationLog)
+	if err != nil {
+		return nil, err
+	}
+	return common_model.HttpData{Object: switched, Count: switched.Done}, nil
+}
+
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {
 	count, err := repo.DeleteExpense(ctx, inquiry)
 	if err != nil {
