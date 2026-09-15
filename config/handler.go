@@ -7,6 +7,7 @@ const (
 const (
 	PathExpenseInsert      = "/api/expense/insert"
 	PathExpenseSelect      = "/api/expense/select"
+	PathExpenseUpdate      = "/api/expense/update"
 	PathExpenseDelete      = "/api/expense/delete"
 	PathExpenseDistinct    = "/api/expense/distinct"
 	PathOperationLogSelect = "/api/operation_log/select"
