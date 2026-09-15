@@ -118,22 +118,6 @@ func create(ctx context.Context, dbPath, token string) error {
 	return nil
 }
 
-func Open(ctx context.Context) (*gorm.DB, error) {
-	dbPath := config.DbPath
-	token, err := tool.GetToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	dbLock.RLock()
-	defer dbLock.RUnlock()
-
-	db, err := open(ctx, dbPath, token)
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
 func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	if util.GetFileInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在")
