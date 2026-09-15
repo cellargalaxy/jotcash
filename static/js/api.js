@@ -143,9 +143,10 @@ export function switchAccountingCurrency(target) {
   return notImplemented('记账币种切换');
 }
 
-export function selectExpenseType() {
-  if (USE_MOCK) return mock.selectExpenseType();
-  return notImplemented('支出类型候选');
+//支出类型、银行名称、卡号后四位、币种的候选下拉都走这一个 distinct 查询
+export function selectDistinct(field) {
+  if (USE_MOCK) return mock.selectDistinct(field);
+  return notImplemented('候选取值查询');
 }
 
 export function selectAccountingCurrency() {

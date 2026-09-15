@@ -237,8 +237,10 @@ export function download(filename, data, type) {
   const link = el('a', { href: url, download: filename });
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  link.remove();
+  //blob 地址不能在点击的同一轮事件循环里撤销：浏览器弹「另存为」时下载还没真正开始，
+  //撤早了这一下就静默失败，表现正是「点了没反应」
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 // ===== 提示 =====

@@ -402,11 +402,17 @@ export function switchAccountingCurrency(target) {
   return ok({ done, failed }, done);
 }
 
-//支出类型候选来自运行时 distinct，不建字典表
-export function selectExpenseType() {
-  const types = new Set();
-  for (const row of db.expense) if (row.expense_type) types.add(row.expense_type);
-  return ok([...types].sort(), types.size);
+//候选下拉的取值来自运行时 distinct，不建字典表
+const DISTINCT_FIELDS = ['expense_type', 'bank_name', 'card_last_4', 'expense_currency', 'accounting_currency'];
+
+export function selectDistinct(field) {
+  if (!DISTINCT_FIELDS.includes(field)) return fail(`查询候选，字段不支持: ${field}`);
+  const values = new Set();
+  for (const row of db.expense) {
+    if (row[field]) values.add(String(row[field]));
+  }
+  const object = [...values].sort();
+  return ok(object, object.length);
 }
 
 //F-5 表头提示：全库存在的记账币种集合

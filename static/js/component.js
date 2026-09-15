@@ -1,11 +1,12 @@
 import { CURRENCIES, PAGE_SIZES } from './config.js';
-import { el, formatAmount, formatDate, formatDateTime, formatMonth } from './util.js';
+import { clear, el, formatAmount, formatDate, formatDateTime, formatMonth } from './util.js';
 
 //筛选区的一格：统一标签与控件的排布，免得每个页面各写一套栅格
-export function filterItem(label, control, width) {
-  return el('div', { class: `col-12 col-sm-6 col-lg-${width || 3}` }, [
+export function filterItem(label, control, width, hint) {
+  return el('div', { class: `filter-item col-12 col-sm-6 col-lg-${width || 3}` }, [
     el('label', { class: 'form-label small text-secondary mb-1', text: label }),
     control,
+    hint ? el('div', { class: 'form-text small mt-1', text: hint }) : null,
   ]);
 }
 
@@ -29,23 +30,87 @@ export function select(options, value, attrs) {
   return node;
 }
 
+//候选项允许写成纯字符串，也允许写成 {value,name} 让下拉显示得更全
+function comboOption(item) {
+  return typeof item === 'string' ? { value: item, name: item } : item;
+}
+
+//多选筛选框里，点下拉是往已有取值后面追加一项，不是把前面选的顶掉
+function appendValue(current, value) {
+  const values = (current || '').split(',').map((item) => item.trim()).filter((item) => item !== '');
+  if (!values.includes(value)) values.push(value);
+  return values.join(',');
+}
+
+//组合框：左边是能自由录入的输入框，右边挂一个下拉给已有候选。
+//候选传的是取值函数而不是快照——候选要等接口回来才有，传快照的话首次渲染永远是空的
+function buildCombo(getOptions, value, attrs, append) {
+  const input = el('input', { class: 'form-control form-control-sm', type: 'text', value: value || '', ...attrs });
+  const toggle = el('button', {
+    class: 'btn btn-outline-secondary dropdown-toggle',
+    type: 'button',
+    'data-bs-toggle': 'dropdown',
+    'aria-expanded': 'false',
+  });
+  const menu = el('ul', { class: 'dropdown-menu dropdown-menu-end combo-menu' });
+  const node = el('div', { class: 'input-group input-group-sm' }, [input, toggle, menu]);
+
+  //展开时才建菜单：候选会随着用户录入新值而变，建一次就对不上了
+  node.addEventListener('show.bs.dropdown', () => {
+    clear(menu);
+    const options = (getOptions() || []).map(comboOption);
+    if (options.length === 0) {
+      menu.appendChild(el('li', {}, [el('span', { class: 'dropdown-item-text small text-secondary', text: '暂无候选' })]));
+      return;
+    }
+    for (const option of options) {
+      menu.appendChild(el('li', {}, [
+        el('button', {
+          class: 'dropdown-item small',
+          type: 'button',
+          text: option.name,
+          onclick: () => {
+            input.value = append ? appendValue(input.value, option.value) : option.value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          },
+        }),
+      ]));
+    }
+  });
+  return { node, input };
+}
+
+//单选：点下拉直接替换输入框的值
+export function comboInput(getOptions, value, attrs) {
+  return buildCombo(getOptions, value, attrs, false);
+}
+
+//多选筛选：点下拉往逗号分隔的取值后面追加
+export function comboFilterInput(getOptions, value, attrs) {
+  return buildCombo(getOptions, value, attrs, true);
+}
+
 //币种控件：常用币种走下拉，罕见币种允许直接敲三位代码，后端认的是 ISO 4217 全集
+export function currencyOptions(extra) {
+  const options = CURRENCIES.map((currency) => ({ value: currency.code, name: `${currency.code} ${currency.name}` }));
+  const known = new Set(CURRENCIES.map((currency) => currency.code));
+  for (const code of extra || []) {
+    if (code && !known.has(code)) {
+      known.add(code);
+      options.push({ value: code, name: code });
+    }
+  }
+  return options;
+}
+
 export function currencyInput(value, attrs) {
-  const listId = `currency-list-${Math.random().toString(36).slice(2, 8)}`;
-  const input = el('input', {
+  return comboInput(() => currencyOptions(), value, {
     class: 'form-control form-control-sm text-uppercase',
-    type: 'text',
     maxlength: '3',
-    list: listId,
-    value: value || '',
     placeholder: '币种代码',
     ...attrs,
   });
-  const datalist = el('datalist', { id: listId });
-  for (const currency of CURRENCIES) {
-    datalist.appendChild(el('option', { value: currency.code }, `${currency.code} ${currency.name}`));
-  }
-  return el('div', { class: 'position-relative' }, [input, datalist]);
 }
 
 export function currencySelect(value, attrs) {
@@ -77,6 +142,32 @@ export function checkGroup(options, values, onChange) {
   return node;
 }
 
+//分页条挂在页面最底部，原生 select 的选项会展开到视口外点不着，
+//换成向上展开的下拉，Popper 还会在空间不够时自己翻面
+function pageSizeDropdown(pageSize, onChange) {
+  const menu = el('ul', { class: 'dropdown-menu dropdown-menu-end' });
+  for (const size of PAGE_SIZES) {
+    menu.appendChild(el('li', {}, [
+      el('button', {
+        class: `dropdown-item small ${size === pageSize ? 'active' : ''}`,
+        type: 'button',
+        text: `${size} 条/页`,
+        onclick: () => onChange({ page: 1, page_size: size }),
+      }),
+    ]));
+  }
+  return el('div', { class: 'btn-group btn-group-sm dropup' }, [
+    el('button', {
+      class: 'btn btn-outline-secondary dropdown-toggle',
+      type: 'button',
+      'data-bs-toggle': 'dropdown',
+      'aria-expanded': 'false',
+      text: `${pageSize} 条/页`,
+    }),
+    menu,
+  ]);
+}
+
 //分页条：后端 page 从 1 起，pageSize 上限 200
 export function pager(state, count, onChange) {
   const pageSize = state.page_size;
@@ -97,10 +188,7 @@ export function pager(state, count, onChange) {
       button('下一页', page + 1, page >= total),
       button('末页', total, page >= total),
     ]),
-    select(PAGE_SIZES.map((size) => ({ value: size, name: `${size} 条/页` })), pageSize, {
-      style: 'width:auto',
-      onchange: (event) => onChange({ page: 1, page_size: Number(event.target.value) }),
-    }),
+    pageSizeDropdown(pageSize, onChange),
   ]);
 }
 

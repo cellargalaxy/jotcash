@@ -71,7 +71,7 @@ function buildFilter() {
   let operationTypes = inquiry.operation_type.slice();
   let results = inquiry.result.slice();
 
-  const form = el('form', { class: 'row g-2 align-items-end' }, [
+  const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
     filterItem('审计ID（逗号分隔）', (controls.id = textInput({ value: inquiry.id.join(',') })), 3),
     filterItem('操作摘要', (controls.summary_like = textInput({ value: inquiry.summary_like })), 3),
     filterItem('操作时间起', (controls.created_at_start = dateInput({})), 2),

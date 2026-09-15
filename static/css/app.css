@@ -58,3 +58,26 @@
 .text-uppercase::placeholder {
   text-transform: none;
 }
+
+/* 组合框的候选菜单：候选可能很多，给个高度上限让它自己滚，别把页面顶长 */
+.combo-menu {
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+/* 组合框在栅格里要占满一格，输入框才不会被下拉按钮挤窄 */
+.input-group > .form-control {
+  min-width: 0;
+}
+
+/* 筛选格按顶部对齐，带小字说明的那几格才不会把标签顶得比邻居高。
+   只认 filter-item，别波及同样是 col-12 的查询按钮行 */
+.filter-item {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 小字说明贴住控件底部，多行说明也不会把这一格撑得忽高忽低 */
+.filter-item .form-text {
+  margin-top: 0.25rem;
+}
