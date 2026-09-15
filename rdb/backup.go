@@ -256,6 +256,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 	}
 	err = backup(ctx, dbPath, token, originPath, token)
 	if err != nil {
+		util.RemoveFile(ctx, originPath)
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
