@@ -30,7 +30,7 @@ func newTokenCtx(clientToken string) context.Context {
 func newTestOperationLog(t *testing.T, clientToken string) {
 	t.Helper()
 	now := time.Now()
-	execTransaction(t, clientToken, db.NewOperationLogInsertHandler(
+	execTransaction(t, clientToken, rdb.NewOperationLogInsertHandler(
 		&model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Summary: "入库 37 笔，来源 2609.csv", Result: model.ResultSuccess, CreatedAt: now.Add(time.Minute)},
 		&model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeExpenseEdit, Summary: "编辑明细", Result: model.ResultFailure, CreatedAt: now.Add(2 * time.Minute)},
 	))

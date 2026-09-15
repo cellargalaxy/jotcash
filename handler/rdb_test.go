@@ -73,7 +73,7 @@ func TestExportDbUsable(t *testing.T) {
 	}
 
 	//B-2/B-3：导出的库能用同一口令原样导回来，导回后数据与审计都在
-	if err := db.Import(newTokenCtx(clientToken), strings.NewReader(writer.Body.String())); err != nil {
+	if err := rdb.Import(newTokenCtx(clientToken), strings.NewReader(writer.Body.String())); err != nil {
 		t.Fatalf("导出的库应能导回: %+v", err)
 	}
 	if files := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{}); files.Data.Count != 3 {
