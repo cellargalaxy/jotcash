@@ -17,6 +17,7 @@ const (
 )
 
 const (
+	dbBackupCron     = "0 0 4 * * *"      //数据库备份时间：每天凌晨4点
 	dbBackupLimit    = 5                  //数据库备份上限
 	expenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
 	importFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
@@ -53,6 +54,7 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 		panic(err)
 	}
 	config.ServerToken = serverToken
+	config.DbBackupCron = dbBackupCron
 	config.DbBackupLimit = dbBackupLimit
 	config.ExpenseFileLimit = expenseFileLimit
 	config.ImportFileLimit = importFileLimit
@@ -71,6 +73,9 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) (model.Config
 	if config.ServerToken == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("加载配置，后端口令为空")
 		return config, errors.Errorf("加载配置，后端口令为空")
+	}
+	if config.DbBackupCron == "" {
+		config.DbBackupCron = dbBackupCron
 	}
 	if config.DbBackupLimit <= 0 {
 		config.DbBackupLimit = dbBackupLimit
