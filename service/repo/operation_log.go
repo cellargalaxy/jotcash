@@ -48,6 +48,17 @@ func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) 
 	return operationLogHandler.Object, operationLogHandler.Count, nil
 }
 
+func InsertOperationLog(ctx context.Context, operationLog *model.OperationLog) error {
+	transaction, err := rdb.NewTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer transaction.Close(ctx)
+
+	operationLogHandler := rdb.NewOperationLogInsertHandler(operationLog)
+	return transaction.AddCommit(operationLogHandler).Exec(ctx)
+}
+
 func checkOperationLogInquiry(ctx context.Context, inquiry model.OperationLogInquiry) (model.OperationLogInquiry, error) {
 	for _, operationType := range inquiry.OperationType {
 		if !operationTypes[operationType] {
