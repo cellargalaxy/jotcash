@@ -1,0 +1,60 @@
+/* 表格是这个系统的主界面，密度调高一点，一屏能多看几行 */
+.expense-table {
+  font-size: 0.86rem;
+}
+
+.expense-table td,
+.expense-table th {
+  vertical-align: middle;
+}
+
+/* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界 */
+.duplicate-a > td {
+  background-color: rgba(255, 193, 7, 0.16);
+  border-top: 1px solid rgba(255, 193, 7, 0.75);
+  border-bottom: 1px solid rgba(255, 193, 7, 0.75);
+}
+
+.duplicate-b > td {
+  background-color: rgba(13, 110, 253, 0.12);
+  border-top: 1px solid rgba(13, 110, 253, 0.6);
+  border-bottom: 1px solid rgba(13, 110, 253, 0.6);
+}
+
+.duplicate-a > td:first-child,
+.duplicate-b > td:first-child {
+  border-left: 1px solid currentColor;
+}
+
+.duplicate-a > td:last-child,
+.duplicate-b > td:last-child {
+  border-right: 1px solid currentColor;
+}
+
+/* 已删除是终态，灰掉并划线，避免和在用的行混在一起 */
+.row-deleted > td {
+  color: var(--bs-secondary-color);
+  text-decoration: line-through;
+}
+
+/* 新增与编辑共用的编辑器，嵌在表格行里，视觉上要和普通行区分开 */
+.expense-editor {
+  background-color: var(--bs-tertiary-bg);
+  border-left: 3px solid var(--bs-primary);
+}
+
+.unlock-wrap {
+  display: flex;
+  justify-content: center;
+  padding-top: 4vh;
+}
+
+.unlock-card {
+  width: 100%;
+  max-width: 30rem;
+}
+
+/* 币种输入框统一大写展示，避免 cny/CNY 看起来像两种币种 */
+.text-uppercase::placeholder {
+  text-transform: none;
+}

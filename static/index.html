@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jotcash · 记账</title>
+  <!-- 空图标，免得浏览器去请求根路径的 favicon.ico，在反代前缀下那是个必然 404 -->
+  <link rel="icon" href="data:,">
+  <!-- 三方库全部落到本地 lib 目录，不走 CDN；一律相对路径，反代加前缀也能跟着走 -->
+  <link rel="stylesheet" href="lib/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#/expense">jotcash</a>
+    <div id="nav-wrap" hidden>
+      <ul class="navbar-nav" id="nav-host"></ul>
+    </div>
+    <div class="ms-auto d-flex align-items-center" id="session-host"></div>
+  </div>
+</nav>
+
+<main class="container-fluid py-3" id="page-host"></main>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
+
+<script src="lib/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="lib/decimal/decimal.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

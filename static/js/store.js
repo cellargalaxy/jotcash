@@ -1,0 +1,79 @@
+import { CURRENCY_DEFAULT, EXPENSE_COLUMN_DEFAULT } from './config.js';
+
+//口令只活在 sessionStorage 里，关标签页即失效，绝不进 localStorage、不进 URL
+const SESSION_KEY = 'jotcash.session';
+//列显隐是偏好不是凭据，可以跨会话留着
+const COLUMN_KEY = 'jotcash.columns';
+
+let session = null;
+
+function read() {
+  if (session) return session;
+  try {
+    session = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+  } catch (err) {
+    session = null;
+  }
+  return session;
+}
+
+function write(value) {
+  session = value;
+  if (value) sessionStorage.setItem(SESSION_KEY, JSON.stringify(value));
+  else sessionStorage.removeItem(SESSION_KEY);
+}
+
+export function unlock(serverToken, clientToken, accountingCurrency) {
+  write({ serverToken, clientToken, accountingCurrency });
+}
+
+export function lock() {
+  write(null);
+}
+
+export function isUnlocked() {
+  return read() !== null;
+}
+
+export function getServerToken() {
+  const value = read();
+  return value ? value.serverToken : '';
+}
+
+export function getClientToken() {
+  const value = read();
+  return value ? value.clientToken : '';
+}
+
+export function getAccountingCurrency() {
+  const value = read();
+  return value ? value.accountingCurrency : CURRENCY_DEFAULT;
+}
+
+//记账币种是逐请求携带的口径，换了之后新数据才按它入库，已有数据要走记账币种切换
+export function setAccountingCurrency(accountingCurrency) {
+  const value = read();
+  if (!value) return;
+  write({ ...value, accountingCurrency });
+}
+
+//换口令成功后前端要以新口令继续，不能让用户重新解锁一次
+export function setClientToken(clientToken) {
+  const value = read();
+  if (!value) return;
+  write({ ...value, clientToken });
+}
+
+export function getColumns() {
+  try {
+    const columns = JSON.parse(localStorage.getItem(COLUMN_KEY) || 'null');
+    if (Array.isArray(columns) && columns.length > 0) return columns;
+  } catch (err) {
+    //偏好读坏了就回默认列，不该拦住页面
+  }
+  return EXPENSE_COLUMN_DEFAULT.slice();
+}
+
+export function setColumns(columns) {
+  localStorage.setItem(COLUMN_KEY, JSON.stringify(columns));
+}
