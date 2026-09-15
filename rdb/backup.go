@@ -90,31 +90,52 @@ func Export(ctx context.Context, writer io.Writer) error {
 	if err != nil {
 		return err
 	}
-
-	dbLock.RLock()
-	defer dbLock.RUnlock()
-
-	err = export(ctx, dbPath, token, writer)
+	if writer == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导出数据库，写出目标为空")
+		return errors.Errorf("导出数据库，写出目标为空")
+	}
+	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
 	}
+
+	dbLock.RLock()
+	err = export(ctx, dbPath, token, backupPath)
+	dbLock.RUnlock()
+	if err != nil {
+		return err
+	}
+	defer util.RemoveFile(ctx, backupPath)
+
+	file, err := util.OpenReadFile(ctx, backupPath)
+	if err != nil {
+		return err
+	}
+	defer util.CloseIo(ctx, file)
+	_, err = io.Copy(writer, file)
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导出数据库，写出异常")
+		return errors.Errorf("导出数据库，写出异常: %+v", err)
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "backupPath": backupPath}).Info("导出数据库，完成")
 	return nil
 }
-func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
-	if util.GetFileInfo(ctx, dbPath) == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("导出数据库，库文件不存在")
+func export(ctx context.Context, srcPath, token, dstPath string) error {
+	if util.GetFileInfo(ctx, srcPath) == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath}).Error("导出数据库，库文件不存在")
 		return errors.Errorf("导出数据库，库文件不存在")
 	}
 	if token == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导出数据库，口令为空")
 		return errors.Errorf("导出数据库，口令为空")
 	}
-	if writer == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导出数据库，写出目标为空")
-		return errors.Errorf("导出数据库，写出目标为空")
+	if util.GetFileInfo(ctx, dstPath) != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath}).Error("导出数据库，目标文件已存在")
+		return errors.Errorf("导出数据库，目标文件已存在")
 	}
 
-	db, err := open(ctx, dbPath, token) //包含token合法性校验，避免越权
+	db, err := open(ctx, srcPath, token) //包含token合法性校验，避免越权
 	if err != nil {
 		return err
 	}
@@ -135,29 +156,11 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
 		return err
 	}
 
-	backupPath, err := genBackupPath(ctx)
+	err = backup(ctx, srcPath, token, dstPath, token)
 	if err != nil {
+		util.RemoveFile(ctx, dstPath)
 		return err
 	}
-	defer util.RemoveFile(ctx, backupPath)
-
-	err = backup(ctx, dbPath, token, backupPath, token)
-	if err != nil {
-		return err
-	}
-
-	file, err := util.OpenReadFile(ctx, backupPath)
-	if err != nil {
-		return err
-	}
-	defer util.CloseIo(ctx, file)
-	_, err = io.Copy(writer, file)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导出数据库，写出异常")
-		return errors.Errorf("导出数据库，写出异常: %+v", err)
-	}
-
-	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("导出数据库，完成")
 	return nil
 }
 
