@@ -2,9 +2,12 @@ package handler_test
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	common_model "github.com/cellargalaxy/go_common/model"
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
@@ -137,6 +140,110 @@ func TestSelectFileMetaWithoutJwt(t *testing.T) {
 
 	resp := selectFileMeta(t, engine, "", model.FileMetaInquiry{})
 	if resp.Code != http.StatusUnauthorized {
+		t.Errorf("没带jwt应401: %+v", resp)
+	}
+}
+
+func downloadFile(t *testing.T, engine *gin.Engine, jwt string, id int64) *httptest.ResponseRecorder {
+	t.Helper()
+	writer := httptest.NewRecorder()
+	engine.ServeHTTP(writer, newRequest(config.PathFileMetaDownload, jwt, model.FileDownloadReq{Id: id}))
+	return writer
+}
+
+func failedDownload(t *testing.T, writer *httptest.ResponseRecorder) common_model.HttpResp {
+	t.Helper()
+	var resp common_model.HttpResp
+	if err := util.JsonStr2Struct(writer.Body.String(), &resp); err != nil {
+		t.Fatalf("失败时应返回JSON: body=%s err=%+v", writer.Body.String(), err)
+	}
+	if writer.Header().Get("Content-Disposition") != "" {
+		t.Errorf("失败时不该带附件响应头: %s", writer.Header().Get("Content-Disposition"))
+	}
+	return resp
+}
+
+// D-4：按文件ID取回上传时的原始字节；D-1：内容与元数据分表存，下载才把内容读出来
+func TestDownloadFile(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	fileData := []byte("银行名称,卡号后四位\n招商银行,6789\n")
+	fileHash := util.EnSha256Hex(string(fileData))
+	fileMeta := &model.FileMeta{Id: util.GenId(), FileHash: fileHash, FileName: "2609账单.csv", FileSize: int64(len(fileData)), OperationId: util.GenId(), CreatedAt: time.Now()}
+	execTransaction(t, clientToken,
+		rdb.NewFileBlobInsertHandler(&model.FileBlob{FileHash: fileHash, FileData: fileData}),
+		rdb.NewFileMetaInsertHandler(fileMeta),
+	)
+
+	writer := downloadFile(t, engine, jwt, fileMeta.Id)
+	if writer.Code != http.StatusOK {
+		t.Fatalf("下载应成功: code=%d body=%s", writer.Code, writer.Body.String())
+	}
+	if writer.Body.String() != string(fileData) {
+		t.Errorf("下载内容与入库内容不一致: got=%s want=%s", writer.Body.String(), fileData)
+	}
+	if writer.Header().Get("Content-Type") != "application/octet-stream" {
+		t.Errorf("Content-Type不符: %s", writer.Header().Get("Content-Type"))
+	}
+	if disposition := writer.Header().Get("Content-Disposition"); !strings.Contains(disposition, fileMeta.FileName) {
+		t.Errorf("附件名应是原文件名: %s", disposition)
+	}
+	//C-1：下载是读操作，除数据库导出外读操作一律不记审计
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{}); logs.Data.Count != 1 {
+		t.Errorf("下载不应记审计: %+v", logs.Data)
+	}
+}
+
+// D-3：主键就是内容哈希，重算对不上说明内容已经坏了，必须拦住不给下载
+func TestDownloadFileBroken(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	broken := &model.FileMeta{Id: util.GenId(), FileHash: "hash-broken", FileName: "坏掉的.csv", FileSize: 3, OperationId: util.GenId(), CreatedAt: time.Now()}
+	execTransaction(t, clientToken,
+		rdb.NewFileBlobInsertHandler(&model.FileBlob{FileHash: broken.FileHash, FileData: []byte("abc")}),
+		rdb.NewFileMetaInsertHandler(broken),
+	)
+
+	resp := failedDownload(t, downloadFile(t, engine, jwt, broken.Id))
+	if resp.Code == http.StatusOK {
+		t.Fatalf("内容对不上哈希应阻止下载: %+v", resp)
+	}
+	if !strings.Contains(resp.Msg, "内容校验不通过") {
+		t.Errorf("应给出校验不通过的原因: %+v", resp)
+	}
+}
+
+func TestDownloadFileInvalid(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	//这三条元数据的哈希在file_blob里没有对应的内容
+	newTestFileMeta(t, clientToken)
+	orphan := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{FileHash: []string{"hash-1"}})
+	if orphan.Data.Count != 1 {
+		t.Fatalf("夹具不符: %+v", orphan.Data)
+	}
+
+	if resp := failedDownload(t, downloadFile(t, engine, jwt, 0)); resp.Code == http.StatusOK {
+		t.Errorf("文件ID为空应报错: %+v", resp)
+	}
+	if resp := failedDownload(t, downloadFile(t, engine, jwt, util.GenId())); resp.Code == http.StatusOK {
+		t.Errorf("文件不存在应报错: %+v", resp)
+	}
+	resp := failedDownload(t, downloadFile(t, engine, jwt, orphan.Data.Object[0].Id))
+	if resp.Code == http.StatusOK {
+		t.Errorf("内容缺失应报错: %+v", resp)
+	}
+	if !strings.Contains(resp.Msg, "内容缺失") {
+		t.Errorf("应给出内容缺失的原因: %+v", resp)
+	}
+}
+
+func TestDownloadFileWithoutJwt(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	if resp := failedDownload(t, downloadFile(t, engine, "", util.GenId())); resp.Code != http.StatusUnauthorized {
 		t.Errorf("没带jwt应401: %+v", resp)
 	}
 }
