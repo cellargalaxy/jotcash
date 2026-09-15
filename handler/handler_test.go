@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/cellargalaxy/go_common/util"
-	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/handler"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/service/db"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	logrus.SetLevel(logrus.WarnLevel)
 	code := m.Run()
-	//db包的init会在测试二进制的原始工作目录建库，不清掉会污染代码目录
+	//service/db包的init会在测试二进制的原始工作目录建库，不清掉会污染代码目录
 	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)

@@ -42,7 +42,7 @@ func TestExport(t *testing.T) {
 	if err = NewSchemaCheckHandler().Exec(ctx, gormDb); err != nil {
 		t.Errorf("导入后应把表结构补齐: %+v", err)
 	}
-	Close(ctx, gormDb)
+	util.CloseDb(ctx, gormDb)
 
 	objects, count, err := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}})
 	if err != nil {
@@ -68,7 +68,7 @@ func TestImportWrongSchema(t *testing.T) {
 	if err = gormDb.Exec("CREATE TABLE other(id integer)").Error; err != nil {
 		t.Fatalf("建表异常: %+v", err)
 	}
-	Close(ctx, gormDb)
+	util.CloseDb(ctx, gormDb)
 	data, err := util.ReadFile2Data(ctx, otherPath, nil)
 	if err != nil {
 		t.Fatalf("读库异常: %+v", err)
@@ -98,7 +98,7 @@ func TestImportOldDb(t *testing.T) {
 
 	//造一个同口令、表在但少了两列的库文件，冒充旧版本导出的库（一张表都没有的库过不了B-2的结构校验）
 	oldPath := "resource/old.db"
-	if err := create(ctx, oldPath, testClientToken); err != nil {
+	if err := newDb(ctx, oldPath, testClientToken); err != nil {
 		t.Fatalf("建旧库异常: %+v", err)
 	}
 	gormDb, err := connect(ctx, oldPath, testClientToken)
@@ -110,7 +110,7 @@ func TestImportOldDb(t *testing.T) {
 			t.Fatalf("删旧库列异常: %+v", err)
 		}
 	}
-	Close(ctx, gormDb)
+	util.CloseDb(ctx, gormDb)
 	data, err := util.ReadFile2Data(ctx, oldPath, nil)
 	if err != nil {
 		t.Fatalf("读旧库异常: %+v", err)
@@ -155,7 +155,7 @@ func TestTokenSpecialChar(t *testing.T) {
 	//备份目标库的口令是拼进uri的，这些字符都得经过转义才能原样传过去；空格转义成加号传不过去，已在口令强度里禁掉
 	token := "p+w&d=12%34#x?y"
 	ctx := newTokenCtx(token)
-	if err := create(ctx, config.DbPath, token); err != nil {
+	if err := newDb(ctx, config.DbPath, token); err != nil {
 		t.Fatalf("建库异常: %+v", err)
 	}
 	expense := newTestExpense()
@@ -380,7 +380,7 @@ func TestImportForeignDb(t *testing.T) {
 	}
 
 	foreignToken := "foreign-client-token"
-	if err := create(ctx, "foreign.db", foreignToken); err != nil {
+	if err := newDb(ctx, "foreign.db", foreignToken); err != nil {
 		t.Fatalf("建外来库异常: %+v", err)
 	}
 	data, err := util.ReadFile2Data(ctx, "foreign.db", nil)

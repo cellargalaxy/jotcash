@@ -3,6 +3,7 @@ package db
 import (
 	"testing"
 
+	"github.com/cellargalaxy/go_common/util"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -28,7 +29,7 @@ func TestPageLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开数据库异常: %+v", err)
 	}
-	defer Close(ctx, gormDb)
+	defer util.CloseDb(ctx, gormDb)
 
 	for _, page := range []int{0, -1, 1} {
 		tx, err := pageLimit(ctx, gormDb.Session(&gorm.Session{}), page, 10)
