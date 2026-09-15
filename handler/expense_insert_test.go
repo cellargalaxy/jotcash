@@ -169,7 +169,7 @@ func TestInsertExpenseArchive(t *testing.T) {
 	}
 
 	//存档的是上传的原样CSV，不加工
-	fileBlobHandler := db.NewFileBlobSelectHandler(model.FileBlobInquiry{FileHash: []string{files.Data.Object[0].FileHash}})
+	fileBlobHandler := rdb.NewFileBlobSelectHandler(model.FileBlobInquiry{FileHash: []string{files.Data.Object[0].FileHash}})
 	execTransaction(t, clientToken, fileBlobHandler)
 	if len(fileBlobHandler.Object) != 1 {
 		t.Fatalf("取存档内容异常: len=%d", len(fileBlobHandler.Object))
@@ -198,7 +198,7 @@ func TestInsertExpenseSameContent(t *testing.T) {
 	if files.Data.Object[0].FileHash != files.Data.Object[1].FileHash {
 		t.Errorf("同内容的哈希应相同: %+v", files.Data.Object)
 	}
-	fileBlobHandler := db.NewFileBlobSelectHandler(model.FileBlobInquiry{})
+	fileBlobHandler := rdb.NewFileBlobSelectHandler(model.FileBlobInquiry{})
 	execTransaction(t, clientToken, fileBlobHandler)
 	blobs, count := fileBlobHandler.Object, fileBlobHandler.Count
 	if count != 1 || len(blobs) != 1 {

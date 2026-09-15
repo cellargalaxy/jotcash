@@ -360,19 +360,34 @@ func TestAutoMigrate(t *testing.T) {
 	}
 }
 
-// 建库失败时不能在盘上留下半个库：库文件是事务之前占位建的，得在事务之外清掉
+// 建库失败时不能在盘上留下半个库：口令守卫排在写占位文件之前，写占位文件失败时盘上也不该多出东西
 func TestCreateRollback(t *testing.T) {
 	newTestDb(t)
 	ctx := util.GenCtx()
 	dbPath := "resource/rollback.db"
 
-	//口令为空，占位文件已经建出来了，连库这一步才失败
+	//口令为空在碰盘之前就被拦下，占位文件还没建出来
 	if err := create(ctx, dbPath, ""); err == nil {
 		t.Fatalf("口令为空时建库应报错")
 	}
+	if util.GetPathInfo(ctx, dbPath) != nil {
+		t.Errorf("被口令守卫拦下的建库不应在盘上留下东西: %s", dbPath)
+	}
 
-	if util.GetFileInfo(ctx, dbPath) != nil {
-		t.Errorf("建库失败时应把已占位的库文件清掉")
+	//库路径上蹲着一个同名目录：GetFileInfo对目录返回nil，守卫放行，写占位文件这一步才失败
+	dirPath := "resource/rollback-dir.db"
+	if err := os.MkdirAll(dirPath, 0750); err != nil {
+		t.Fatalf("建同名目录异常: %+v", err)
+	}
+	if err := create(ctx, dirPath, testClientToken); err == nil {
+		t.Fatalf("库路径被目录占住时建库应报错")
+	}
+	if info := util.GetPathInfo(ctx, dirPath); info == nil || !info.IsDir() {
+		t.Errorf("建库失败不应动原本就在那儿的目录: %+v", info)
+	}
+	//两次失败都没走到建表与写审计，库文件自始至终没被建出来
+	if util.GetFileInfo(ctx, config.DbPath) != nil {
+		t.Errorf("失败的建库不应把正库建出来: %s", config.DbPath)
 	}
 }
 

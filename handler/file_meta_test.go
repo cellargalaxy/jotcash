@@ -26,7 +26,7 @@ func newTestFileMeta(t *testing.T, clientToken string) int64 {
 	t.Helper()
 	now := time.Now()
 	operationId := util.GenId()
-	execTransaction(t, clientToken, db.NewFileMetaInsertHandler(
+	execTransaction(t, clientToken, rdb.NewFileMetaInsertHandler(
 		&model.FileMeta{Id: util.GenId(), FileHash: "hash-1", FileName: "2609.csv", FileSize: 37, OperationId: operationId, CreatedAt: now.Add(time.Minute)},
 		&model.FileMeta{Id: util.GenId(), FileHash: "hash-2", FileName: "2609快照.csv", FileSize: 41, OperationId: operationId, CreatedAt: now.Add(2 * time.Minute)},
 		&model.FileMeta{Id: util.GenId(), FileHash: "hash-3", FileName: "2610.csv", FileSize: 53, OperationId: util.GenId(), CreatedAt: now.Add(3 * time.Minute)},

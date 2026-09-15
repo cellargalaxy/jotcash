@@ -9,6 +9,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
@@ -36,7 +37,7 @@ func newTestCtx(t *testing.T) context.Context {
 	logrus.SetOutput(buffer)
 	//建库口令是Info级，TestMain把全局级别压到了Warn，只放开捞口令这一小段
 	logrus.SetLevel(logrus.InfoLevel)
-	err := db.Create(util.GenCtx())
+	err := rdb.Create(util.GenCtx())
 	logrus.SetOutput(origin)
 	logrus.SetLevel(originLevel)
 	if err != nil {
@@ -233,6 +234,39 @@ func TestToken(t *testing.T) {
 	}
 	if err := CheckToken(util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: newToken})); err != nil {
 		t.Errorf("换口令后新口令应能打开库: %+v", err)
+	}
+}
+
+// 口令打不开库时，五个门面都得把开事务的错误如实抛上去，不能静默返回空列表当成「查无此物」
+func TestWrongTokenFacade(t *testing.T) {
+	ctx := newTestCtx(t)
+	expense := newTestEntry(t, ctx, "亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+	wrongCtx := util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: "wrong-client-token"})
+
+	fileMeta := &model.FileMeta{Id: util.GenId(), FileHash: "hash-wrong", FileName: "wrong.csv", FileSize: 1}
+	fileBlob := &model.FileBlob{FileHash: fileMeta.FileHash, FileData: []byte("wrong")}
+	if err := InsertExpense(wrongCtx, util.GenId(), []*model.Expense{newTestExpense("苹果", time.Now())}, fileMeta, fileBlob); err == nil {
+		t.Errorf("错误口令入库应报错")
+	}
+	if _, _, err := SelectExpense(wrongCtx, model.ExpenseInquiry{}); err == nil {
+		t.Errorf("错误口令查询明细应报错")
+	}
+	if _, err := DeleteExpense(wrongCtx, model.ExpenseInquiry{Id: []int64{expense.Id}}); err == nil {
+		t.Errorf("错误口令删除明细应报错")
+	}
+	if _, _, err := SelectFileMeta(wrongCtx, model.FileMetaInquiry{}); err == nil {
+		t.Errorf("错误口令查询文件元数据应报错")
+	}
+	if _, _, err := SelectOperationLog(wrongCtx, model.OperationLogInquiry{}); err == nil {
+		t.Errorf("错误口令查询审计应报错")
+	}
+
+	//五次都没打开过库，原库里的那笔与那条入库审计一条不少
+	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+		t.Errorf("错误口令不应动到原库: count=%d want=1", count)
+	}
+	if _, count, _ := SelectOperationLog(ctx, model.OperationLogInquiry{}); count != 2 {
+		t.Errorf("错误口令不应留下审计: count=%d want=2", count)
 	}
 }
 

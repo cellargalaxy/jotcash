@@ -39,7 +39,7 @@ func TestConfigDefault(t *testing.T) {
 	if err = tool.CheckToken(ctx, object.ServerToken); err != nil {
 		t.Errorf("默认配置里的后端口令不满足强度: %+v", err)
 	}
-	if object.DbBackupLimit <= 0 || object.ExpenseFileLimit <= 0 || object.ImportFileLimit <= 0 {
+	if object.DbBackupLimit <= 0 || object.ExpenseFileLimit <= 0 || object.ImportFileLimit <= 0 || object.AmountScale <= 0 {
 		t.Errorf("默认配置的限额项不应为零值: %+v", object)
 	}
 	if strings.Contains(object.String(), object.ServerToken) {
@@ -71,12 +71,30 @@ func TestConfigParse(t *testing.T) {
 		t.Errorf("负数项未兜底: %+v", negative)
 	}
 	//填了合法值就不能被默认值顶掉
-	custom, err := handler.Parse(ctx, "server_token: abcdefghijk1\ndb_backup_limit: 9\nexpense_file_limit: 11\nimport_file_limit: 13\n")
+	custom, err := handler.Parse(ctx, "server_token: abcdefghijk1\ndb_backup_limit: 9\nexpense_file_limit: 11\nimport_file_limit: 13\namount_scale: 4\n")
 	if err != nil {
 		t.Fatalf("解析配置异常: %+v", err)
 	}
-	if custom.DbBackupLimit != 9 || custom.ExpenseFileLimit != 11 || custom.ImportFileLimit != 13 {
+	if custom.DbBackupLimit != 9 || custom.ExpenseFileLimit != 11 || custom.ImportFileLimit != 13 || custom.AmountScale != 4 {
 		t.Errorf("填了的配置项被默认值顶掉: %+v", custom)
+	}
+	//金额精度与限额项的兜底判据不同：0是「按整数记账」这个合法口径，只有负数才该被顶掉
+	defaultObject, err := handler.Parse(ctx, handler.GetDefault(ctx))
+	if err != nil {
+		t.Fatalf("解析默认配置异常: %+v", err)
+	}
+	scale, err := handler.Parse(ctx, "server_token: abcdefghijk1\namount_scale: 0\n")
+	if err != nil {
+		t.Fatalf("解析配置异常: %+v", err)
+	}
+	if scale.AmountScale != 0 {
+		t.Errorf("金额精度为0应原样保留: got=%d want=0", scale.AmountScale)
+	}
+	if scale, err = handler.Parse(ctx, "server_token: abcdefghijk1\namount_scale: -1\n"); err != nil {
+		t.Fatalf("解析配置异常: %+v", err)
+	}
+	if scale.AmountScale != defaultObject.AmountScale {
+		t.Errorf("金额精度为负未兜底: got=%d want=%d", scale.AmountScale, defaultObject.AmountScale)
 	}
 	if _, err = handler.Parse(ctx, "server_token: \"\"\n"); err == nil {
 		t.Errorf("后端口令为空应报错")

@@ -443,6 +443,77 @@ func TestBackupIllegalArgument(t *testing.T) {
 	}
 }
 
+// 备份目录里混进子目录时，它既不该被算进保留份数，也不该被当成备份删掉
+func TestClearBackupSkipFolder(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	var backupPaths []string
+	for i := 0; i < 2; i++ {
+		backupPath, err := genBackupPath(ctx)
+		if err != nil {
+			t.Fatalf("生成备份路径异常: %+v", err)
+		}
+		if err = util.WriteData2File(ctx, []byte("backup"), backupPath); err != nil {
+			t.Fatalf("写备份文件异常: %+v", err)
+		}
+		backupPaths = append(backupPaths, backupPath)
+	}
+	subPath := filepath.Join(config.DbBackupPath, "sub")
+	if err := util.CreateFolderPath(ctx, subPath); err != nil {
+		t.Fatalf("建子目录异常: %+v", err)
+	}
+
+	//子目录要是被算进来，两份备份就一份都不用删了
+	if err := clearBackup(ctx, config.DbBackupPath, 1); err != nil {
+		t.Fatalf("清理备份异常: %+v", err)
+	}
+	if util.GetPathInfo(ctx, backupPaths[0]) != nil {
+		t.Errorf("旧备份未清理: %s", backupPaths[0])
+	}
+	if util.GetPathInfo(ctx, backupPaths[1]) == nil {
+		t.Errorf("新备份不应清理: %s", backupPaths[1])
+	}
+	if util.GetFolderInfo(ctx, subPath) == nil {
+		t.Errorf("子目录不应被当成备份删掉: %s", subPath)
+	}
+}
+
+// 三个动库文件的公开入口都从ctx取口令，取不到就得在碰盘之前报错
+func TestBackupWithoutClaims(t *testing.T) {
+	ctx := newTestCtx(t)
+	expense := newTestExpense()
+	if _, err := insertExpense(ctx, expense); err != nil {
+		t.Fatalf("插入异常: %+v", err)
+	}
+
+	blankCtx := util.GenCtx()
+	buffer := new(bytes.Buffer)
+	if err := Export(blankCtx, buffer); err == nil {
+		t.Errorf("ctx无口令时导出应报错")
+	}
+	if buffer.Len() > 0 {
+		t.Errorf("被拦下的导出不应写出内容: %d", buffer.Len())
+	}
+	if err := Import(blankCtx, bytes.NewReader(nil)); err == nil {
+		t.Errorf("ctx无口令时导入应报错")
+	}
+	if err := ChangeToken(blankCtx, "new-client-token-5"); err == nil {
+		t.Errorf("ctx无口令时换口令应报错")
+	}
+
+	//三次都没走到动库文件那一步：原口令照常可用，备份目录里也不该多出东西
+	if _, count, _ := selectExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); count != 1 {
+		t.Errorf("被拦下的操作不应影响原库: count=%d want=1", count)
+	}
+	files, err := util.ListFile(ctx, config.DbBackupPath)
+	if err != nil {
+		t.Fatalf("读备份目录异常: %+v", err)
+	}
+	if len(files) > 0 {
+		t.Errorf("被拦下的操作不应留下临时文件: %d", len(files))
+	}
+}
+
 func TestClearBackupIllegalArgument(t *testing.T) {
 	ctx := newTestCtx(t)
 

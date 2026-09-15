@@ -1,16 +1,23 @@
 package expense_test
 
 import (
+	"context"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
+	"github.com/shopspring/decimal"
 )
 
 func TestMain(m *testing.M) {
 	code := m.Run()
+	//config包的init会在测试二进制的工作目录写配置文件
+	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)
 }
@@ -109,5 +116,38 @@ func TestParseInvalid(t *testing.T) {
 	//别家的CSV没有解析器认领，不能当成本系统的格式硬解
 	if _, err := expense.Parse(ctx, []byte("交易日期,摘要,发生额\n2026-01-02,消费,100.50\n"), "CNY"); err == nil {
 		t.Errorf("没有解析器认领应报错")
+	}
+}
+
+const testBadRateData = "只有测试用的解析器认领这份内容"
+
+// 解析器是注册进来的，上层不能假定每个解析器都替它把汇率校验过：非正的汇率到了这一层还得再挡一次
+type badRateParser struct {
+}
+
+func (this *badRateParser) Support(ctx context.Context, data []byte) bool {
+	return string(data) == testBadRateData
+}
+func (this *badRateParser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
+	object := model.Expense{
+		ExpenseDate:     time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		ExpenseCurrency: "USD",
+		ExpenseAmount:   decimal.RequireFromString("100"),
+		ExchangeRate:    decimal.RequireFromString("-7.1234"),
+	}
+	return []*model.Expense{&object}, nil
+}
+
+func TestParseBadRate(t *testing.T) {
+	ctx := util.GenCtx()
+	expense.Register(new(badRateParser))
+
+	objects, err := expense.Parse(ctx, []byte(testBadRateData), "CNY")
+	if err == nil {
+		t.Fatalf("解析器放过来的非正汇率应被挡下: %+v", objects)
+	}
+	//报错要带笔数，几十笔的文件里才定位得到是哪一笔
+	if !strings.Contains(err.Error(), "第1笔") {
+		t.Errorf("报错应带笔数: %+v", err)
 	}
 }

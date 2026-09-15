@@ -51,8 +51,8 @@ func newTestExpenses(t *testing.T, clientToken string) (*model.Expense, *model.E
 	gone := newTestExpense("已删除的店", time.Date(2026, 2, 3, 0, 0, 0, 0, time.UTC), "50")
 	//铺数据与软删除一次事务做完，少开一次库
 	execTransaction(t, clientToken,
-		db.NewExpenseInsertHandler(early, late, gone),
-		db.NewExpenseDeleteHandler(model.ExpenseInquiry{Id: []int64{gone.Id}}),
+		rdb.NewExpenseInsertHandler(early, late, gone),
+		rdb.NewExpenseDeleteHandler(model.ExpenseInquiry{Id: []int64{gone.Id}}),
 	)
 	return early, late, gone
 }

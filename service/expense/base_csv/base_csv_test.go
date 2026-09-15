@@ -10,6 +10,8 @@ import (
 
 func TestMain(m *testing.M) {
 	code := m.Run()
+	//config包的init会在测试二进制的工作目录写配置文件
+	os.RemoveAll("resource")
 	os.RemoveAll("log")
 	os.Exit(code)
 }
@@ -108,7 +110,37 @@ func TestParse(t *testing.T) {
 	//只有表头解析出0笔，是否报错由上层定
 	objects, err = parser.Parse(ctx, []byte(testCsvHeader))
 	if err != nil || len(objects) != 0 {
-		t.Errorf("只有表头应解析出0笔: len=%d err=%+v", len(objects), err)
+		t.Errorf("只有表头应解析出0笔: len=%d want=0 err=%+v", len(objects), err)
+	}
+
+	//CSV读的是不定长行，数据行比表头短时右边那截列取不到下标，按留空处理
+	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,100.50\n"))
+	if err != nil {
+		t.Fatalf("数据行比表头短应能解析: %+v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("应解析出1笔: got=%d want=1", len(objects))
+	}
+	if objects[0].ExpenseAmount.String() != "100.5" || objects[0].ExpenseCurrency != "CNY" {
+		t.Errorf("短行里给了的列应解析到: %+v", objects[0])
+	}
+	if objects[0].ExpenseType != "" || objects[0].AccountingCurrency != "" || !objects[0].ExchangeRate.IsZero() || objects[0].AmortizationMonths != 0 {
+		t.Errorf("短行里没给的列应留空: %+v", objects[0])
+	}
+}
+
+// CSV本身就读不出来的，认领与解析要给出一致的答案：不认领，硬解也报错
+func TestSupportParseBroken(t *testing.T) {
+	ctx := util.GenCtx()
+	parser := new(Parser)
+
+	//引号没闭合，csv读到行尾也凑不出一个完整字段
+	broken := []byte(testCsvHeader + `,,2026-01-02,CNY,1,"没闭合的引号,,,,,` + "\n")
+	if parser.Support(ctx, broken) {
+		t.Errorf("读不出来的CSV不该认领")
+	}
+	if _, err := parser.Parse(ctx, broken); err == nil {
+		t.Errorf("读不出来的CSV硬解应报错")
 	}
 }
 

@@ -68,7 +68,7 @@ func newTestEngine(t *testing.T) (*gin.Engine, string) {
 	logrus.SetOutput(buffer)
 	//建库口令是Info级，TestMain把全局级别压到了Warn，只放开捞口令这一小段，别把整条用例的日志都吞进buffer
 	logrus.SetLevel(logrus.InfoLevel)
-	err := db.Create(util.GenCtx())
+	err := rdb.Create(util.GenCtx())
 	logrus.SetOutput(origin)
 	logrus.SetLevel(originLevel)
 	if err != nil {
@@ -86,7 +86,7 @@ func newTestEngine(t *testing.T) (*gin.Engine, string) {
 func execTransaction(t *testing.T, clientToken string, handlers ...util.TransactionHandler) {
 	t.Helper()
 	ctx := newTokenCtx(clientToken)
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		t.Fatalf("开事务异常: %+v", err)
 	}
