@@ -559,6 +559,179 @@ func TestUpdateExpenseWithoutJwt(t *testing.T) {
 	}
 }
 
+type currencySwitchResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		Object model.CurrencySwitchResult `json:"object"`
+		Count  int64                      `json:"count"`
+	} `json:"data"`
+}
+
+func switchAccountingCurrency(t *testing.T, engine *gin.Engine, jwt string, req model.CurrencySwitchReq) currencySwitchResp {
+	t.Helper()
+	var resp currencySwitchResp
+	doRequest(t, engine, newRequest(config.PathExpenseSwitch, jwt, req), &resp)
+	return resp
+}
+
+// F-4：筛记账币种≠目标的全部明细（含已删除），逐笔重取汇率并无条件覆盖
+func TestSwitchAccountingCurrency(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	_, _, gone := newTestExpenses(t, clientToken)
+	before := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{gone.Id}, Deleted: model.DeletedOnly})
+	if before.Data.Count != 1 {
+		t.Fatalf("夹具里应有一条已删除的: %+v", before.Data)
+	}
+
+	resp := switchAccountingCurrency(t, engine, jwt, model.CurrencySwitchReq{AccountingCurrency: "JPY"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("记账币种切换应成功: %+v", resp)
+	}
+	if resp.Data.Object.Done != 3 || resp.Data.Object.Failed != 0 || resp.Data.Count != 3 {
+		t.Fatalf("含已删除的三条都该切过来: %+v", resp.Data)
+	}
+
+	all := selectExpense(t, engine, jwt, model.ExpenseInquiry{Deleted: model.DeletedAll})
+	if all.Data.Count != 3 {
+		t.Fatalf("切换不该增减行: %+v", all.Data)
+	}
+	scale := config.GetConfig(util.GenCtx()).AmountScale
+	for _, object := range all.Data.Object {
+		if object.AccountingCurrency != "JPY" {
+			t.Errorf("记账币种应改成目标: %+v", object)
+		}
+		//原汇率7.12345678被无条件覆盖成自动获取的值
+		if !object.ExchangeRate.Equal(decimalOf(t, "1")) {
+			t.Errorf("汇率应被无条件覆盖: %s", object.ExchangeRate)
+		}
+		if !object.AccountingAmount.Equal(object.ExpenseAmount.Mul(object.ExchangeRate).Round(scale)) {
+			t.Errorf("记账金额应重算: amount=%s expense=%s", object.AccountingAmount, object.ExpenseAmount)
+		}
+		if object.Version != 2 {
+			t.Errorf("版本号应递增: %+v", object)
+		}
+	}
+
+	//已删除那条切了记账币种，但软删除是终态，删除时间不能被覆盖
+	after := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{gone.Id}, Deleted: model.DeletedOnly})
+	if after.Data.Count != 1 || after.Data.Object[0].AccountingCurrency != "JPY" {
+		t.Fatalf("已删除明细也该切过来且仍是已删除: %+v", after.Data)
+	}
+	if !after.Data.Object[0].DeletedAt.Time.Equal(before.Data.Object[0].DeletedAt.Time) {
+		t.Errorf("不该覆盖删除时间: before=%v after=%v", before.Data.Object[0].DeletedAt, after.Data.Object[0].DeletedAt)
+	}
+
+	logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeCurrencySwitch}})
+	if logs.Data.Count != 1 {
+		t.Fatalf("应记一条记账币种切换审计: %+v", logs.Data)
+	}
+	log := logs.Data.Object[0]
+	if log.Result != model.ResultSuccess || log.Summary == "" {
+		t.Errorf("全部成功时审计结果应为成功: %+v", log)
+	}
+	//批量操作的对象类型与对象ID留零值，切换也不是编辑类操作
+	if log.ObjectType != "" || log.ObjectId != 0 || log.Changes != "" {
+		t.Errorf("批量操作的审计不该带对象与变更内容: %+v", log)
+	}
+	if edits := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeExpenseEdit}}); edits.Data.Count != 0 {
+		t.Errorf("切换不该逐笔记明细编辑审计: %+v", edits.Data)
+	}
+}
+
+// F-4：重试即续跑——已经切过的不在筛选范围里，不会被改第二遍
+func TestSwitchAccountingCurrencyRetry(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	newTestExpenses(t, clientToken)
+
+	if first := switchAccountingCurrency(t, engine, jwt, model.CurrencySwitchReq{AccountingCurrency: "JPY"}); first.Data.Object.Done != 3 {
+		t.Fatalf("首次应切三条: %+v", first.Data)
+	}
+	second := switchAccountingCurrency(t, engine, jwt, model.CurrencySwitchReq{AccountingCurrency: "JPY"})
+	if second.Code != http.StatusOK || second.Data.Object.Done != 0 || second.Data.Object.Failed != 0 {
+		t.Errorf("再切一次应无事可做: %+v", second)
+	}
+	all := selectExpense(t, engine, jwt, model.ExpenseInquiry{Deleted: model.DeletedAll})
+	for _, object := range all.Data.Object {
+		if object.Version != 2 {
+			t.Errorf("已经切过的不该再改一遍: %+v", object)
+		}
+	}
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeCurrencySwitch}}); logs.Data.Count != 2 {
+		t.Errorf("每次切换都该留痕: %+v", logs.Data)
+	}
+}
+
+// F-4：允许部分失败，失败那条留在原币种，重试只跑它
+func TestSwitchAccountingCurrencyPartial(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	good := newTestExpense("苹果", time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), "200.25")
+	broken := newTestExpense("支出币种坏掉的老行", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), "100")
+	broken.ExpenseCurrency = "XYZ"
+	execTransaction(t, clientToken, rdb.NewExpenseInsertHandler(good, broken))
+
+	resp := switchAccountingCurrency(t, engine, jwt, model.CurrencySwitchReq{AccountingCurrency: "JPY"})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("部分失败也该正常返回: %+v", resp)
+	}
+	if resp.Data.Object.Done != 1 || resp.Data.Object.Failed != 1 {
+		t.Fatalf("应一成一败: %+v", resp.Data)
+	}
+	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{Id: []int64{broken.Id}})
+	if list.Data.Count != 1 || list.Data.Object[0].AccountingCurrency != testAccountingCurrency || list.Data.Object[0].Version != broken.Version {
+		t.Errorf("失败那条应原样留着: %+v", list.Data)
+	}
+	if partial := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeCurrencySwitch}, Result: []string{model.ResultPartial}}); partial.Data.Count != 1 {
+		t.Errorf("有成有败时审计结果应为部分成功: %+v", partial.Data)
+	}
+
+	//切好的已经不在筛选范围里，重试只剩坏的那条
+	retry := switchAccountingCurrency(t, engine, jwt, model.CurrencySwitchReq{AccountingCurrency: "JPY"})
+	if retry.Data.Object.Done != 0 || retry.Data.Object.Failed != 1 {
+		t.Errorf("重试只该跑失败的那条: %+v", retry.Data)
+	}
+	if failure := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeCurrencySwitch}, Result: []string{model.ResultFailure}}); failure.Data.Count != 1 {
+		t.Errorf("一条都没成功时审计结果应为失败: %+v", failure.Data)
+	}
+}
+
+func TestSwitchAccountingCurrencyInvalid(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	newTestExpenses(t, clientToken)
+
+	reqs := map[string]model.CurrencySwitchReq{
+		"目标币种为空":   {},
+		"目标币种不在枚举": {AccountingCurrency: "XYZ"},
+	}
+	for name, req := range reqs {
+		if resp := switchAccountingCurrency(t, engine, jwt, req); resp.Code == http.StatusOK {
+			t.Errorf("%s应报错: %+v", name, resp)
+		}
+	}
+	//目标币种非法要在动数据之前就挡住，不能切一半
+	all := selectExpense(t, engine, jwt, model.ExpenseInquiry{Deleted: model.DeletedAll})
+	for _, object := range all.Data.Object {
+		if object.AccountingCurrency != testAccountingCurrency || object.Version != 1 {
+			t.Errorf("失败的切换不该动明细: %+v", object)
+		}
+	}
+	if logs := selectOperationLog(t, engine, jwt, model.OperationLogInquiry{OperationType: []string{model.OperationTypeCurrencySwitch}}); logs.Data.Count != 0 {
+		t.Errorf("失败的切换不该记审计: %+v", logs.Data)
+	}
+}
+
+func TestSwitchAccountingCurrencyWithoutJwt(t *testing.T) {
+	engine, _ := newTestEngine(t)
+
+	if resp := switchAccountingCurrency(t, engine, "", model.CurrencySwitchReq{AccountingCurrency: "JPY"}); resp.Code != http.StatusUnauthorized {
+		t.Errorf("没带jwt应401: %+v", resp)
+	}
+}
+
 func deleteExpense(t *testing.T, engine *gin.Engine, jwt string, inquiry model.ExpenseInquiry) expenseResp {
 	t.Helper()
 	var resp expenseResp
