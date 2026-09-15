@@ -26,7 +26,7 @@ func Register(parser Parser) {
 }
 
 func Parse(ctx context.Context, data []byte, accountingCurrency string) ([]*model.Expense, error) {
-	err := checkCurrency(ctx, model.CsvAccountingCurrency, accountingCurrency)
+	err := CheckCurrency(ctx, model.CsvAccountingCurrency, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +67,11 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 }
 
 func Derive(ctx context.Context, object *model.Expense) error {
-	err := checkCurrency(ctx, model.CsvAccountingCurrency, object.AccountingCurrency)
+	err := CheckCurrency(ctx, model.CsvAccountingCurrency, object.AccountingCurrency)
 	if err != nil {
 		return err
 	}
-	err = checkCurrency(ctx, model.CsvExpenseCurrency, object.ExpenseCurrency)
+	err = CheckCurrency(ctx, model.CsvExpenseCurrency, object.ExpenseCurrency)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func getExchangeRate(ctx context.Context, object *model.Expense) (decimal.Decima
 	return rate, nil
 }
 
-func checkCurrency(ctx context.Context, name, code string) error {
+func CheckCurrency(ctx context.Context, name, code string) error {
 	if code != "" && currency.IsValid(code) {
 		return nil
 	}
