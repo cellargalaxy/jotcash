@@ -30,8 +30,7 @@ func genBackupPath(ctx context.Context) (string, error) {
 }
 
 func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) error {
-	srcInfo := util.GetFileInfo(ctx, srcPath)
-	if srcInfo == nil || srcInfo.Size() <= 0 {
+	if util.GetFileInfo(ctx, srcPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath}).Error("备份数据库，来源文件不存在")
 		return errors.Errorf("备份数据库，来源文件不存在")
 	}
@@ -39,10 +38,9 @@ func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) er
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，来源口令为空")
 		return errors.Errorf("备份数据库，来源口令为空")
 	}
-	dstInfo := util.GetFileInfo(ctx, dstPath)
-	if dstInfo != nil && dstInfo.Size() > 0 {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath}).Error("备份数据库，目标文件不存在")
-		return errors.Errorf("备份数据库，目标文件不存在")
+	if util.GetFileInfo(ctx, dstPath) != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath}).Error("备份数据库，目标文件已存在")
+		return errors.Errorf("备份数据库，目标文件已存在")
 	}
 	if dstToken == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("备份数据库，目标口令为空")
@@ -118,8 +116,7 @@ func Export(ctx context.Context, writer io.Writer) error {
 	return nil
 }
 func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
-	info := util.GetFileInfo(ctx, dbPath)
-	if info == nil || info.Size() <= 0 {
+	if util.GetFileInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("导出数据库，库文件不存在")
 		return errors.Errorf("导出数据库，库文件不存在")
 	}
@@ -198,8 +195,7 @@ func Import(ctx context.Context, reader io.Reader) error {
 	return nil
 }
 func import_(ctx context.Context, dbPath, token string, reader io.Reader) error {
-	info := util.GetFileInfo(ctx, dbPath)
-	if info == nil || info.Size() <= 0 {
+	if util.GetFileInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("导入数据库，库文件不存在")
 		return errors.Errorf("导入数据库，库文件不存在")
 	}
@@ -314,8 +310,7 @@ func ChangeToken(ctx context.Context, newToken string) error {
 	return nil
 }
 func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
-	info := util.GetFileInfo(ctx, dbPath)
-	if info == nil || info.Size() <= 0 {
+	if util.GetFileInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("更换口令，库文件不存在")
 		return errors.Errorf("更换口令，库文件不存在")
 	}

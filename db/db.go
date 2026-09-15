@@ -39,14 +39,12 @@ func Create(ctx context.Context) error {
 		panic(err)
 	}
 
-	info := util.GetFileInfo(ctx, dbPath)
-	if info != nil && info.Size() > 0 {
+	if util.GetFileInfo(ctx, dbPath) != nil {
 		return nil
 	}
 	dbLock.Lock()
 	defer dbLock.Unlock()
-	info = util.GetFileInfo(ctx, dbPath)
-	if info != nil && info.Size() > 0 {
+	if util.GetFileInfo(ctx, dbPath) != nil {
 		return nil
 	}
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库")
@@ -58,8 +56,7 @@ func Create(ctx context.Context) error {
 	return nil
 }
 func create(ctx context.Context, dbPath, token string) error {
-	info := util.GetFileInfo(ctx, dbPath)
-	if info != nil && info.Size() > 0 {
+	if util.GetFileInfo(ctx, dbPath) != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("创建数据库，库文件已存在")
 		return errors.Errorf("创建数据库，库文件已存在")
 	}
@@ -134,8 +131,7 @@ func Open(ctx context.Context) (*gorm.DB, error) {
 	return db, nil
 }
 func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
-	info := util.GetFileInfo(ctx, dbPath)
-	if info == nil || info.Size() <= 0 {
+	if util.GetFileInfo(ctx, dbPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("打开数据库，库文件不存在")
 		return nil, errors.Errorf("打开数据库，库文件不存在")
 	}
