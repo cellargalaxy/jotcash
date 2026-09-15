@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +235,79 @@ func TestToken(t *testing.T) {
 	}
 	if err := CheckToken(util.SetClaims(util.GenCtx(), &model.Claims{ClientToken: newToken})); err != nil {
 		t.Errorf("换口令后新口令应能打开库: %+v", err)
+	}
+}
+
+// rdb.NewTransaction的读锁不可重入：RWMutex在有写者排队时新读者也要排在写者后面，
+// 门面要是在自己的事务里再开一把事务，撞上排队中的导入就是死锁。
+// 这条用例让导入反复来抢写锁，同时把五个门面轮着跑，谁嵌套了就会卡在这儿
+func TestFacadeNotNestTransaction(t *testing.T) {
+	ctx := newTestCtx(t)
+	expense := newTestEntry(t, ctx, "亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+	buffer := new(bytes.Buffer)
+	if err := Export(ctx, buffer); err != nil {
+		t.Fatalf("导出异常: %+v", err)
+	}
+
+	errs := make(chan error, 64)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 3; i++ {
+				if err := Import(ctx, bytes.NewReader(buffer.Bytes())); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+		for i := 0; i < 3; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 3; j++ {
+					operationId, fileId := util.GenId(), util.GenId()
+					object := newTestExpense("苹果", time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC))
+					object.OperationId, object.FileId = operationId, fileId
+					fileMeta := &model.FileMeta{Id: fileId, FileHash: util.EnSha256Hex(object.Counterparty), FileName: "nest.csv", FileSize: 1, OperationId: operationId}
+					fileBlob := &model.FileBlob{FileHash: fileMeta.FileHash, FileData: []byte(object.Counterparty)}
+					if err := InsertExpense(ctx, operationId, []*model.Expense{object}, fileMeta, fileBlob); err != nil {
+						errs <- err
+						return
+					}
+					if _, _, err := SelectExpense(ctx, model.ExpenseInquiry{}); err != nil {
+						errs <- err
+						return
+					}
+					if _, _, err := SelectFileMeta(ctx, model.FileMetaInquiry{}); err != nil {
+						errs <- err
+						return
+					}
+					if _, _, err := SelectOperationLog(ctx, model.OperationLogInquiry{}); err != nil {
+						errs <- err
+						return
+					}
+					if _, err := DeleteExpense(ctx, model.ExpenseInquiry{Id: []int64{expense.Id}}); err != nil {
+						errs <- err
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatalf("门面与导入并发时卡死，大概率是某个门面在自己的事务里又开了一次事务")
+	}
+	close(errs)
+	for err := range errs {
+		t.Errorf("并发异常: %+v", err)
 	}
 }
 
