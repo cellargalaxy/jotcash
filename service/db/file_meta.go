@@ -3,8 +3,8 @@ package db
 import (
 	"context"
 
-	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/rdb"
 )
 
 const fileMetaSortDefault = "created_at desc"

@@ -7,8 +7,8 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
-	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/cellargalaxy/jotcash/db"
+	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/cellargalaxy/jotcash/tool"
 )
 
