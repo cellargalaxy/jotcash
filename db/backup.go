@@ -11,10 +11,12 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/tool"
 	"github.com/ncruces/go-sqlite3/driver"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 func genBackupPath(ctx context.Context) (string, error) {
@@ -99,7 +101,7 @@ func replace(ctx context.Context, srcPath, srcToken, dstPath string) error {
 	return nil
 }
 
-func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionHandler) error {
+func Export(ctx context.Context, writer io.Writer) error {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
 	if err != nil {
@@ -109,23 +111,48 @@ func Export(ctx context.Context, writer io.Writer, handlers ...util.TransactionH
 	dbLock.RLock()
 	defer dbLock.RUnlock()
 
-	err = export(ctx, dbPath, token, writer, handlers...)
+	err = export(ctx, dbPath, token, writer)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func export(ctx context.Context, dbPath, token string, writer io.Writer, handlers ...util.TransactionHandler) error {
-	if len(handlers) > 0 {
-		object, err := newTransaction(ctx, dbPath, token)
-		if err != nil {
-			return err
-		}
-		defer object.Close(ctx)
-		err = object.AddCommit(handlers...).Exec(ctx)
-		if err != nil {
-			return err
-		}
+func export(ctx context.Context, dbPath, token string, writer io.Writer) error {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info == nil || info.Size() <= 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("导出数据库，库文件不存在")
+		return errors.Errorf("导出数据库，库文件不存在")
+	}
+	if token == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导出数据库，口令为空")
+		return errors.Errorf("导出数据库，口令为空")
+	}
+	if writer == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导出数据库，写出目标为空")
+		return errors.Errorf("导出数据库，写出目标为空")
+	}
+
+	//审计要跟着快照一起被导出去，所以先写原库再备份
+	gormDb, err := open(ctx, dbPath, token)
+	if err != nil {
+		return err
+	}
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeDbExport,
+		Summary:       "导出加密数据库快照",
+		Result:        model.ResultSuccess,
+	}
+	err = gormDb.WithContext(ctx).Create(&operationLog).Error
+	if err != nil {
+		util.CloseDb(ctx, gormDb)
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导出数据库，写审计异常")
+		return errors.Errorf("导出数据库，写审计异常: %+v", err)
+	}
+	//备份要另开一条连接读同一个库文件，这条先关掉
+	err = util.CloseDb(ctx, gormDb)
+	if err != nil {
+		return err
 	}
 
 	backupPath, err := genBackupPath(ctx)
@@ -150,11 +177,11 @@ func export(ctx context.Context, dbPath, token string, writer io.Writer, handler
 		return errors.Errorf("导出数据库，写出异常: %+v", err)
 	}
 
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导出数据库，完成")
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("导出数据库，完成")
 	return nil
 }
 
-func Import(ctx context.Context, reader io.Reader, handlers ...util.TransactionHandler) error {
+func Import(ctx context.Context, reader io.Reader) error {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
 	if err != nil {
@@ -164,13 +191,27 @@ func Import(ctx context.Context, reader io.Reader, handlers ...util.TransactionH
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = import_(ctx, dbPath, token, reader, handlers...)
+	err = import_(ctx, dbPath, token, reader)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func import_(ctx context.Context, dbPath, token string, reader io.Reader, handlers ...util.TransactionHandler) error {
+func import_(ctx context.Context, dbPath, token string, reader io.Reader) error {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info == nil || info.Size() <= 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("导入数据库，库文件不存在")
+		return errors.Errorf("导入数据库，库文件不存在")
+	}
+	if token == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导入数据库，口令为空")
+		return errors.Errorf("导入数据库，口令为空")
+	}
+	if reader == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("导入数据库，读入来源为空")
+		return errors.Errorf("导入数据库，读入来源为空")
+	}
+
 	//导入的是调用方自带的库，只校验它自身能打开拦不住越权：拿到后端口令就能签出jwt，再用自己加密的库把原库顶掉
 	err := checkToken(ctx, dbPath, token)
 	if err != nil {
@@ -193,14 +234,42 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	defer util.CloseDb(ctx, gormDb)
-
-	//库结构校验要排在建表前面，否则建表会把缺的表补出来，外来库就混过去了
-	err = util.NewTransaction(gormDb).
-		AddCommit(NewSchemaCheckHandler()).
-		AddCommit(NewMigrateHandler()).
-		AddCommit(handlers...).
-		Exec(ctx)
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeDbImport,
+		Summary:       "导入加密数据库，整库覆盖",
+		Result:        model.ResultSuccess,
+	}
+	err = gormDb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		//库结构校验要排在建表前面，否则建表会把缺的表补出来，外来库就混过去了
+		migrator := tx.Migrator()
+		for i := range migrateModels {
+			table := migrateModels[i].TableName()
+			if migrator.HasTable(table) {
+				continue
+			}
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"backupPath": backupPath, "table": table}).Error("导入数据库，缺表")
+			return errors.Errorf("导入数据库，缺表: %s", table)
+		}
+		//列的差异不算结构不合法，那正是建表要补的，否则旧版本导出的库就导不回来
+		err := migrate(ctx, tx)
+		if err != nil {
+			return err
+		}
+		err = tx.Create(&operationLog).Error
+		if err != nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("导入数据库，写审计异常")
+			return errors.Errorf("导入数据库，写审计异常: %+v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		util.CloseDb(ctx, gormDb)
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+	//副本马上要改名顶上去，连接先关掉，别让它攥着旧路径
+	err = util.CloseDb(ctx, gormDb)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -218,16 +287,17 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader, handle
 		return err
 	}
 
-	err = replace(ctx, backupPath, dbPath, token)
+	err = replace(ctx, backupPath, token, dbPath)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("导入数据库，完成")
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "originPath": originPath}).Info("导入数据库，完成")
 	return nil
 }
 
-func ChangeToken(ctx context.Context, newToken string, handlers ...util.TransactionHandler) error {
+func ChangeToken(ctx context.Context, newToken string) error {
 	dbPath := config.DbPath
 	token, err := tool.GetToken(ctx)
 	if err != nil {
@@ -237,44 +307,71 @@ func ChangeToken(ctx context.Context, newToken string, handlers ...util.Transact
 	dbLock.Lock()
 	defer dbLock.Unlock()
 
-	err = changeToken(ctx, dbPath, token, newToken, handlers...)
+	err = changeToken(ctx, dbPath, token, newToken)
 	if err != nil {
 		return err
 	}
 	return nil
 }
-func changeToken(ctx context.Context, dbPath, oldToken, newToken string, handlers ...util.TransactionHandler) error {
+func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info == nil || info.Size() <= 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("更换口令，库文件不存在")
+		return errors.Errorf("更换口令，库文件不存在")
+	}
+	if oldToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("更换口令，旧口令为空")
+		return errors.Errorf("更换口令，旧口令为空")
+	}
+	if newToken == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("更换口令，新口令为空")
+		return errors.Errorf("更换口令，新口令为空")
+	}
+
+	//换口令就是拿新口令备份出一份副本，副本齐了再顶回去，中途出错原库一个字节不动
 	backupPath, err := genBackupPath(ctx)
 	if err != nil {
 		return err
 	}
-
 	err = backup(ctx, dbPath, oldToken, backupPath, newToken)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
 
-	if len(handlers) > 0 {
-		object, err := newTransaction(ctx, backupPath, newToken)
-		if err != nil {
-			util.RemoveFile(ctx, backupPath)
-			return err
-		}
-		defer object.Close(ctx)
-		err = object.AddCommit(handlers...).Exec(ctx)
-		if err != nil {
-			util.RemoveFile(ctx, backupPath)
-			return err
-		}
-	}
-
-	err = replace(ctx, backupPath, dbPath, newToken)
+	//审计要落在换好口令的副本里，跟着副本一起顶上去
+	gormDb, err := open(ctx, backupPath, newToken)
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	logrus.WithContext(ctx).WithFields(logrus.Fields{}).Info("更换口令，完成")
+	operationLog := model.OperationLog{
+		Id:            util.GenId(),
+		OperationType: model.OperationTypeClientTokenSwap,
+		Summary:       "数据库已用新口令重新加密",
+		Result:        model.ResultSuccess,
+	}
+	err = gormDb.WithContext(ctx).Create(&operationLog).Error
+	if err != nil {
+		util.CloseDb(ctx, gormDb)
+		util.RemoveFile(ctx, backupPath)
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("更换口令，写审计异常")
+		return errors.Errorf("更换口令，写审计异常: %+v", err)
+	}
+	//副本马上要改名顶上去，连接先关掉，别让它攥着旧路径
+	err = util.CloseDb(ctx, gormDb)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+
+	err = replace(ctx, backupPath, newToken, dbPath)
+	if err != nil {
+		util.RemoveFile(ctx, backupPath)
+		return err
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("更换口令，完成")
 	return nil
 }
 
@@ -292,6 +389,15 @@ func ClearBackup(ctx context.Context) error {
 	return nil
 }
 func clearBackup(ctx context.Context, backupPath string, limit int) error {
+	if backupPath == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("清理备份，备份目录为空")
+		return errors.Errorf("清理备份，备份目录为空")
+	}
+	if limit <= 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"limit": limit}).Error("清理备份，保留数量非法")
+		return errors.Errorf("清理备份，保留数量非法: %d", limit)
+	}
+
 	err := util.CreateFolderPath(ctx, backupPath)
 	if err != nil {
 		return err
@@ -300,24 +406,31 @@ func clearBackup(ctx context.Context, backupPath string, limit int) error {
 	if err != nil {
 		return err
 	}
-	var filenames []string
-	for _, file := range files {
-		if file.IsDir() {
+	filenames := make([]string, 0, len(files))
+	for i := range files {
+		if files[i].IsDir() {
 			continue
 		}
-		filenames = append(filenames, file.Name())
+		filenames = append(filenames, files[i].Name())
 	}
 	if len(filenames) <= limit {
 		return nil
 	}
+	//备份文件名是GenId，定长16位，按字符串升序排出来就是按时间从旧到新
 	sort.Strings(filenames)
-	toDelete := filenames[:len(filenames)-limit]
-	for _, name := range toDelete {
-		filePath := filepath.Join(backupPath, name)
+
+	for i := 0; i < len(filenames)-limit; i++ {
+		filePath := filepath.Join(backupPath, filenames[i])
+		//删一个算一个，中间有删不掉的先记下来，最后再抛
 		eee := util.RemoveFile(ctx, filePath)
 		if eee != nil {
 			err = eee
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"backupPath": backupPath, "count": len(filenames) - limit}).Info("清理备份，完成")
+	return nil
 }

@@ -4,9 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/db"
-	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/tool"
 )
 
@@ -19,34 +17,13 @@ func ChangeToken(ctx context.Context, newToken string) error {
 	if err != nil {
 		return err
 	}
-	operationLog := model.OperationLog{
-		Id:            util.GenId(),
-		OperationType: model.OperationTypeClientTokenSwap,
-		Summary:       "数据库已用新口令重新加密",
-		Result:        model.ResultSuccess,
-	}
-	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
-	return db.ChangeToken(ctx, newToken, operationLogHandler)
+	return db.ChangeToken(ctx, newToken)
 }
 
 func Export(ctx context.Context, writer io.Writer) error {
-	operationLog := model.OperationLog{
-		Id:            util.GenId(),
-		OperationType: model.OperationTypeDbExport,
-		Summary:       "导出加密数据库快照",
-		Result:        model.ResultSuccess,
-	}
-	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
-	return db.Export(ctx, writer, operationLogHandler)
+	return db.Export(ctx, writer)
 }
 
 func Import(ctx context.Context, reader io.Reader) error {
-	operationLog := model.OperationLog{
-		Id:            util.GenId(),
-		OperationType: model.OperationTypeDbImport,
-		Summary:       "导入加密数据库，整库覆盖",
-		Result:        model.ResultSuccess,
-	}
-	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
-	return db.Import(ctx, reader, operationLogHandler)
+	return db.Import(ctx, reader)
 }

@@ -39,8 +39,10 @@ func TestExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导回后打开数据库异常: %+v", err)
 	}
-	if err = NewSchemaCheckHandler().Exec(ctx, gormDb); err != nil {
-		t.Errorf("导入后应把表结构补齐: %+v", err)
+	for i := range migrateModels {
+		if !gormDb.Migrator().HasTable(migrateModels[i].TableName()) {
+			t.Errorf("导入后应把表结构补齐，缺表: %s", migrateModels[i].TableName())
+		}
 	}
 	util.CloseDb(ctx, gormDb)
 
@@ -50,6 +52,13 @@ func TestExport(t *testing.T) {
 	}
 	if count != 1 || len(objects) != 1 || !objects[0].ExpenseAmount.Equal(expense.ExpenseAmount) {
 		t.Errorf("导回后的数据不符: count=%d %+v", count, objects)
+	}
+	//导出审计写在原库上，所以它跟着快照一起被导出、又跟着快照导了回来
+	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbExport}}); count != 1 {
+		t.Errorf("导出审计应跟着快照一起导回来: count=%d want=1", count)
+	}
+	if _, count, _ = SelectOperationLog(ctx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeDbImport}}); count != 1 {
+		t.Errorf("导入审计应落在顶上来的新库里: count=%d want=1", count)
 	}
 }
 
@@ -61,9 +70,18 @@ func TestImportWrongSchema(t *testing.T) {
 	}
 
 	otherPath := "resource/other.db"
-	gormDb, err := connect(ctx, otherPath, testClientToken)
-	if err != nil {
+	if err := create(ctx, otherPath, testClientToken); err != nil {
 		t.Fatalf("建库异常: %+v", err)
+	}
+	gormDb, err := open(ctx, otherPath, testClientToken)
+	if err != nil {
+		t.Fatalf("连库异常: %+v", err)
+	}
+	//四张表全删掉再建一张别的表，冒充口令对得上但不是本系统的库
+	for i := range migrateModels {
+		if err = gormDb.Exec("DROP TABLE " + migrateModels[i].TableName()).Error; err != nil {
+			t.Fatalf("删表异常: %+v", err)
+		}
 	}
 	if err = gormDb.Exec("CREATE TABLE other(id integer)").Error; err != nil {
 		t.Fatalf("建表异常: %+v", err)
@@ -101,7 +119,7 @@ func TestImportOldDb(t *testing.T) {
 	if err := create(ctx, oldPath, testClientToken); err != nil {
 		t.Fatalf("建旧库异常: %+v", err)
 	}
-	gormDb, err := connect(ctx, oldPath, testClientToken)
+	gormDb, err := open(ctx, oldPath, testClientToken)
 	if err != nil {
 		t.Fatalf("连旧库异常: %+v", err)
 	}
@@ -225,40 +243,15 @@ func TestChangeToken(t *testing.T) {
 	if count != 1 || len(objects) != 1 || objects[0].Counterparty != expense.Counterparty {
 		t.Errorf("换口令后数据不符: count=%d %+v", count, objects)
 	}
+	if _, count, _ = SelectOperationLog(newCtx, model.OperationLogInquiry{OperationType: []string{model.OperationTypeClientTokenSwap}}); count != 1 {
+		t.Errorf("更换口令审计应落在新库里: count=%d want=1", count)
+	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)
 	if err != nil {
 		t.Fatalf("读备份目录异常: %+v", err)
 	}
 	if len(files) > 0 {
 		t.Errorf("备份文件没清理: %d", len(files))
-	}
-}
-
-// 换口令时附带的写入落在换好口令的副本里，写失败就整个放弃，原库一个字节不动
-func TestChangeTokenHandlerFail(t *testing.T) {
-	ctx := newTestCtx(t)
-	operationLog := &model.OperationLog{Id: util.GenId(), OperationType: model.OperationTypeDataEntry, Result: model.ResultSuccess}
-	if _, err := InsertOperationLog(ctx, operationLog); err != nil {
-		t.Fatalf("插入异常: %+v", err)
-	}
-
-	newToken := "new-client-token-1"
-	//主键撞车，副本里的事务必失败
-	if err := ChangeToken(ctx, newToken, NewOperationLogInsertHandler(&model.OperationLog{Id: operationLog.Id})); err == nil {
-		t.Fatalf("副本写入失败时应报错")
-	}
-	if err := CheckToken(ctx); err != nil {
-		t.Errorf("失败后原口令应照常可用: %+v", err)
-	}
-	if err := CheckToken(newTokenCtx(newToken)); err == nil {
-		t.Errorf("失败后新口令不应能打开")
-	}
-	files, err := util.ListFile(ctx, config.DbBackupPath)
-	if err != nil {
-		t.Fatalf("读备份目录异常: %+v", err)
-	}
-	if len(files) > 0 {
-		t.Errorf("失败的副本没清理: %d", len(files))
 	}
 }
 
@@ -363,7 +356,7 @@ func TestImportBackupOrigin(t *testing.T) {
 		t.Fatalf("备份目录里应只剩原库那一份: got=%d want=1", len(files))
 	}
 	originPath := filepath.Join(config.DbBackupPath, files[0].Name())
-	if err = replace(ctx, originPath, config.DbPath, testClientToken); err != nil {
+	if err = replace(ctx, originPath, testClientToken, config.DbPath); err != nil {
 		t.Fatalf("用原库备份回滚异常: %+v", err)
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 1 {
