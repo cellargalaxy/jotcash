@@ -89,6 +89,15 @@ func (this ExpenseInquiry) String() string {
 	return util.JsonStruct2Str(this)
 }
 
+type ExpenseChanges struct {
+	Before *Expense `json:"before"`
+	After  *Expense `json:"after"`
+}
+
+func (this ExpenseChanges) String() string {
+	return util.JsonStruct2Str(this)
+}
+
 type ExpenseDistinctInquiry struct {
 	Field   string `json:"field"`
 	Deleted int    `json:"deleted"`

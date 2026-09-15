@@ -18,6 +18,10 @@ const (
 )
 
 const (
+	ObjectTypeExpense = "支出明细"
+)
+
+const (
 	ResultSuccess = "成功"
 	ResultFailure = "失败"
 	ResultPartial = "部分成功"
