@@ -30,5 +30,5 @@ type BackupDbJob struct {
 func (this *BackupDbJob) Run() {
 	ctx := util.GenCtx()
 
-	service.BackupDb(ctx)
+	service.Backup(ctx)
 }

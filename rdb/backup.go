@@ -29,7 +29,7 @@ func genBackupPath(ctx context.Context) (string, error) {
 	return backupPath, nil
 }
 
-func backup(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) error {
+func copyDb(ctx context.Context, srcPath, srcToken, dstPath, dstToken string) error {
 	if util.GetFileInfo(ctx, srcPath) == nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath}).Error("备份数据库，来源文件不存在")
 		return errors.Errorf("备份数据库，来源文件不存在")
@@ -156,7 +156,7 @@ func export(ctx context.Context, srcPath, token, dstPath string) error {
 		return err
 	}
 
-	err = backup(ctx, srcPath, token, dstPath, token)
+	err = copyDb(ctx, srcPath, token, dstPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, dstPath)
 		return err
@@ -257,7 +257,7 @@ func import_(ctx context.Context, dbPath, token string, reader io.Reader) error 
 		util.RemoveFile(ctx, backupPath)
 		return err
 	}
-	err = backup(ctx, dbPath, token, originPath, token)
+	err = copyDb(ctx, dbPath, token, originPath, token)
 	if err != nil {
 		util.RemoveFile(ctx, originPath)
 		util.RemoveFile(ctx, backupPath)
@@ -309,7 +309,7 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 	if err != nil {
 		return err
 	}
-	err = backup(ctx, dbPath, oldToken, backupPath, newToken) //包含token合法性校验，避免越权
+	err = copyDb(ctx, dbPath, oldToken, backupPath, newToken) //包含token合法性校验，避免越权
 	if err != nil {
 		util.RemoveFile(ctx, backupPath)
 		return err
@@ -347,6 +347,48 @@ func changeToken(ctx context.Context, dbPath, oldToken, newToken string) error {
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("更换口令，完成")
+	return nil
+}
+
+func Backup(ctx context.Context) error {
+	dbPath := config.DbPath
+	backupPath, err := genBackupPath(ctx)
+	if err != nil {
+		return err
+	}
+
+	dbLock.Lock()
+	defer dbLock.Unlock()
+
+	err = backup(ctx, dbPath, backupPath)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func backup(ctx context.Context, srcPath, dstPath string) error {
+	if util.GetFileInfo(ctx, srcPath) == nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath}).Error("复制数据库，来源文件不存在")
+		return errors.Errorf("复制数据库，来源文件不存在")
+	}
+	if util.GetFileInfo(ctx, dstPath) != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"dstPath": dstPath}).Error("复制数据库，目标文件已存在")
+		return errors.Errorf("复制数据库，目标文件已存在")
+	}
+
+	file, err := util.OpenReadFile(ctx, srcPath)
+	if err != nil {
+		return err
+	}
+	defer util.CloseIo(ctx, file)
+
+	err = util.WriteReader2File(ctx, file, dstPath)
+	if err != nil {
+		util.RemoveFile(ctx, dstPath)
+		return err
+	}
+
+	logrus.WithContext(ctx).WithFields(logrus.Fields{"srcPath": srcPath, "dstPath": dstPath}).Info("复制数据库，完成")
 	return nil
 }
 

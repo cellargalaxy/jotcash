@@ -27,3 +27,11 @@ func Export(ctx context.Context, writer io.Writer) error {
 func Import(ctx context.Context, reader io.Reader) error {
 	return rdb.Import(ctx, reader)
 }
+
+func Backup(ctx context.Context) error {
+	return rdb.Backup(ctx)
+}
+
+func ClearBackup(ctx context.Context) error {
+	return rdb.ClearBackup(ctx)
+}
