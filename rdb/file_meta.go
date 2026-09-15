@@ -66,3 +66,35 @@ func NewFileMetaSelectHandler(inquiry model.FileMetaInquiry) *util.SelectHandler
 	handler := util.NewSelectHandler[model.FileMeta](model.FileMeta{}.TableName(), FileMetaInquiry(inquiry))
 	return handler
 }
+
+func NewFileDownloadHandler(id int64) *FileDownloadHandler {
+	handler := new(FileDownloadHandler)
+	handler.Id = id
+	return handler
+}
+
+type FileDownloadHandler struct {
+	Id       int64
+	FileMeta *model.FileMeta
+	FileBlob *model.FileBlob
+}
+
+func (this *FileDownloadHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	fileMetaHandler := NewFileMetaSelectHandler(model.FileMetaInquiry{Id: []int64{this.Id}})
+	err := fileMetaHandler.Exec(ctx, tx)
+	if err != nil {
+		return err
+	}
+	this.FileMeta = fileMetaHandler.GetOne()
+	if this.FileMeta == nil {
+		return nil
+	}
+
+	fileBlobHandler := NewFileBlobSelectHandler(model.FileBlobInquiry{FileHash: []string{this.FileMeta.FileHash}})
+	err = fileBlobHandler.Exec(ctx, tx)
+	if err != nil {
+		return err
+	}
+	this.FileBlob = fileBlobHandler.GetOne()
+	return nil
+}
