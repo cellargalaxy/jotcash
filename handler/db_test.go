@@ -12,8 +12,8 @@ import (
 	common_model "github.com/cellargalaxy/go_common/model"
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/cellargalaxy/jotcash/db"
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/db"
 	"github.com/gin-gonic/gin"
 )
 
