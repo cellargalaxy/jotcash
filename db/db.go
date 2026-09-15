@@ -39,12 +39,14 @@ func Create(ctx context.Context) error {
 		panic(err)
 	}
 
-	if util.GetFileInfo(ctx, dbPath) != nil {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info != nil && info.Size() > 0 {
 		return nil
 	}
 	dbLock.Lock()
 	defer dbLock.Unlock()
-	if util.GetFileInfo(ctx, dbPath) != nil {
+	info = util.GetFileInfo(ctx, dbPath)
+	if info != nil && info.Size() > 0 {
 		return nil
 	}
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Info("创建数据库")
@@ -56,7 +58,8 @@ func Create(ctx context.Context) error {
 	return nil
 }
 func create(ctx context.Context, dbPath, token string) error {
-	if util.GetFileInfo(ctx, dbPath) != nil {
+	info := util.GetFileInfo(ctx, dbPath)
+	if info != nil && info.Size() > 0 {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath}).Error("创建数据库，库文件已存在")
 		return errors.Errorf("创建数据库，库文件已存在")
 	}

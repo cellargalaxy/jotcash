@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -356,7 +357,7 @@ func TestImportBackupOrigin(t *testing.T) {
 		t.Fatalf("备份目录里应只剩原库那一份: got=%d want=1", len(files))
 	}
 	originPath := filepath.Join(config.DbBackupPath, files[0].Name())
-	if err = replace(ctx, originPath, testClientToken, config.DbPath); err != nil {
+	if err = os.Rename(originPath, config.DbPath); err != nil {
 		t.Fatalf("用原库备份回滚异常: %+v", err)
 	}
 	if _, count, _ := SelectExpense(ctx, model.ExpenseInquiry{Id: []int64{lost.Id}}); count != 1 {
