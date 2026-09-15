@@ -93,14 +93,9 @@ func create(ctx context.Context, dbPath, token string) error {
 		Result:        model.ResultSuccess,
 	}
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		models := make([]any, 0, len(migrateModels))
-		for i := range migrateModels {
-			models = append(models, migrateModels[i])
-		}
-		err := tx.AutoMigrate(models...)
+		err := migrate(ctx, tx)
 		if err != nil {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("创建数据库，建表异常")
-			return errors.Errorf("创建数据库，建表异常: %+v", err)
+			return err
 		}
 		err = tx.Create(&operationLog).Error
 		if err != nil {
