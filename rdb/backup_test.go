@@ -453,13 +453,13 @@ func TestBackupIllegalArgument(t *testing.T) {
 	ctx := newTestCtx(t)
 
 	dstPath := "resource/backup.db"
-	if err := backup(ctx, "resource/not-exist.db", testClientToken, dstPath, testClientToken); err == nil {
+	if err := copyDb(ctx, "resource/not-exist.db", testClientToken, dstPath, testClientToken); err == nil {
 		t.Errorf("来源库文件不存在应报错")
 	}
-	if err := backup(ctx, config.DbPath, "", dstPath, testClientToken); err == nil {
+	if err := copyDb(ctx, config.DbPath, "", dstPath, testClientToken); err == nil {
 		t.Errorf("来源口令为空应报错")
 	}
-	if err := backup(ctx, config.DbPath, testClientToken, dstPath, ""); err == nil {
+	if err := copyDb(ctx, config.DbPath, testClientToken, dstPath, ""); err == nil {
 		t.Errorf("目标口令为空应报错")
 	}
 	if util.GetPathInfo(ctx, dstPath) != nil {
@@ -470,7 +470,7 @@ func TestBackupIllegalArgument(t *testing.T) {
 	if err := util.WriteData2File(ctx, []byte("占位"), dstPath); err != nil {
 		t.Fatalf("写占位文件异常: %+v", err)
 	}
-	if err := backup(ctx, config.DbPath, testClientToken, dstPath, testClientToken); err == nil {
+	if err := copyDb(ctx, config.DbPath, testClientToken, dstPath, testClientToken); err == nil {
 		t.Errorf("目标文件已存在应报错")
 	}
 	data, err := util.ReadFile2Data(ctx, dstPath, nil)
@@ -678,7 +678,7 @@ func TestBackupDb(t *testing.T) {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
-	if err := BackupDb(util.GenCtx()); err != nil {
+	if err := Backup(util.GenCtx()); err != nil {
 		t.Fatalf("全量备份异常: %+v", err)
 	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)
@@ -750,7 +750,7 @@ func TestBackupDbDuringTransaction(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := BackupDb(util.GenCtx()); err != nil {
+		if err := Backup(util.GenCtx()); err != nil {
 			errs <- err
 		}
 	}()
@@ -778,7 +778,7 @@ func TestBackupDbDuringTransaction(t *testing.T) {
 func TestBackupDbGuard(t *testing.T) {
 	ctx := newTestCtx(t)
 
-	if err := backupDb(ctx, "resource/not-exist.db", "resource/backup.db"); err == nil {
+	if err := backup(ctx, "resource/not-exist.db", "resource/backup.db"); err == nil {
 		t.Errorf("库文件不存在时全量备份应报错")
 	}
 	//来源不在就得拦在碰盘之前，不能把目标文件建出来再报错
@@ -788,7 +788,7 @@ func TestBackupDbGuard(t *testing.T) {
 	if err := util.WriteData2File(ctx, []byte("占位"), "resource/backup.db"); err != nil {
 		t.Fatalf("写占位文件异常: %+v", err)
 	}
-	if err := backupDb(ctx, config.DbPath, "resource/backup.db"); err == nil {
+	if err := backup(ctx, config.DbPath, "resource/backup.db"); err == nil {
 		t.Errorf("目标文件已存在时全量备份应报错")
 	}
 	if data, _ := util.ReadFile2Str(ctx, "resource/backup.db", ""); data != "占位" {
@@ -798,7 +798,7 @@ func TestBackupDbGuard(t *testing.T) {
 
 	//库文件不在时公开入口同样要报错，且不能在备份目录里留下半份
 	util.RemoveFile(ctx, config.DbPath)
-	if err := BackupDb(util.GenCtx()); err == nil {
+	if err := Backup(util.GenCtx()); err == nil {
 		t.Errorf("库文件不存在时全量备份应报错")
 	}
 	files, err := util.ListFile(ctx, config.DbBackupPath)

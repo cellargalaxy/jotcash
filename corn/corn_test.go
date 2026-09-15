@@ -7,6 +7,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
+	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,11 +31,11 @@ func TestInit(t *testing.T) {
 }
 
 func TestInitIllegalCron(t *testing.T) {
-	ctx := util.GenCtx()
+	object := cron.New(cron.WithSeconds())
 
 	//robfig/cron是「秒 分 时 日 月 周」六段，五段的标准crontab在这里是非法的
 	for _, dbBackupCron := range []string{"", "0 4 * * *", "每天4点"} {
-		if err := start(ctx, dbBackupCron); err == nil {
+		if _, err := object.AddJob(dbBackupCron, new(BackupDbJob)); err == nil {
 			t.Errorf("非法表达式应报错: %s", dbBackupCron)
 		}
 	}
