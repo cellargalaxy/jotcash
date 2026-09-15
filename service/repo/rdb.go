@@ -4,11 +4,12 @@ import (
 	"context"
 	"io"
 
+	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/cellargalaxy/jotcash/tool"
 )
 
 func CheckToken(ctx context.Context) error {
-	return db.CheckToken(ctx)
+	return rdb.CheckToken(ctx)
 }
 
 func ChangeToken(ctx context.Context, newToken string) error {
@@ -16,13 +17,13 @@ func ChangeToken(ctx context.Context, newToken string) error {
 	if err != nil {
 		return err
 	}
-	return db.ChangeToken(ctx, newToken)
+	return rdb.ChangeToken(ctx, newToken)
 }
 
 func Export(ctx context.Context, writer io.Writer) error {
-	return db.Export(ctx, writer)
+	return rdb.Export(ctx, writer)
 }
 
 func Import(ctx context.Context, reader io.Reader) error {
-	return db.Import(ctx, reader)
+	return rdb.Import(ctx, reader)
 }

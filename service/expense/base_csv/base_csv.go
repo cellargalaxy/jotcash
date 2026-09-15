@@ -67,7 +67,7 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 	for i := 1; i < len(lines); i++ {
 		object, err := parseExpense(ctx, lines[i])
 		if err != nil {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"line": i + 1}).Warn("解析CSV，行非法")
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"i": i, "line": util.JsonStruct2Str(lines[i])}).Warn("解析CSV，行非法")
 			return nil, errors.Errorf("解析CSV，第%d行，%s", i+1, err)
 		}
 		objects = append(objects, object)

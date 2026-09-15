@@ -9,7 +9,7 @@ import (
 )
 
 func SelectFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) (any, error) {
-	objects, count, err := db.SelectFileMeta(ctx, inquiry)
+	objects, count, err := repo.SelectFileMeta(ctx, inquiry)
 	if err != nil {
 		return nil, err
 	}

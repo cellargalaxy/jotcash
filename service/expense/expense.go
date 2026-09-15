@@ -6,15 +6,13 @@ import (
 
 	"github.com/bojanz/currency"
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/exchange_rate"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
-
-// 记账金额固定保留两位小数，乘出来的位数没有上限，不收敛就会把一串尾数原样落库
-const accountingAmountScale = 2
 
 type Parser interface {
 	Support(ctx context.Context, data []byte) bool
@@ -32,6 +30,7 @@ func Parse(ctx context.Context, data []byte, accountingCurrency string) ([]*mode
 	if err != nil {
 		return nil, err
 	}
+
 	var parser Parser
 	for i := range parsers {
 		if parsers[i].Support(ctx, data) {
@@ -59,7 +58,6 @@ func Parse(ctx context.Context, data []byte, accountingCurrency string) ([]*mode
 }
 
 func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency string) error {
-	//文件里逐笔给的记账币种优先，没给才用请求带的
 	if object.AccountingCurrency == "" {
 		object.AccountingCurrency = accountingCurrency
 	}
@@ -75,16 +73,15 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 	if err != nil {
 		return err
 	}
-	//摊分月数文件里没给就取默认值
 	if object.AmortizationMonths < 1 {
 		object.AmortizationMonths = 1
 	}
+
 	object.Id = util.GenId()
 	object.ExchangeRate = rate
-	object.AccountingAmount = object.ExpenseAmount.Mul(rate).Round(accountingAmountScale)
+	object.AccountingAmount = object.ExpenseAmount.Mul(rate).Round(config.GetConfig(ctx).AmountScale)
 	object.AmortizationStartMonth = time.Date(object.ExpenseDate.Year(), object.ExpenseDate.Month(), 1, 0, 0, 0, 0, object.ExpenseDate.Location())
 	object.AmortizationEndMonth = object.AmortizationStartMonth.AddDate(0, object.AmortizationMonths-1, 0)
-	//摊分月数没有上限，但大到让AddDate绕回去就会写出结束月早于起始月的脏数据
 	if object.AmortizationEndMonth.Before(object.AmortizationStartMonth) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("解析明细，摊分月数过大")
 		return errors.Errorf("摊分月数过大: %d", object.AmortizationMonths)
@@ -94,12 +91,10 @@ func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency 
 }
 
 func getExchangeRate(ctx context.Context, object *model.Expense) (decimal.Decimal, error) {
-	//同币种的汇率恒为1，文件里填了别的值也不认
 	if object.ExpenseCurrency == object.AccountingCurrency {
 		return decimal.NewFromInt(1), nil
 	}
 
-	//解析器留下的0表示文件里没给，按支出日期兜底取
 	rate := object.ExchangeRate
 	if rate.IsZero() {
 		var err error

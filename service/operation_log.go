@@ -9,7 +9,7 @@ import (
 )
 
 func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) (any, error) {
-	objects, count, err := db.SelectOperationLog(ctx, inquiry)
+	objects, count, err := repo.SelectOperationLog(ctx, inquiry)
 	if err != nil {
 		return nil, err
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {
-	objects, count, err := db.SelectExpense(ctx, inquiry)
+	objects, count, err := repo.SelectExpense(ctx, inquiry)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, erro
 }
 
 func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {
-	count, err := db.DeleteExpense(ctx, inquiry)
+	count, err := repo.DeleteExpense(ctx, inquiry)
 	if err != nil {
 		return nil, err
 	}
@@ -37,14 +37,19 @@ func InsertExpense(ctx context.Context, filename string, reader io.Reader) (any,
 	if claims != nil {
 		accountingCurrency = claims.AccountingCurrency
 	}
+	if accountingCurrency == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Error("明细入库，记账币种为空")
+		return nil, errors.Errorf("明细入库，记账币种为空")
+	}
+	if filename == "" {
+		filename = fmt.Sprintf("%d.csv", util.GetLogId(ctx))
+	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("明细入库，读取上传文件异常")
 		return nil, errors.Errorf("明细入库，读取上传文件异常: %+v", err)
 	}
-	if filename == "" {
-		filename = fmt.Sprintf("%d.csv", util.GenId())
-	}
+
 	expenses, err := expense.Parse(ctx, data, accountingCurrency)
 	if err != nil {
 		return nil, err
@@ -56,7 +61,7 @@ func InsertExpense(ctx context.Context, filename string, reader io.Reader) (any,
 	}
 	fileMeta := model.FileMeta{Id: fileId, FileHash: util.EnSha256Hex(string(data)), FileName: filename, FileSize: int64(len(data)), OperationId: operationId}
 	fileBlob := model.FileBlob{FileHash: fileMeta.FileHash, FileData: data}
-	err = db.InsertExpense(ctx, operationId, expenses, &fileMeta, &fileBlob)
+	err = repo.InsertExpense(ctx, operationId, expenses, &fileMeta, &fileBlob)
 	if err != nil {
 		return nil, err
 	}

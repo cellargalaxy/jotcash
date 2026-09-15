@@ -8,5 +8,5 @@ import (
 )
 
 func ChangeToken(ctx context.Context, request model.ChangeTokenReq) (any, error) {
-	return nil, db.ChangeToken(ctx, request.NewToken)
+	return nil, repo.ChangeToken(ctx, request.NewToken)
 }

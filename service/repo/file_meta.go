@@ -15,13 +15,13 @@ func SelectFileMeta(ctx context.Context, inquiry model.FileMetaInquiry) ([]*mode
 		return nil, 0, err
 	}
 
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer transaction.Close(ctx)
 
-	fileMetaHandler := db.NewFileMetaSelectHandler(inquiry)
+	fileMetaHandler := rdb.NewFileMetaSelectHandler(inquiry)
 	err = transaction.AddCommit(fileMetaHandler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err

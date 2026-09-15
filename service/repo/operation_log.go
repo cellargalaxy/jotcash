@@ -34,13 +34,13 @@ func SelectOperationLog(ctx context.Context, inquiry model.OperationLogInquiry) 
 		return nil, 0, err
 	}
 
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer transaction.Close(ctx)
 
-	operationLogHandler := db.NewOperationLogSelectHandler(inquiry)
+	operationLogHandler := rdb.NewOperationLogSelectHandler(inquiry)
 	err = transaction.AddCommit(operationLogHandler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err

@@ -20,6 +20,7 @@ const (
 	dbBackupLimit    = 5                  //数据库备份上限
 	expenseFileLimit = 10 * 1024 * 1024   //明细文件大小上限：10MB
 	importFileLimit  = 1024 * 1024 * 1024 //数据库文件大小上限：1GB
+	amountScale      = 2                  //金额保留两位小数
 )
 
 var configService *util.ConfigService[model.Config]
@@ -53,6 +54,7 @@ func (this *ConfigHandler) GetDefault(ctx context.Context) string {
 	config.DbBackupLimit = dbBackupLimit
 	config.ExpenseFileLimit = expenseFileLimit
 	config.ImportFileLimit = importFileLimit
+	config.AmountScale = amountScale
 	text := util.YamlStruct2Str(ctx, config)
 	return text
 }
@@ -74,6 +76,9 @@ func (this *ConfigHandler) Parse(ctx context.Context, text string) (model.Config
 	}
 	if config.ImportFileLimit <= 0 {
 		config.ImportFileLimit = importFileLimit
+	}
+	if config.AmountScale < 0 {
+		config.AmountScale = amountScale
 	}
 
 	logrus.WithContext(ctx).WithFields(logrus.Fields{"config": config}).Info("加载配置")

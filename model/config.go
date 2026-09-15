@@ -15,6 +15,7 @@ type Config struct {
 	DbBackupLimit    int    `json:"db_backup_limit" yaml:"db_backup_limit"`       //数据库备份上限
 	ExpenseFileLimit int64  `json:"expense_file_limit" yaml:"expense_file_limit"` //明细文件大小上限
 	ImportFileLimit  int64  `json:"import_file_limit" yaml:"import_file_limit"`   //数据库文件大小上限
+	AmountScale      int32  `json:"amount_scale" yaml:"amount_scale"`             //金额精度，保留多少位小数
 }
 
 func (this Config) String() string {

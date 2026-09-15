@@ -6,6 +6,7 @@ import (
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/rdb"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -30,16 +31,16 @@ func InsertExpense(ctx context.Context, operationId int64, expenses []*model.Exp
 		Result:        model.ResultSuccess,
 	}
 
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		return err
 	}
 	defer transaction.Close(ctx)
 
-	fileBlobHandler := db.NewFileBlobInsertHandler(fileBlob)
-	fileMetaHandler := db.NewFileMetaInsertHandler(fileMeta)
-	expenseHandler := db.NewExpenseInsertHandler(expenses...)
-	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	fileBlobHandler := rdb.NewFileBlobInsertHandler(fileBlob)
+	fileMetaHandler := rdb.NewFileMetaInsertHandler(fileMeta)
+	expenseHandler := rdb.NewExpenseInsertHandler(expenses...)
+	operationLogHandler := rdb.NewOperationLogInsertHandler(&operationLog)
 	return transaction.AddCommit(fileBlobHandler, fileMetaHandler, expenseHandler, operationLogHandler).Exec(ctx)
 }
 
@@ -49,13 +50,13 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.
 		return nil, 0, err
 	}
 
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer transaction.Close(ctx)
 
-	expenseHandler := db.NewExpenseSelectHandler(inquiry)
+	expenseHandler := rdb.NewExpenseSelectHandler(inquiry)
 	err = transaction.AddCommit(expenseHandler).Exec(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -101,15 +102,15 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (int64, er
 		Result:        model.ResultSuccess,
 	}
 
-	transaction, err := db.NewTransaction(ctx)
+	transaction, err := rdb.NewTransaction(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer transaction.Close(ctx)
 
 	//分页与排序对批量删除没有意义，db层的NewExpenseDeleteHandler会把它们清掉，也会强制只删未删除的行
-	deleteHandler := db.NewExpenseDeleteHandler(inquiry)
-	operationLogHandler := db.NewOperationLogInsertHandler(&operationLog)
+	deleteHandler := rdb.NewExpenseDeleteHandler(inquiry)
+	operationLogHandler := rdb.NewOperationLogInsertHandler(&operationLog)
 	err = transaction.AddCommit(deleteHandler, operationLogHandler).Exec(ctx)
 	if err != nil {
 		return 0, err
