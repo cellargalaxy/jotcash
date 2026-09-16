@@ -118,20 +118,27 @@ test('筛选：集合、模糊、金额区间、时间区间各自生效', async
     { expense_date: '2026-05-01', expense_currency: 'CNY', expense_amount: '10', counterparty: '筛选甲', expense_type: '餐饮', bank_name: '筛选行' },
     { expense_date: '2026-05-20', expense_currency: 'CNY', expense_amount: '200', counterparty: '筛选乙', expense_type: '数码', bank_name: '筛选行' },
     { expense_date: '2026-06-01', expense_currency: 'USD', expense_amount: '30', counterparty: '筛选丙', expense_type: '餐饮', bank_name: '筛选行' },
+    { expense_date: '2026-06-15', expense_currency: 'CNY', expense_amount: '40', counterparty: '筛选丁', expense_type: '', bank_name: '筛选行' },
   ]);
   const base = { operation_id: [inserted.operationId], sort: 'id asc' };
   const count = async (extra) => (await mock.selectExpense({ ...base, ...extra })).count;
 
   equal('按币种集合', await count({ expense_currency: ['USD'] }), 1);
   equal('按类型集合', await count({ expense_type: ['餐饮'] }), 2);
-  equal('按银行名称', await count({ bank_name: ['筛选行'] }), 3);
-  equal('对手方模糊', await count({ counterparty_like: '筛选' }), 3);
+  equal('支出类型为空标记', await count({ expense_type_empty: true }), 1);
+  equal('支出类型为空切片', await count({ expense_type: [''] }), 1);
+  equal('按银行名称', await count({ bank_name: ['筛选行'] }), 4);
+  equal('对手方模糊', await count({ counterparty_like: '筛选' }), 4);
   equal('对手方模糊到单条', await count({ counterparty_like: '乙' }), 1);
   equal('类型模糊', await count({ expense_type_like: '数' }), 1);
-  equal('金额下限', await count({ expense_amount_min: '30' }), 2);
+  equal('金额下限', await count({ expense_amount_min: '30' }), 3);
   equal('金额上限', await count({ expense_amount_max: '30' }), 2);
-  equal('金额区间', await count({ expense_amount_min: '20', expense_amount_max: '100' }), 1);
-  equal('日期区间', await count({ expense_date_start: '2026-05-10T00:00:00+08:00', expense_date_end: '2026-06-30T23:59:59+08:00' }), 2);
+  equal('金额区间', await count({ expense_amount_min: '20', expense_amount_max: '100' }), 2);
+  equal('日期区间', await count({ expense_date_start: '2026-05-10T00:00:00+08:00', expense_date_end: '2026-06-30T23:59:59+08:00' }), 3);
+  const resAsc = await mock.selectExpense({ ...base, sort: 'updated_at asc' });
+  equal('更新时间升序数量', resAsc.count, 4);
+  const resDesc = await mock.selectExpense({ ...base, sort: 'updated_at desc' });
+  equal('更新时间降序数量', resDesc.count, 4);
   await rejects('时间区间倒挂', mock.selectExpense({ ...base, expense_date_start: '2026-06-01T00:00:00+08:00', expense_date_end: '2026-05-01T00:00:00+08:00' }), '时间区间倒挂');
   await rejects('金额区间倒挂', mock.selectExpense({ ...base, expense_amount_min: '100', expense_amount_max: '10' }), '金额区间倒挂');
   await rejects('删除筛选非法', mock.selectExpense({ ...base, deleted: 9 }), '删除筛选非法');
