@@ -165,6 +165,14 @@ func TestSelectExpensePage(t *testing.T) {
 	if len(resp.Data.Object) != 2 || resp.Data.Object[0].Id != early.Id {
 		t.Errorf("按金额排序不符: %+v", resp.Data.Object)
 	}
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{Sort: "updated_at asc"})
+	if len(resp.Data.Object) != 2 {
+		t.Errorf("按更新时间升序不符: count=%d", len(resp.Data.Object))
+	}
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{Sort: "updated_at desc"})
+	if len(resp.Data.Object) != 2 {
+		t.Errorf("按更新时间降序不符: count=%d", len(resp.Data.Object))
+	}
 }
 
 // 前端导出csv靠不传分页参数一次拉全量，条数超过老的默认页大小也不能被截断
