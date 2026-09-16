@@ -1,0 +1,7 @@
+.git
+log
+resource
+doc
+static_test
+*.log
+*.test

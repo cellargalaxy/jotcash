@@ -120,6 +120,28 @@ test('解锁页：口令输入框带明文开关', async () => {
   equal('再点回密码框', input.type, 'password');
 });
 
+test('解锁页：后端口令与前端口令支持密码自动填充属性', async () => {
+  lock();
+  const host = await renderPage((container) => renderUnlock(container, () => {}), {});
+  const form = unlockForm(host);
+  const serverInput = form.tokens[0];
+  const clientInput = form.tokens[1];
+  equal('后端口令标为用户名', serverInput.getAttribute('autocomplete'), 'username');
+  equal('后端口令字段名为 username', serverInput.getAttribute('name'), 'username');
+  equal('后端口令 id 为 server-token', serverInput.getAttribute('id'), 'server-token');
+  equal('前端口令标为当前密码', clientInput.getAttribute('autocomplete'), 'current-password');
+  equal('前端口令字段名为 password', clientInput.getAttribute('name'), 'password');
+  equal('前端口令 id 为 client-token', clientInput.getAttribute('id'), 'client-token');
+
+  const labels = findAll(host, 'label');
+  const serverLabel = labels.find((l) => l.textContent === '后端口令');
+  const clientLabel = labels.find((l) => l.textContent === '前端口令');
+  ok('存在后端口令标签', serverLabel);
+  equal('后端口令标签绑定输入框', serverLabel.getAttribute('for'), 'server-token');
+  ok('存在前端口令标签', clientLabel);
+  equal('前端口令标签绑定输入框', clientLabel.getAttribute('for'), 'client-token');
+});
+
 //辅助函数：跑设置页，之前得先解锁，否则会话卡片里读到的都是空的
 async function renderSettingPage() {
   unlock('后端口令', 'jotcash-2026', 'CNY', MODE_MOCK);

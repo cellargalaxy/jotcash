@@ -12,8 +12,19 @@ const MODES = [
 ];
 
 //口令输入框统一带一个明文开关：口令是手抄来的，看不见更容易抄错
-function tokenInput(placeholder) {
-  const input = el('input', { class: 'form-control', type: 'password', placeholder, autocomplete: 'off' });
+//透传 id / name / autocomplete 等标准凭据属性，以便密码自动填充工具将其识别为账户名与当前密码
+function tokenInput(placeholder, attrs = {}) {
+  const input = el('input', {
+    class: 'form-control',
+    type: 'password',
+    placeholder,
+    autocomplete: attrs.autocomplete || 'off',
+    name: attrs.name || null,
+    id: attrs.id || null,
+    autocapitalize: 'none',
+    autocorrect: 'off',
+    spellcheck: 'false',
+  });
   const toggle = el('button', { class: 'btn btn-outline-secondary', type: 'button', text: t('显示') });
   toggle.addEventListener('click', () => {
     const shown = input.type === 'text';
@@ -54,8 +65,16 @@ function modeChoice(onChange) {
 }
 
 export function renderUnlock(container, onUnlocked) {
-  const serverToken = tokenInput(t('后端口令，用于签发请求凭据'));
-  const clientToken = tokenInput(t('前端口令，{min} 位起，不得纯数字或纯字母', { min: TOKEN_MIN_LEN }));
+  const serverToken = tokenInput(t('后端口令，用于签发请求凭据'), {
+    id: 'server-token',
+    name: 'username',
+    autocomplete: 'username',
+  });
+  const clientToken = tokenInput(t('前端口令，{min} 位起，不得纯数字或纯字母', { min: TOKEN_MIN_LEN }), {
+    id: 'client-token',
+    name: 'password',
+    autocomplete: 'current-password',
+  });
   //解锁页按定义就是没有会话的状态，记账币种一定没设过，初值只能由语言来定
   const currency = currencySelect(defaultCurrency(), { class: 'form-select' });
   const submit = el('button', { class: 'btn btn-primary w-100', type: 'submit', text: t('解锁') });
@@ -66,11 +85,11 @@ export function renderUnlock(container, onUnlocked) {
   });
   const mode = modeChoice((value) => { mockNotice.hidden = value === MODE_MOCK ? null : true; });
 
-  const form = el('form', { class: 'vstack gap-3' }, [
+  const form = el('form', { class: 'vstack gap-3', autocomplete: 'on' }, [
     el('div', {}, [el('label', { class: 'form-label small text-secondary', text: t('解锁模式') }), mode.node]),
     mockNotice,
-    el('div', {}, [el('label', { class: 'form-label small text-secondary', text: t('后端口令') }), serverToken.node]),
-    el('div', {}, [el('label', { class: 'form-label small text-secondary', text: t('前端口令') }), clientToken.node]),
+    el('div', {}, [el('label', { class: 'form-label small text-secondary', for: 'server-token', text: t('后端口令') }), serverToken.node]),
+    el('div', {}, [el('label', { class: 'form-label small text-secondary', for: 'client-token', text: t('前端口令') }), clientToken.node]),
     el('div', {}, [
       el('label', { class: 'form-label small text-secondary', text: t('记账币种') }),
       currency,
