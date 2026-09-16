@@ -323,6 +323,20 @@ func TestExpenseSort(t *testing.T) {
 	if len(objects) != 3 || objects[0].Id < objects[2].Id {
 		t.Errorf("ID倒序不符: %+v", objects)
 	}
+	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{Sort: "updated_at desc"})
+	if err != nil {
+		t.Fatalf("更新时间降序查询异常: %+v", err)
+	}
+	if len(objects) != 3 || objects[0].UpdatedAt.Before(objects[2].UpdatedAt) {
+		t.Errorf("更新时间降序不符: %+v", objects)
+	}
+	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{Sort: "updated_at asc"})
+	if err != nil {
+		t.Fatalf("更新时间升序查询异常: %+v", err)
+	}
+	if len(objects) != 3 || objects[0].UpdatedAt.After(objects[2].UpdatedAt) {
+		t.Errorf("更新时间升序不符: %+v", objects)
+	}
 	objects, _, err = selectExpense(ctx, model.ExpenseInquiry{})
 	if err != nil {
 		t.Fatalf("默认排序查询异常: %+v", err)
