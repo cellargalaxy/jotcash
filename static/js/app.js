@@ -9,6 +9,7 @@ import { render as renderSetting } from './page_setting.js';
 import { render as renderStatistic } from './page_statistic.js';
 import { renderUnlock } from './page_unlock.js';
 import { renderNotice } from './notice.js';
+import { AUTO_LOCK_OPTIONS, getAutoLock, initAutoLock, setAutoLock, watchAutoLock } from './auto_lock.js';
 import { getAccountingCurrency, isUnlocked, lock } from './store.js';
 import { THEMES, applyTheme, getTheme, setTheme, watchSystemTheme } from './theme.js';
 import { clear, el, query } from './util.js';
@@ -54,6 +55,16 @@ function renderSession() {
   clear(host);
   if (!isUnlocked()) return;
   host.appendChild(el('span', { class: 'badge text-bg-light', text: t('记账币种 {currency}', { currency: getAccountingCurrency() }) }));
+  const autoLockSelect = preferenceSelect(
+    AUTO_LOCK_OPTIONS.map((opt) => ({ value: opt.value, name: t(opt.name) })),
+    getAutoLock(),
+    t('自动锁定'),
+    (value) => {
+      setAutoLock(Number(value));
+    },
+    'ms-2',
+  );
+  host.appendChild(autoLockSelect);
   host.appendChild(el('button', {
     class: 'btn btn-sm btn-outline-light ms-2',
     type: 'button',
@@ -66,10 +77,10 @@ function renderSession() {
 }
 
 //name 传进来就是最终文案：主题名要翻译，语言名恰恰不能翻译
-function preferenceSelect(options, value, title, onChange) {
-  const node = el('select', { class: 'form-select form-select-sm w-auto', title });
+function preferenceSelect(options, value, title, onChange, extraClass) {
+  const node = el('select', { class: `form-select form-select-sm w-auto ${extraClass || ''}`.trim(), title });
   for (const option of options) {
-    node.appendChild(el('option', { value: option.value, selected: option.value === value ? true : null }, option.name));
+    node.appendChild(el('option', { value: option.value, selected: String(option.value) === String(value) ? true : null }, option.name));
   }
   node.addEventListener('change', () => onChange(node.value));
   return node;
@@ -147,6 +158,16 @@ function start() {
     renderRoute();
   });
   window.addEventListener('hashchange', renderRoute);
+  initAutoLock(() => {
+    if (!isUnlocked()) return;
+    lock();
+    location.reload();
+  });
+  watchAutoLock(() => {
+    if (isUnlocked()) {
+      renderSession();
+    }
+  });
   renderRoute();
 }
 

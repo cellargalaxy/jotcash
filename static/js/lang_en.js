@@ -14,6 +14,12 @@ export const TEXT = {
   '浅色': 'Light',
   '深色': 'Dark',
   '锁定': 'Lock',
+  '自动锁定': 'Auto-lock',
+  '5分钟': '5 minutes',
+  '10分钟': '10 minutes',
+  '30分钟': '30 minutes',
+  '1小时': '1 hour',
+  '永不自动锁定': 'Never auto-lock',
   '记账币种 {currency}': 'Accounting {currency}',
 
   // ===== 通用控件 =====

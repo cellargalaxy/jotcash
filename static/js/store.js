@@ -93,6 +93,7 @@ export function setColumns(columns) {
 //键名同时写在 index.html 的首屏主题脚本里，改这里要一并改那边
 export const LANG_KEY = 'jotcash.lang';
 export const THEME_KEY = 'jotcash.theme';
+export const AUTO_LOCK_KEY = 'jotcash.auto_lock';
 
 //隐私模式下 storage 的读写都可能直接抛，取不到偏好该回落到自动判定，不该把整页带崩
 function readPreference(key) {
@@ -125,4 +126,12 @@ export function getTheme() {
 
 export function setTheme(theme) {
   writePreference(THEME_KEY, theme);
+}
+
+export function getAutoLockPreference() {
+  return readPreference(AUTO_LOCK_KEY);
+}
+
+export function setAutoLockPreference(autoLock) {
+  writePreference(AUTO_LOCK_KEY, autoLock);
 }

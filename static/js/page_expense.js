@@ -380,6 +380,7 @@ async function saveEdit(row, draft) {
   const object = { ...row };
   for (const field of EDITABLE_FIELDS) object[field.key] = draft[field.key];
   object.expense_date = dateToRfc3339(draft.expense_date);
+  object.amortization_months = Number(draft.amortization_months) || 1;
   await api.updateExpense(object);
   state.editingId = 0;
   state.editDraft = null;
@@ -589,13 +590,41 @@ function isNumericField(field) {
   return field.type === 'amount' || field.type === 'rate' || field.type === 'int';
 }
 
+const COLUMN_WIDTHS = {
+  checkbox: '2.5rem',
+  expense_date: '8.5rem',
+  expense_currency: '7.5rem',
+  expense_amount: '7.5rem',
+  exchange_rate: '6.5rem',
+  accounting_currency: '6.5rem',
+  accounting_amount: '7.5rem',
+  counterparty: '9rem',
+  remark: '9rem',
+  expense_type: '8.5rem',
+  amortization_months: '7.5rem',
+  amortization_start_month: '7.5rem',
+  amortization_end_month: '7.5rem',
+  bank_name: '8.5rem',
+  card_last_4: '6.5rem',
+  id: '5.5rem',
+  operation_id: '5.5rem',
+  file_id: '5.5rem',
+  version: '5rem',
+  created_at: '10.5rem',
+  updated_at: '10.5rem',
+  deleted_at: '10.5rem',
+  actions: '11.5rem',
+};
+
 function headerCell(field) {
   const codes = accountingCurrencySet();
   const align = isNumericField(field) ? 'text-end' : 'text-start';
+  const width = COLUMN_WIDTHS[field.key] || '7rem';
+  const style = `width:${width};min-width:${width};`;
   if (field.key !== 'accounting_currency' || codes.length === 0) {
-    return el('th', { class: `text-nowrap ${align}`, text: t(field.name) });
+    return el('th', { class: `text-nowrap ${align}`, style, text: t(field.name) });
   }
-  return el('th', { class: `text-nowrap ${align}` }, [
+  return el('th', { class: `text-nowrap ${align}`, style }, [
     t(field.name),
     el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${codes.join('/')}）` }),
   ]);
@@ -621,15 +650,41 @@ function startInlineEdit(row, fieldKey) {
 }
 
 function createInlineControl(row, field, draft) {
+  let controlNode;
   let input;
   const initialValue = draft[field.key] === null || draft[field.key] === undefined ? '' : String(draft[field.key]);
 
-  if (field.type === 'date') {
+  if (field.key === 'expense_currency') {
+    const combo = comboInput(
+      () => currencyOptions(candidateOf('expense_currency')),
+      initialValue,
+      { class: 'form-control form-control-sm text-uppercase', maxlength: '3' },
+    );
+    controlNode = combo.node;
+    input = combo.input;
+  } else if (field.key === 'expense_type') {
+    const combo = comboInput(
+      () => candidateOf('expense_type'),
+      initialValue,
+      { class: 'form-control form-control-sm', placeholder: t('可选已有或直接录入新的') },
+    );
+    controlNode = combo.node;
+    input = combo.input;
+  } else if (field.key === 'bank_name' || field.key === 'card_last_4') {
+    const combo = comboInput(
+      () => candidateOf(field.key),
+      initialValue,
+      { class: 'form-control form-control-sm', maxlength: field.key === 'card_last_4' ? '4' : null, placeholder: t('可选已有或直接录入新的') },
+    );
+    controlNode = combo.node;
+    input = combo.input;
+  } else if (field.type === 'date') {
     input = el('input', {
       type: 'date',
       class: 'form-control form-control-sm',
       value: initialValue,
     });
+    controlNode = input;
   } else if (field.type === 'int') {
     input = el('input', {
       type: 'number',
@@ -638,19 +693,19 @@ function createInlineControl(row, field, draft) {
       class: 'form-control form-control-sm text-end',
       value: initialValue,
     });
+    controlNode = input;
   } else {
     const isNum = field.type === 'amount' || field.type === 'rate';
-    const isUpper = field.key === 'expense_currency';
     input = el('input', {
       type: 'text',
-      class: `form-control form-control-sm ${isNum ? 'text-end' : ''} ${isUpper ? 'text-uppercase' : ''}`,
+      class: `form-control form-control-sm ${isNum ? 'text-end' : ''}`,
       value: initialValue,
-      maxlength: field.key === 'card_last_4' ? '4' : field.key === 'expense_currency' ? '3' : null,
     });
+    controlNode = input;
   }
 
-  input.addEventListener('click', (event) => event.stopPropagation());
-  input.addEventListener('dblclick', (event) => event.stopPropagation());
+  controlNode.addEventListener('click', (event) => event.stopPropagation());
+  controlNode.addEventListener('dblclick', (event) => event.stopPropagation());
 
   input.addEventListener('input', () => {
     let val = input.value;
@@ -673,7 +728,7 @@ function createInlineControl(row, field, draft) {
   });
 
   input.addEventListener('change', () => {
-    if (field.key === 'bank_name' || field.key === 'card_last_4' || field.key === 'expense_type') {
+    if (field.key === 'bank_name' || field.key === 'card_last_4' || field.key === 'expense_type' || field.key === 'expense_currency') {
       addCandidate(field.key, input.value);
     }
   });
@@ -698,7 +753,7 @@ function createInlineControl(row, field, draft) {
     }
   });
 
-  return input;
+  return { node: controlNode, input };
 }
 
 function rowCells(row) {
@@ -717,14 +772,14 @@ function rowCells(row) {
       const control = createInlineControl(row, field, state.inlineEdit.draft);
       const td = el('td', {
         class: `cell-editing ${align}`,
-      }, [control]);
+      }, [control.node]);
       cells.push(td);
       if (state.inlineFocusKey === field.key) {
         state.inlineFocusKey = null;
         setTimeout(() => {
           try {
-            if (typeof control.focus === 'function') control.focus();
-            if (typeof control.select === 'function') control.select();
+            if (typeof control.input.focus === 'function') control.input.focus();
+            if (typeof control.input.select === 'function') control.input.select();
           } catch (_) {}
         }, 0);
       }
@@ -766,7 +821,7 @@ function buildRow(row, marks) {
   const actionButtons = [];
   if (deleted) {
     actionButtons.push(el('button', {
-      class: 'btn btn-sm btn-outline-primary py-0',
+      class: 'btn btn-sm btn-outline-primary py-0 px-2',
       type: 'button',
       text: t('复制新增'),
       onclick: () => {
@@ -781,7 +836,7 @@ function buildRow(row, marks) {
   } else if (isInline) {
     actionButtons.push(
       el('button', {
-        class: 'btn btn-sm btn-primary py-0',
+        class: 'btn btn-sm btn-primary py-0 px-2',
         type: 'button',
         text: t('保存'),
         onclick: async () => {
@@ -799,7 +854,7 @@ function buildRow(row, marks) {
         },
       }),
       el('button', {
-        class: 'btn btn-sm btn-outline-secondary py-0 ms-1',
+        class: 'btn btn-sm btn-outline-secondary py-0 px-2 ms-1',
         type: 'button',
         text: t('取消'),
         onclick: () => {
@@ -811,7 +866,7 @@ function buildRow(row, marks) {
   } else {
     actionButtons.push(
       el('button', {
-        class: 'btn btn-sm btn-outline-secondary py-0',
+        class: 'btn btn-sm btn-outline-secondary py-0 px-2',
         type: 'button',
         text: state.editingId === row.id ? t('收起') : t('编辑'),
         onclick: () => {
@@ -823,9 +878,12 @@ function buildRow(row, marks) {
       }),
     );
   }
-  actionButtons.push(el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源') }));
+  actionButtons.push(el('a', { class: 'btn btn-sm btn-outline-secondary py-0 px-2 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源') }));
 
-  const actions = el('td', { class: 'text-nowrap' }, actionButtons);
+  const actions = el('td', {
+    class: 'text-nowrap cell-actions',
+    style: `width:${COLUMN_WIDTHS.actions};min-width:${COLUMN_WIDTHS.actions};`,
+  }, actionButtons);
 
   const tr = el('tr', { class: `${deleted ? 'row-deleted' : ''} ${mark || ''}` }, [
     el('td', {}, [checkbox]),
@@ -851,7 +909,7 @@ function buildTable() {
   const columnCount = state.columns.length + 2;
   const head = el('thead', {}, [
     el('tr', {}, [
-      el('th', { style: 'width:2.5rem' }, [
+      el('th', { style: `width:${COLUMN_WIDTHS.checkbox};min-width:${COLUMN_WIDTHS.checkbox};` }, [
         el('input', {
           class: 'form-check-input',
           type: 'checkbox',
@@ -866,7 +924,7 @@ function buildTable() {
         }),
       ]),
       ...state.columns.map((key) => FIELD_OF[key]).filter(Boolean).map(headerCell),
-      el('th', { class: 'text-nowrap', text: t('操作') }),
+      el('th', { class: 'text-nowrap cell-actions', style: `width:${COLUMN_WIDTHS.actions};min-width:${COLUMN_WIDTHS.actions};`, text: t('操作') }),
     ]),
   ]);
 

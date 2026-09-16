@@ -1,4 +1,5 @@
 import * as api from './api.js';
+import { AUTO_LOCK_OPTIONS, getAutoLock, setAutoLock } from './auto_lock.js';
 import { API_BASE, TOKEN_MIN_LEN } from './config.js';
 import { currencySelect, sectionCard } from './component.js';
 import { serverText, t } from './i18n.js';
@@ -201,6 +202,17 @@ function backupCard() {
 }
 
 function sessionCard() {
+  const autoLockSelect = el('select', { class: 'form-select form-select-sm w-auto d-inline-block' });
+  for (const opt of AUTO_LOCK_OPTIONS) {
+    autoLockSelect.appendChild(el('option', {
+      value: opt.value,
+      selected: opt.value === getAutoLock() ? true : null,
+    }, t(opt.name)));
+  }
+  autoLockSelect.addEventListener('change', () => {
+    setAutoLock(Number(autoLockSelect.value));
+  });
+
   return sectionCard(
     t('会话与运行信息'),
     t('无登录、无会话、无令牌：口令与记账币种逐请求携带，只存在本标签页的 sessionStorage 里。'),
@@ -216,6 +228,8 @@ function sessionCard() {
         el('dd', { class: 'col-8 col-md-9', text: isMock() ? t('mock（浏览器内存，不发请求）') : t('真实后端接口') }),
         el('dt', { class: 'col-4 col-md-3 text-secondary', text: t('本会话记账币种') }),
         el('dd', { class: 'col-8 col-md-9', text: getAccountingCurrency() }),
+        el('dt', { class: 'col-4 col-md-3 text-secondary', text: t('自动锁定') }),
+        el('dd', { class: 'col-8 col-md-9' }, [autoLockSelect]),
       ]),
       el('button', {
         class: 'btn btn-sm btn-outline-secondary',

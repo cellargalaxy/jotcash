@@ -335,6 +335,94 @@ test('明细页：双击编辑后点击取消，修改丢弃且恢复展示', as
   equal('内容未改变', dataRows(host)[0].childNodes[7].textContent, original);
 });
 
+test('明细页：支出币种与支出类型行内编辑采用组合框，支持下拉与录入并保存', async () => {
+  const host = await renderAll();
+  let row = dataRows(host)[0];
+  const currencyCell = row.childNodes[2]; // 支出币种
+  dblclick(currencyCell);
+  await flush();
+
+  row = dataRows(host)[0];
+  const currencyEditCell = row.childNodes[2];
+  const currencyInput = find(currencyEditCell, 'input');
+  const currencyToggle = find(currencyEditCell, 'button.dropdown-toggle');
+  ok('支出币种编辑框出现', currencyInput);
+  ok('支出币种包含下拉切换按钮', currencyToggle);
+
+  const typeCell = row.childNodes[9]; // 支出类型
+  dblclick(typeCell);
+  await flush();
+
+  row = dataRows(host)[0];
+  const typeEditCell = row.childNodes[9];
+  const typeInput = find(typeEditCell, 'input');
+  const typeToggle = find(typeEditCell, 'button.dropdown-toggle');
+  ok('支出类型编辑框出现', typeInput);
+  ok('支出类型包含下拉切换按钮', typeToggle);
+
+  setValue(currencyInput, 'EUR');
+  setValue(typeInput, '商务宴请');
+  click(findByText(row, 'button', '保存'));
+  await flush();
+
+  includes('保存成功提示', takeToast(), '已保存');
+  equal('支出币种已更新为EUR', dataRows(host)[0].childNodes[2].textContent, 'EUR');
+  equal('支出类型已更新为商务宴请', dataRows(host)[0].childNodes[9].textContent, '商务宴请');
+});
+
+test('明细页：双击摊销月数进入数字编辑框，定宽无跳变且保存生效', async () => {
+  const host = await renderAll();
+  let row = dataRows(host)[0];
+  const monthsCell = row.childNodes[10]; // 摊销月数
+  dblclick(monthsCell);
+  await flush();
+
+  row = dataRows(host)[0];
+  const monthsEditCell = row.childNodes[10];
+  const input = find(monthsEditCell, 'input');
+  ok('摊销月数编辑框出现', input);
+  equal('摊销月数恢复为原生数字输入框', input.type, 'number');
+  equal('数值步进为1', input.getAttribute('step'), '1');
+  equal('数值最小值为1', input.getAttribute('min'), '1');
+  ok('文本靠右对齐', input.className.includes('text-end'));
+
+  setValue(input, '6');
+  click(findByText(row, 'button', '保存'));
+  await flush();
+
+  includes('保存成功提示', takeToast(), '已保存');
+  equal('摊销月数已更新为6', dataRows(host)[0].childNodes[10].textContent, '6');
+});
+
+test('明细页：表头所有列均预设宽度与最小宽度，防止编辑态撑开表格抖动', async () => {
+  const host = await renderAll();
+  const ths = findAll(host, 'thead th');
+  for (const th of ths) {
+    const style = th.getAttribute('style') || '';
+    includes('带有宽度样式', style, 'width:');
+    includes('带有最小宽度样式', style, 'min-width:');
+  }
+  const actionTh = ths[ths.length - 1];
+  includes('操作列表头固定宽度11.5rem', actionTh.getAttribute('style'), 'width:11.5rem');
+  includes('操作列表头最小宽度11.5rem', actionTh.getAttribute('style'), 'min-width:11.5rem');
+  includes('摊销月数表头宽度7.5rem', ths[10].getAttribute('style'), 'width:7.5rem');
+
+  // 验证操作列在正常态与行内编辑态（出现保存+取消按钮）下，单元格定宽不发生抖动跳变
+  const firstRow = dataRows(host)[0];
+  const normalActionsTd = firstRow.childNodes[firstRow.childNodes.length - 1];
+  includes('操作列单元格样式包含宽度11.5rem', normalActionsTd.getAttribute('style'), 'width:11.5rem');
+  includes('操作列单元格样式包含最小宽度11.5rem', normalActionsTd.getAttribute('style'), 'min-width:11.5rem');
+  ok('未编辑态展示编辑与来源', findByText(normalActionsTd, 'button', '编辑') && findByText(normalActionsTd, 'a', '来源'));
+
+  dblclick(firstRow.childNodes[10]);
+  await flush();
+  const editingRow = dataRows(host)[0];
+  const editingActionsTd = editingRow.childNodes[editingRow.childNodes.length - 1];
+  includes('编辑态操作列单元格样式保持宽度11.5rem', editingActionsTd.getAttribute('style'), 'width:11.5rem');
+  includes('编辑态操作列单元格样式保持最小宽度11.5rem', editingActionsTd.getAttribute('style'), 'min-width:11.5rem');
+  ok('编辑态展示保存与取消', findByText(editingActionsTd, 'button', '保存') && findByText(editingActionsTd, 'button', '取消'));
+});
+
 test('明细页：核实视图只列本批次与命中的行，没有分页条', async () => {
   const seedRow = (await api.selectExpense({ deleted: 0, sort: 'id asc' })).object[0];
   const host = await renderPage(renderExpense, { operation_id: String(seedRow.operation_id), verify: '1' });

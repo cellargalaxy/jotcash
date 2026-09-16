@@ -31,7 +31,7 @@
   background-color: var(--bs-tertiary-bg);
 }
 
-/* 行内编辑单元格控件紧凑展示 */
+/* 行内编辑单元格控件紧凑展示，定宽防抖动 */
 .expense-table td.cell-editing {
   padding: 0.2rem 0.35rem;
 }
@@ -39,7 +39,24 @@
 .expense-table td.cell-editing .form-control {
   font-size: 0.86rem;
   padding: 0.2rem 0.4rem;
-  min-width: 4rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.expense-table td.cell-editing .input-group {
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.expense-table td.cell-editing .input-group > .btn {
+  padding: 0.2rem 0.35rem;
+}
+
+/* 操作列表头与单元格：固定宽度，单元格紧凑排列，防止切换保存/取消按钮时列宽跳动 */
+.expense-table th.cell-actions,
+.expense-table td.cell-actions {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
 }
 
 /* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界。
