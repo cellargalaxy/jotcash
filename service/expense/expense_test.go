@@ -11,6 +11,8 @@ import (
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
+	_ "github.com/cellargalaxy/jotcash/service/expense/cmb_debit"
+	_ "github.com/cellargalaxy/jotcash/service/expense/icbc_credit"
 	"github.com/shopspring/decimal"
 )
 
