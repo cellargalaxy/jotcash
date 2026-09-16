@@ -114,23 +114,31 @@ func TestSelectExpenseFilter(t *testing.T) {
 	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 	early, late, _ := newTestExpenses(t, clientToken)
 
+	empty := newTestExpense("空类型", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), "-10")
+	empty.BankName = "建设银行"
+	empty.ExpenseCurrency = "CNY"
+	empty.ExpenseType = ""
+	execTransaction(t, clientToken, rdb.NewExpenseInsertHandler(empty))
+
 	//E-7 顶部筛选逐项
 	min := decimal.RequireFromString("0")
 	cases := map[string]struct {
 		inquiry model.ExpenseInquiry
 		count   int64
 	}{
-		"日期区间":   {model.ExpenseInquiry{ExpenseDateStart: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)}, 1},
-		"金额区间":   {model.ExpenseInquiry{ExpenseAmountMin: &min}, 1},
-		"支出币种":   {model.ExpenseInquiry{ExpenseCurrency: []string{"USD"}}, 2},
-		"记账币种":   {model.ExpenseInquiry{AccountingCurrency: []string{"JPY"}}, 0},
-		"对手方模糊":  {model.ExpenseInquiry{CounterpartyLike: "亚马"}, 1},
-		"备注模糊":   {model.ExpenseInquiry{RemarkLike: "苹果"}, 1},
-		"支出类型模糊": {model.ExpenseInquiry{ExpenseTypeLike: "购"}, 2},
-		"银行名称":   {model.ExpenseInquiry{BankName: []string{"招商银行"}}, 2},
-		"卡号后四位":  {model.ExpenseInquiry{CardLast4: []string{"0000"}}, 0},
-		"来源审计ID": {model.ExpenseInquiry{OperationId: []int64{early.OperationId}}, 1},
-		"来源文件ID": {model.ExpenseInquiry{FileId: []int64{late.FileId}}, 1},
+		"日期区间":     {model.ExpenseInquiry{ExpenseDateStart: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)}, 1},
+		"金额区间":     {model.ExpenseInquiry{ExpenseAmountMin: &min}, 1},
+		"支出币种":     {model.ExpenseInquiry{ExpenseCurrency: []string{"USD"}}, 2},
+		"记账币种":     {model.ExpenseInquiry{AccountingCurrency: []string{"JPY"}}, 0},
+		"对手方模糊":    {model.ExpenseInquiry{CounterpartyLike: "亚马"}, 1},
+		"备注模糊":     {model.ExpenseInquiry{RemarkLike: "苹果"}, 1},
+		"支出类型模糊":   {model.ExpenseInquiry{ExpenseTypeLike: "购"}, 2},
+		"支出类型为空标记": {model.ExpenseInquiry{ExpenseTypeEmpty: true}, 1},
+		"支出类型为空切片": {model.ExpenseInquiry{ExpenseType: []string{""}}, 1},
+		"银行名称":     {model.ExpenseInquiry{BankName: []string{"招商银行"}}, 2},
+		"卡号后四位":    {model.ExpenseInquiry{CardLast4: []string{"0000"}}, 0},
+		"来源审计ID":   {model.ExpenseInquiry{OperationId: []int64{early.OperationId}}, 1},
+		"来源文件ID":   {model.ExpenseInquiry{FileId: []int64{late.FileId}}, 1},
 	}
 	for name, one := range cases {
 		if resp := selectExpense(t, engine, jwt, one.inquiry); resp.Data.Count != one.count {
