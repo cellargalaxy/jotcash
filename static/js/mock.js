@@ -156,6 +156,7 @@ const EXPENSE_SORT_WHITELIST = [
   'expense_date asc', 'expense_date desc',
   'expense_amount asc', 'expense_amount desc',
   'created_at asc', 'created_at desc',
+  'updated_at asc', 'updated_at desc',
 ];
 
 const EXPENSE_COMPARATORS = {
@@ -163,6 +164,7 @@ const EXPENSE_COMPARATORS = {
   expense_date: (left, right) => compareTime(left.expense_date, right.expense_date),
   expense_amount: (left, right) => new Decimal(left.expense_amount).cmp(new Decimal(right.expense_amount)),
   created_at: (left, right) => compareTime(left.created_at, right.created_at),
+  updated_at: (left, right) => compareTime(left.updated_at, right.updated_at),
 };
 
 function filterExpense(inquiry) {
@@ -195,7 +197,6 @@ function filterExpense(inquiry) {
       && new Decimal(row.expense_amount).gt(new Decimal(inquiry.expense_amount_max))) return false;
     if (!likeMatch(inquiry.counterparty_like, row.counterparty)) return false;
     if (!likeMatch(inquiry.remark_like, row.remark)) return false;
-    if (!likeMatch(inquiry.expense_type_like, row.expense_type)) return false;
     return true;
   });
 }

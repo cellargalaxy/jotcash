@@ -316,7 +316,7 @@ test('mock 数据：种子跟着语言走，用户自己录的原样不动', asy
   ok('用户上传的文件名没被动过', files.some((file) => file.file_name === '我自己的账单.csv'));
 
   //库里存的就是展示值，所以英文态下按英文筛选必须能筛出来；只在展示时翻译就会一条都筛不到
-  const filtered = await api.selectExpense({ deleted: DELETED_ALL, sort: 'id desc', expense_type_like: 'Dining' });
+  const filtered = await api.selectExpense({ deleted: DELETED_ALL, sort: 'id desc', expense_type: ['Dining'] });
   ok('按英文支出类型筛得到', filtered.count > 0);
 
   setLang(LANG_ZH);

@@ -78,7 +78,6 @@ type ExpenseInquiry struct {
 	ExpenseAmountMax      *decimal.Decimal `json:"expense_amount_max"`
 	CounterpartyLike      string           `json:"counterparty_like"`
 	RemarkLike            string           `json:"remark_like"`
-	ExpenseTypeLike       string           `json:"expense_type_like"`
 	Deleted               int              `json:"deleted"`
 	Sort                  string           `json:"sort"`
 	Page                  int              `json:"page"`

@@ -119,6 +119,8 @@ export const EXPENSE_SORTS = [
   { value: 'expense_amount asc', name: '支出金额 · 小→大' },
   { value: 'created_at desc', name: '创建时间 · 新→旧' },
   { value: 'created_at asc', name: '创建时间 · 旧→新' },
+  { value: 'updated_at desc', name: '更新时间 · 新→旧' },
+  { value: 'updated_at asc', name: '更新时间 · 旧→新' },
   { value: 'id desc', name: '明细ID · 降序' },
   { value: 'id asc', name: '明细ID · 升序' },
 ];

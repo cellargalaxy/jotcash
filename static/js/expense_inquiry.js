@@ -2,7 +2,6 @@ import * as api from './api.js';
 import { DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_SORTS } from './config.js';
 import {
   comboFilterInput,
-  comboInput,
   currencyOptions,
   dateInput,
   filterCard,
@@ -33,7 +32,6 @@ export function newInquiry() {
     expense_amount_max: null,
     counterparty_like: '',
     remark_like: '',
-    expense_type_like: '',
     deleted: DELETED_NO,
     sort: 'expense_date desc',
   };
@@ -107,11 +105,14 @@ export function expenseFilter(inquiry, onApply, onReset) {
     controls[key] = combo.input;
     return combo.node;
   };
-  const singleComboField = (key, getOptions, value, attrs) => {
-    const combo = comboInput(getOptions, value, attrs);
-    controls[key] = combo.input;
-    return combo.node;
-  };
+  //支出类型：可多选已有类型，另加「未填写」勾选框圈出支出类型为空的明细
+  const expenseTypeControl = el('div', {}, [
+    comboField('expense_type', () => candidateOf('expense_type'), inquiry.expense_type.filter((item) => item !== '').join(','), {}),
+    el('label', { class: 'form-check mt-1' }, [
+      (controls.expense_type_empty = el('input', { class: 'form-check-input', type: 'checkbox', checked: inquiry.expense_type.includes('') ? true : null })),
+      el('span', { class: 'form-check-label small ms-1', text: t('未填写') }),
+    ]),
+  ]);
   const items = [
     filterItem(t('支出日期起'), (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2, t('必填，默认最近一年')),
     filterItem(t('支出日期止'), (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2, t('必填，默认最近一年')),
@@ -121,7 +122,7 @@ export function expenseFilter(inquiry, onApply, onReset) {
     filterItem(t('记账币种'), comboField('accounting_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.accounting_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
     filterItem(t('交易对手方'), (controls.counterparty_like = textInput({ value: inquiry.counterparty_like })), 3, t('模糊匹配，输入片段即可')),
     filterItem(t('交易备注'), (controls.remark_like = textInput({ value: inquiry.remark_like })), 3, t('模糊匹配，输入片段即可')),
-    filterItem(t('支出类型'), singleComboField('expense_type_like', () => candidateOf('expense_type'), inquiry.expense_type_like, {}), 2, t('模糊匹配，也可下拉选已有')),
+    filterItem(t('支出类型'), expenseTypeControl, 2, t('可多选，逗号分隔')),
     filterItem(t('银行名称'), comboField('bank_name', () => candidateOf('bank_name'), inquiry.bank_name.join(','), {}), 2, t('可多选，逗号分隔')),
     filterItem(t('卡号后四位'), comboField('card_last_4', () => candidateOf('card_last_4'), inquiry.card_last_4.join(','), {}), 2, t('可多选，逗号分隔')),
     filterItem(t('来源审计ID'), (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
@@ -158,7 +159,7 @@ export function expenseFilter(inquiry, onApply, onReset) {
       accounting_currency: compact(controls.accounting_currency.value.toUpperCase().split(',')),
       counterparty_like: controls.counterparty_like.value.trim(),
       remark_like: controls.remark_like.value.trim(),
-      expense_type_like: controls.expense_type_like.value.trim(),
+      expense_type: [...compact(controls.expense_type.value.split(',')), ...(controls.expense_type_empty.checked ? [''] : [])],
       bank_name: compact(controls.bank_name.value.split(',')),
       card_last_4: compact(controls.card_last_4.value.split(',')),
       operation_id: compact(controls.operation_id.value.split(',')).map(Number),

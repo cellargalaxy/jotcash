@@ -20,6 +20,8 @@ var expenseSortMap = map[string]string{
 	"expense_amount desc": "cast(expense_amount as real) desc",
 	"created_at asc":      "created_at asc",
 	"created_at desc":     "created_at desc",
+	"updated_at asc":      "updated_at asc",
+	"updated_at desc":     "updated_at desc",
 }
 
 const expenseSortDefault = "id asc"
@@ -85,9 +87,6 @@ func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, er
 	}
 	if this.RemarkLike != "" {
 		tx = tx.Where(`remark like ? escape '\'`, likeValue(this.RemarkLike))
-	}
-	if this.ExpenseTypeLike != "" {
-		tx = tx.Where(`expense_type like ? escape '\'`, likeValue(this.ExpenseTypeLike))
 	}
 	switch this.Deleted {
 	case model.DeletedAll:

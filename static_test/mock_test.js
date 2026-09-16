@@ -125,12 +125,10 @@ test('筛选：集合、模糊、金额区间、时间区间各自生效', async
 
   equal('按币种集合', await count({ expense_currency: ['USD'] }), 1);
   equal('按类型集合', await count({ expense_type: ['餐饮'] }), 2);
-  equal('支出类型为空标记', await count({ expense_type_empty: true }), 1);
   equal('支出类型为空切片', await count({ expense_type: [''] }), 1);
   equal('按银行名称', await count({ bank_name: ['筛选行'] }), 4);
   equal('对手方模糊', await count({ counterparty_like: '筛选' }), 4);
   equal('对手方模糊到单条', await count({ counterparty_like: '乙' }), 1);
-  equal('类型模糊', await count({ expense_type_like: '数' }), 1);
   equal('金额下限', await count({ expense_amount_min: '30' }), 3);
   equal('金额上限', await count({ expense_amount_max: '30' }), 2);
   equal('金额区间', await count({ expense_amount_min: '20', expense_amount_max: '100' }), 2);
