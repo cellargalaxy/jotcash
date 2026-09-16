@@ -6,10 +6,11 @@ require (
 	github.com/bojanz/currency v1.5.0
 	github.com/cellargalaxy/go_common v0.0.0-20260915073249-449772837e52
 	github.com/gin-gonic/gin v1.12.0
+	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/ncruces/go-sqlite3/gormlite v0.34.0
 	github.com/pkg/errors v0.9.1
-	github.com/robfig/cron v1.2.0
+	github.com/robfig/cron/v3 v3.0.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/sirupsen/logrus v1.10.2
 	gorm.io/gorm v1.31.2
@@ -52,7 +53,6 @@ require (
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
-	github.com/robfig/cron/v3 v3.0.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
