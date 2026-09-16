@@ -26,7 +26,7 @@ const (
 	CsvExchangeRate       = "折算汇率"
 	CsvAccountingCurrency = "记账币种"
 	CsvExpenseType        = "支出类型"
-	CsvAmortizationMonths = "摊分月数"
+	CsvAmortizationMonths = "摊销月数"
 )
 
 type Expense struct {

@@ -16,7 +16,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
+const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数\n"
 
 func TestSupport(t *testing.T) {
 	ctx := util.GenCtx()
@@ -76,13 +76,13 @@ func TestParse(t *testing.T) {
 		t.Errorf("派生字段不该由解析器填: %+v", object)
 	}
 
-	//摊分月数填了就照填的来，留空留0让上层取默认
+	//摊销月数填了就照填的来，留空留0让上层取默认
 	objects, err = parser.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,3\n"))
 	if err != nil {
 		t.Fatalf("解析异常: %+v", err)
 	}
 	if objects[0].AmortizationMonths != 3 {
-		t.Errorf("摊分月数应解析到: %d", objects[0].AmortizationMonths)
+		t.Errorf("摊销月数应解析到: %d", objects[0].AmortizationMonths)
 	}
 
 	//带BOM的文件要能照常解析出内容
@@ -102,9 +102,9 @@ func TestParse(t *testing.T) {
 	if objects[0].BankName != "" || objects[0].Counterparty != "" || objects[0].ExpenseAmount.String() != "100.5" {
 		t.Errorf("留空的可选列应为空: %+v", objects[0])
 	}
-	//汇率与摊分月数留空都留0，上层据此兜底
+	//汇率与摊销月数留空都留0，上层据此兜底
 	if !objects[0].ExchangeRate.IsZero() || objects[0].AmortizationMonths != 0 {
-		t.Errorf("汇率与摊分月数留空应留0: %+v", objects[0])
+		t.Errorf("汇率与摊销月数留空应留0: %+v", objects[0])
 	}
 
 	//只有表头解析出0笔，是否报错由上层定
@@ -160,11 +160,11 @@ func TestParseInvalid(t *testing.T) {
 		"折算汇率非正": testCsvHeader + ",,2026-01-02,USD,1,,,0,CNY,,\n",
 		//汇率是「支出币种兑记账币种」，没有记账币种就不知道兑给谁
 		"填了汇率没填记账币种": testCsvHeader + ",,2026-01-02,USD,1,,,7.1234,,,\n",
-		"摊分月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
-		"摊分月数为0":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,0\n",
-		"摊分月数为负":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,-1\n",
+		"摊销月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
+		"摊销月数为0":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,0\n",
+		"摊销月数为负":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,-1\n",
 		//记账金额只能由系统算，进不了契约
-		"表头带了记账金额": "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,记账金额,支出类型,摊分月数\n,,2026-01-02,CNY,1,,,,,1,,\n",
+		"表头带了记账金额": "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,记账金额,支出类型,摊销月数\n,,2026-01-02,CNY,1,,,,,1,,\n",
 	}
 	for name, csv := range cases {
 		if _, err := parser.Parse(ctx, []byte(csv)); err == nil {

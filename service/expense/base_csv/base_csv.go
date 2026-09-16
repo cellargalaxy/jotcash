@@ -24,7 +24,7 @@ var columns = []string{
 	model.CsvExchangeRate,       //折算汇率
 	model.CsvAccountingCurrency, //记账币种
 	model.CsvExpenseType,        //支出类型
-	model.CsvAmortizationMonths, //摊分月数
+	model.CsvAmortizationMonths, //摊销月数
 }
 
 func init() {
@@ -105,14 +105,14 @@ func parseExpense(ctx context.Context, line []string) (*model.Expense, error) {
 			return nil, errors.Errorf("折算汇率非正: %s", exchangeRate)
 		}
 	}
-	//摊分月数留空由上层取默认值，填了就得是不小于1的整数
+	//摊销月数留空由上层取默认值，填了就得是不小于1的整数
 	amortizationMonths := 0
 	value = csvValue(line, model.CsvAmortizationMonths)
 	if value != "" {
 		amortizationMonths = util.Str2Int[int](value)
 		if amortizationMonths < 1 {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"months": value}).Warn("解析CSV，摊分月数非法")
-			return nil, errors.Errorf("摊分月数非法: %s", value)
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"months": value}).Warn("解析CSV，摊销月数非法")
+			return nil, errors.Errorf("摊销月数非法: %s", value)
 		}
 	}
 

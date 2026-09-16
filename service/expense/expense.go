@@ -88,8 +88,8 @@ func Derive(ctx context.Context, object *model.Expense) error {
 	object.AmortizationStartMonth = time.Date(object.ExpenseDate.Year(), object.ExpenseDate.Month(), 1, 0, 0, 0, 0, object.ExpenseDate.Location())
 	object.AmortizationEndMonth = object.AmortizationStartMonth.AddDate(0, object.AmortizationMonths-1, 0)
 	if object.AmortizationEndMonth.Before(object.AmortizationStartMonth) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("明细摊分，月数过大")
-		return errors.Errorf("摊分月数过大: %d", object.AmortizationMonths)
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("明细摊销，月数过大")
+		return errors.Errorf("摊销月数过大: %d", object.AmortizationMonths)
 	}
 	return nil
 }
