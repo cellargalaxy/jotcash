@@ -241,8 +241,9 @@ export function insertExpense(filename, csvText, accountingCurrency) {
     if (value('exchange_rate') && !value('accounting_currency')) {
       return fail(`解析CSV，第${index + 1}行，填了折算汇率就必须填记账币种`);
     }
+    //后端走的是 Str2Int，小数串解不出整数就是 0，一并落进「小于 1」这条判据里被拒
     const months = value('amortization_months');
-    if (months && !(Number(months) >= 1)) {
+    if (months && !(Number.isInteger(Number(months)) && Number(months) >= 1)) {
       return fail(`解析CSV，第${index + 1}行，摊销月数非法: ${months}`);
     }
     const object = {
