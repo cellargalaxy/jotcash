@@ -407,7 +407,12 @@ func TestExpenseInquiryField(t *testing.T) {
 		ExpenseCurrency: "JPY", AccountingCurrency: "CNY", ExpenseType: "购物X线下",
 		AmortizationMonths: 6, OperationId: util.GenId(), FileId: util.GenId(), Version: 2,
 	}
-	if _, err := insertExpense(ctx, hit, miss); err != nil {
+	emptyType := &model.Expense{
+		Id: util.GenId(), BankName: "建设银行", CardLast4: "1111", ExpenseDate: time.Now(),
+		ExpenseCurrency: "CNY", AccountingCurrency: "CNY", ExpenseType: "",
+		AmortizationMonths: 1, OperationId: util.GenId(), FileId: util.GenId(), Version: 3,
+	}
+	if _, err := insertExpense(ctx, hit, miss, emptyType); err != nil {
 		t.Fatalf("插入异常: %+v", err)
 	}
 
@@ -429,6 +434,19 @@ func TestExpenseInquiryField(t *testing.T) {
 			t.Fatalf("%s筛选异常: %+v", name, err)
 		}
 		if count != 1 || len(objects) != 1 || objects[0].Id != hit.Id {
+			t.Errorf("%s筛选不符: count=%d %+v", name, count, objects)
+		}
+	}
+
+	for name, inquiry := range map[string]model.ExpenseInquiry{
+		"支出类型为空标记": {ExpenseTypeEmpty: true},
+		"支出类型为空切片": {ExpenseType: []string{""}},
+	} {
+		objects, count, err := selectExpense(ctx, inquiry)
+		if err != nil {
+			t.Fatalf("%s筛选异常: %+v", name, err)
+		}
+		if count != 1 || len(objects) != 1 || objects[0].Id != emptyType.Id {
 			t.Errorf("%s筛选不符: count=%d %+v", name, count, objects)
 		}
 	}
