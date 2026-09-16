@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 import { el } from './util.js';
 
 //支出类型、对手方这类分类维度按序号取色，颜色都够深，段内的白色标签才读得清
@@ -10,10 +11,16 @@ export function colorOf(index) {
   return PALETTE[index % PALETTE.length];
 }
 
-//图例与坐标轴跟着 bootstrap 的正文色走，换主题时不用再改图表
-Chart.defaults.color = getComputedStyle(document.body).getPropertyValue('--bs-body-color') || '#212529';
-Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-Chart.defaults.font.size = 11;
+//图例与坐标轴跟着 bootstrap 的正文色走，所以不必为暗色另写一套图表配色。
+//但 Chart.js 只在建实例时读一次默认值，换主题之后必须重读再重绘，否则深色底上还印着深色字
+export function refreshChartTheme() {
+  const style = getComputedStyle(document.body);
+  Chart.defaults.color = style.getPropertyValue('--bs-body-color') || '#212529';
+  Chart.defaults.font.family = style.fontFamily;
+  Chart.defaults.font.size = 11;
+}
+
+refreshChartTheme();
 
 //占比的分母是整根柱子的合计；合计为 0 时没有比例可言，退款这类负数会让比例是负的，那是真实口径
 function percentText(value, total) {
@@ -76,7 +83,7 @@ export function stackedBar({ labels, datasets, totals, format }) {
         tooltip: {
           callbacks: {
             label: (item) => `${item.dataset.label}：${format(item.parsed.y)}（${percentText(item.parsed.y, totals[item.dataIndex])}）`,
-            footer: (items) => `合计 ${format(totals[items[0].dataIndex])}`,
+            footer: (items) => t('合计 {amount}', { amount: format(totals[items[0].dataIndex]) }),
           },
         },
         datalabels: {

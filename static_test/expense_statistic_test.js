@@ -4,7 +4,7 @@ import { equal, ok, same } from './helper/check.js';
 import {
   MEASURE_ACCOUNTING,
   MEASURE_AMORTIZATION,
-  UNFILLED,
+  unfilled,
   aggregate,
   cellAmount,
   monthAxis,
@@ -155,8 +155,8 @@ test('聚合：空支出类型与空对手方归「未填写」，不丢数据',
     newRow({ amount: '20.00', type: '餐饮' }),
   ];
   const summary = aggregate(rows, MEASURE_AMORTIZATION);
-  equal('未填写类型', summary.typeTotal.get(UNFILLED).toString(), '10');
-  equal('未填写对手方', summary.counterpartyTotal.get(UNFILLED).toString(), '10');
+  equal('未填写类型', summary.typeTotal.get(unfilled()).toString(), '10');
+  equal('未填写对手方', summary.counterpartyTotal.get(unfilled()).toString(), '10');
   equal('总额不丢', summary.total.toString(), '30');
 });
 

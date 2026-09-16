@@ -1,6 +1,7 @@
 import * as api from './api.js';
 import { FILE_META_SORTS } from './config.js';
 import { dateInput, emptyRow, filterCard, filterItem, idText, loadingRow, pager, select, textInput } from './component.js';
+import { t } from './i18n.js';
 import { clear, compact, dateToRfc3339, download, el, formatDateTime, formatFileSize, toastErr, toastOk } from './util.js';
 
 const state = {
@@ -46,7 +47,7 @@ async function downloadFile(row) {
     const result = await api.downloadFile(row.id);
     const object = result.object;
     download(object.file_name, object.blob || object.data);
-    toastOk(`已下载 ${object.file_name}`);
+    toastOk(t('已下载 {name}', { name: object.file_name }));
   } catch (err) {
     toastErr(err);
   }
@@ -56,18 +57,18 @@ function buildFilter() {
   const inquiry = state.inquiry;
   const controls = {};
   const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
-    filterItem('文件名', (controls.file_name_like = textInput({ value: inquiry.file_name_like })), 3, '模糊匹配，输入片段即可'),
-    filterItem('文件ID（逗号分隔）', (controls.id = textInput({ value: inquiry.id.join(',') })), 2),
-    filterItem('来源审计ID（逗号分隔）', (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
-    filterItem('创建时间起', (controls.created_at_start = dateInput({})), 2),
-    filterItem('创建时间止', (controls.created_at_end = dateInput({})), 2),
-    filterItem('排序', (controls.sort = select(FILE_META_SORTS, inquiry.sort)), 2),
+    filterItem(t('文件名'), (controls.file_name_like = textInput({ value: inquiry.file_name_like })), 3, t('模糊匹配，输入片段即可')),
+    filterItem(t('文件ID（逗号分隔）'), (controls.id = textInput({ value: inquiry.id.join(',') })), 2),
+    filterItem(t('来源审计ID（逗号分隔）'), (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
+    filterItem(t('创建时间起'), (controls.created_at_start = dateInput({})), 2),
+    filterItem(t('创建时间止'), (controls.created_at_end = dateInput({})), 2),
+    filterItem(t('排序'), (controls.sort = select(FILE_META_SORTS, inquiry.sort)), 2),
     el('div', { class: 'col-12 d-flex gap-2 pt-2' }, [
-      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: '查询' }),
+      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: t('查询') }),
       el('button', {
         class: 'btn btn-sm btn-outline-secondary',
         type: 'button',
-        text: '重置',
+        text: t('重置'),
         onclick: () => {
           state.inquiry = newInquiry();
           render(host, {});
@@ -104,9 +105,9 @@ function buildRow(row) {
     el('td', { class: 'font-monospace small text-nowrap', text: idText(row.operation_id) }),
     el('td', { class: 'text-nowrap small', text: formatDateTime(row.created_at) }),
     el('td', { class: 'text-nowrap' }, [
-      el('button', { class: 'btn btn-sm btn-outline-primary py-0', type: 'button', text: '下载', onclick: () => downloadFile(row) }),
-      el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: '来源审计' }),
-      el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/expense?file_id=${row.id}`, text: '本文件明细' }),
+      el('button', { class: 'btn btn-sm btn-outline-primary py-0', type: 'button', text: t('下载'), onclick: () => downloadFile(row) }),
+      el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源审计') }),
+      el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/expense?file_id=${row.id}`, text: t('本文件明细') }),
     ]),
   ]);
 }
@@ -114,7 +115,7 @@ function buildRow(row) {
 function renderTable(loading) {
   if (!tableHost) return;
   const columns = ['文件ID', '文件名', '文件大小', '内容哈希', '来源审计ID', '创建时间', '操作'];
-  const head = el('thead', {}, [el('tr', {}, columns.map((name) => el('th', { class: 'text-nowrap', text: name })))]);
+  const head = el('thead', {}, [el('tr', {}, columns.map((name) => el('th', { class: 'text-nowrap', text: t(name) })))]);
   const body = el('tbody');
   if (loading) body.appendChild(loadingRow(columns.length));
   else if (state.rows.length === 0) body.appendChild(emptyRow(columns.length));
@@ -130,7 +131,7 @@ function renderTable(loading) {
       reload();
     }));
   }
-  tableHost.appendChild(el('p', { class: 'small text-secondary', text: '文件只留存不删除：同一份内容只存一份，多条元数据可以指向同一个内容哈希，所以不存在孤儿文件。' }));
+  tableHost.appendChild(el('p', { class: 'small text-secondary', text: t('文件只留存不删除：同一份内容只存一份，多条元数据可以指向同一个内容哈希，所以不存在孤儿文件。') }));
 }
 
 export function render(container, query) {
@@ -139,7 +140,7 @@ export function render(container, query) {
 
   tableHost = el('div');
   clear(container).appendChild(el('div', {}, [
-    el('h5', { class: 'mb-3', text: '文件' }),
+    el('h5', { class: 'mb-3', text: t('文件') }),
     buildFilter(),
     tableHost,
   ]));

@@ -28,6 +28,8 @@ test('启动：没解锁之前只给解锁页，导航整条藏起来', async ()
   equal('会话区是空的', document.querySelector('#session-host').textContent, '');
   //输口令之前先让人看清自己走的是什么协议，这条公告在解锁页上不许关
   not('解锁页上不给关公告', find(document.querySelector('#notice-host'), 'button.btn-close'));
+  //看不懂中文的人得先能把语言换掉，才轮得到输口令，所以这两个下拉不跟解锁走
+  equal('锁着也给主题与语言两个下拉', findAll(document.querySelector('#pref-host'), 'select').length, 2);
 });
 
 test('启动：解锁之后导航显出来，统计紧跟在明细后面', async () => {
@@ -89,6 +91,34 @@ test('公告栏：安全上下文下的文案，关掉之后不再冒出来', as
 
   await goto('#/statistic');
   equal('关过之后切页面也不再冒出来', document.querySelector('#notice-host').textContent, '');
+});
+
+//换语言是整屏重绘而不是刷新页面：mock 模式下一刷新，这一轮改过的数据全没了
+test('偏好：换语言，导航与当前这一屏一起换，页面不刷新', async () => {
+  const before = location.reloaded;
+  setValue(findAll(document.querySelector('#pref-host'), 'select')[1], 'en');
+  await flush();
+  same('导航换成英文', texts(document.querySelector('#nav-host'), 'a'), ['Records', 'Stats', 'Audit', 'Files', 'Settings']);
+  includes('当前这一屏也换了', page().textContent, 'Amount statistics');
+  includes('会话区跟着换', document.querySelector('#session-host').textContent, 'Accounting CNY');
+  equal('没有刷新页面', location.reloaded, before);
+
+  setValue(findAll(document.querySelector('#pref-host'), 'select')[1], 'zh');
+  await flush();
+  same('换回中文', texts(document.querySelector('#nav-host'), 'a'), ['明细', '统计', '审计', '文件', '设置']);
+  includes('这一屏也换回来了', page().textContent, '金额统计');
+});
+
+test('偏好：换主题就落到 html 上，整屏也跟着重绘', async () => {
+  const themeSelect = findAll(document.querySelector('#pref-host'), 'select')[0];
+  setValue(themeSelect, 'dark');
+  await flush();
+  equal('html 上是深色', document.documentElement.getAttribute('data-bs-theme'), 'dark');
+  ok('重绘之后下拉还在', findAll(document.querySelector('#pref-host'), 'select')[0]);
+
+  setValue(findAll(document.querySelector('#pref-host'), 'select')[0], 'light');
+  await flush();
+  equal('html 上是浅色', document.documentElement.getAttribute('data-bs-theme'), 'light');
 });
 
 test('会话：点锁定就清会话并重新加载页面', async () => {

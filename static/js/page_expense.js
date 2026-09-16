@@ -27,6 +27,7 @@ import {
   loadCandidate,
   newInquiry,
 } from './expense_inquiry.js';
+import { getLang, t } from './i18n.js';
 import { getAccountingCurrency, getColumns, setColumns } from './store.js';
 import {
   addMonth,
@@ -120,11 +121,11 @@ function emptyDraft() {
 }
 
 function checkDraft(draft) {
-  if (!draft.expense_date) return '支出日期必填';
-  if (!/^[A-Za-z]{3}$/.test(draft.expense_currency || '')) return '支出币种必须是三位币种代码';
-  if (!isDecimal(draft.expense_amount)) return `支出金额非法: ${draft.expense_amount}`;
-  if (draft.exchange_rate && !isPositiveDecimal(draft.exchange_rate)) return `折算汇率非正: ${draft.exchange_rate}`;
-  if (!(Number(draft.amortization_months) >= 1)) return '摊销月数不得小于 1';
+  if (!draft.expense_date) return t('支出日期必填');
+  if (!/^[A-Za-z]{3}$/.test(draft.expense_currency || '')) return t('支出币种必须是三位币种代码');
+  if (!isDecimal(draft.expense_amount)) return t('支出金额非法: {value}', { value: draft.expense_amount });
+  if (draft.exchange_rate && !isPositiveDecimal(draft.exchange_rate)) return t('折算汇率非正: {value}', { value: draft.exchange_rate });
+  if (!(Number(draft.amortization_months) >= 1)) return t('摊销月数不得小于 1');
   return '';
 }
 
@@ -146,11 +147,14 @@ function expenseEditor(draft, options) {
     const startMonth = monthOf(draft.expense_date);
     const months = Number(draft.amortization_months) || 1;
     clear(preview).appendChild(el('span', {}, [
-      `记账币种 ${draft.accounting_currency} · 记账金额 `,
+      t('记账币种 {currency} · 记账金额 ', { currency: draft.accounting_currency }),
       el('strong', { text: draft.expense_amount === '' || draft.expense_amount === null || draft.expense_amount === undefined
         ? '—'
-        : rate ? multiplyAmount(draft.expense_amount, rate) : '（汇率留空，落库时自动获取）' }),
-      ` · 摊销 ${startMonth || '—'} 至 ${startMonth ? addMonth(startMonth, months - 1) : '—'}`,
+        : rate ? multiplyAmount(draft.expense_amount, rate) : t('（汇率留空，落库时自动获取）') }),
+      t(' · 摊销 {start} 至 {end}', {
+        start: startMonth || '—',
+        end: startMonth ? addMonth(startMonth, months - 1) : '—',
+      }),
     ]));
   }
 
@@ -176,7 +180,7 @@ function expenseEditor(draft, options) {
 
   function cell(field, control, width) {
     return el('div', { class: `col-6 col-md-${width || 2}` }, [
-      el('label', { class: 'form-label small text-secondary mb-1', text: field.name }),
+      el('label', { class: 'form-label small text-secondary mb-1', text: t(field.name) }),
       control,
     ]);
   }
@@ -188,17 +192,17 @@ function expenseEditor(draft, options) {
       comboInput(() => currencyOptions(candidateOf('expense_currency')), '', { class: 'form-control form-control-sm text-uppercase', maxlength: '3' }),
       (value) => value.toUpperCase(),
     )),
-    cell(FIELD_OF.expense_amount, bind(FIELD_OF.expense_amount, textInput({ placeholder: '允许 0 与负数' }))),
-    cell(FIELD_OF.exchange_rate, bind(FIELD_OF.exchange_rate, textInput({ placeholder: '留空自动获取' }))),
-    cell(FIELD_OF.expense_type, bind(FIELD_OF.expense_type, comboInput(() => candidateOf('expense_type'), '', { placeholder: '可选已有或直接录入新的' }))),
+    cell(FIELD_OF.expense_amount, bind(FIELD_OF.expense_amount, textInput({ placeholder: t('允许 0 与负数') }))),
+    cell(FIELD_OF.exchange_rate, bind(FIELD_OF.exchange_rate, textInput({ placeholder: t('留空自动获取') }))),
+    cell(FIELD_OF.expense_type, bind(FIELD_OF.expense_type, comboInput(() => candidateOf('expense_type'), '', { placeholder: t('可选已有或直接录入新的') }))),
     cell(FIELD_OF.amortization_months, bind(FIELD_OF.amortization_months, numberInput({ min: '1', step: '1' }), (value) => Number(value) || 1)),
     cell(FIELD_OF.counterparty, bind(FIELD_OF.counterparty, textInput({})), 3),
     cell(FIELD_OF.remark, bind(FIELD_OF.remark, textInput({})), 3),
-    cell(FIELD_OF.bank_name, bind(FIELD_OF.bank_name, comboInput(() => candidateOf('bank_name'), '', { placeholder: '可选已有或直接录入新的' })), 3),
-    cell(FIELD_OF.card_last_4, bind(FIELD_OF.card_last_4, comboInput(() => candidateOf('card_last_4'), '', { maxlength: '4', placeholder: '可选已有或直接录入新的' })), 3),
+    cell(FIELD_OF.bank_name, bind(FIELD_OF.bank_name, comboInput(() => candidateOf('bank_name'), '', { placeholder: t('可选已有或直接录入新的') })), 3),
+    cell(FIELD_OF.card_last_4, bind(FIELD_OF.card_last_4, comboInput(() => candidateOf('card_last_4'), '', { maxlength: '4', placeholder: t('可选已有或直接录入新的') })), 3),
   ]);
 
-  const saveButton = el('button', { class: 'btn btn-sm btn-primary', type: 'button', text: options.saveText || '保存' });
+  const saveButton = el('button', { class: 'btn btn-sm btn-primary', type: 'button', text: options.saveText || t('保存') });
   saveButton.addEventListener('click', async () => {
     const message = checkDraft(draft);
     if (message) {
@@ -220,7 +224,7 @@ function expenseEditor(draft, options) {
       el('strong', { class: 'small', text: options.title }),
       el('div', { class: 'ms-auto d-flex gap-2' }, [
         saveButton,
-        el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '取消', onclick: options.onCancel }),
+        el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('取消'), onclick: options.onCancel }),
       ]),
     ]),
     grid,
@@ -262,7 +266,7 @@ function exportFiltered() {
   try {
     const rows = state.rows;
     if (rows.length === 0) {
-      toastErr(new Error('当前筛选没有可导出的数据'));
+      toastErr(new Error(t('当前筛选没有可导出的数据')));
       return;
     }
     const lines = rows.map((row) => CSV_FIELDS.map(({ key }) => {
@@ -274,9 +278,9 @@ function exportFiltered() {
     const url = download(filename, `\ufeff${toCsv(csvHeader(), lines)}`);
     //浏览器策略、拦截插件都可能把程序发起的下载吃掉，再给一条用户亲手点的路径兜底
     toast(el('span', {}, [
-      `已导出 ${rows.length} 笔。没有自动下载的话，`,
-      downloadLink(filename, url, '点这里保存', { class: 'link-light fw-bold' }),
-      '。',
+      t('已导出 {count} 笔。没有自动下载的话，', { count: rows.length }),
+      downloadLink(filename, url, t('点这里保存'), { class: 'link-light fw-bold' }),
+      t('。'),
     ]), 'success', 20000);
   } catch (err) {
     toastErr(err);
@@ -289,9 +293,9 @@ function templateCsv() {
       case 'expense_date': return formatDate(new Date());
       case 'expense_currency': return 'CNY';
       case 'expense_amount': return '128.50';
-      case 'counterparty': return '盒马鲜生';
-      case 'remark': return '晚饭';
-      case 'expense_type': return '餐饮';
+      case 'counterparty': return t('盒马鲜生');
+      case 'remark': return t('晚饭');
+      case 'expense_type': return t('餐饮');
       case 'amortization_months': return '1';
       default: return '';
     }
@@ -299,14 +303,15 @@ function templateCsv() {
   return `﻿${toCsv(csvHeader(), [sample])}`;
 }
 
-//模板内容是死的，blob 建一次就够，工具条每次重绘都复用同一个地址
-let templateUrl = '';
+//模板里的示例值跟着语言走，所以缓存要按语言存；表头是契约，任何语言下都不翻译
+let templateCache = { lang: '', url: '' };
 
 //做成真正的 <a download>：用户亲手点的是链接本身，不经过程序里的 click()，
 //也就没有「下载还没排进队列，锚点就已经被摘掉」这类时序问题
 function templateButton() {
-  if (!templateUrl) templateUrl = blobUrl(templateCsv());
-  return downloadLink('jotcash-template.csv', templateUrl, '下载导入模板', { class: 'btn btn-sm btn-outline-secondary' });
+  const lang = getLang();
+  if (templateCache.lang !== lang) templateCache = { lang, url: blobUrl(templateCsv()) };
+  return downloadLink('jotcash-template.csv', templateCache.url, t('下载导入模板'), { class: 'btn btn-sm btn-outline-secondary' });
 }
 
 // ===== 数据加载 =====
@@ -374,7 +379,7 @@ async function saveEdit(row, draft) {
   await api.updateExpense(object);
   state.editingId = 0;
   state.editDraft = null;
-  toastOk(`明细 ${row.id} 已保存`);
+  toastOk(t('明细 {id} 已保存', { id: row.id }));
   await reload();
 }
 
@@ -382,18 +387,18 @@ async function saveAdd(draft) {
   const result = await api.insertExpense(csvFilename('single'), draftToCsv(draft));
   state.adding = false;
   state.addDraft = null;
-  toastOk(`入库 ${result.count} 笔，进入核实视图`);
+  toastOk(t('入库 {count} 笔，进入核实视图', { count: result.count }));
   location.hash = `#/expense?operation_id=${result.object}&verify=1`;
 }
 
 async function deleteSelected() {
   const ids = [...state.selected];
   if (ids.length === 0) return;
-  if (!(await confirmModal('批量软删除', `本次将删除 ${ids.length} 笔。删除是终态，没有恢复入口，找回只能靠复制新增。`))) return;
+  if (!(await confirmModal(t('批量软删除'), t('本次将删除 {count} 笔。删除是终态，没有恢复入口，找回只能靠复制新增。', { count: ids.length })))) return;
   try {
     const result = await api.deleteExpense({ ...newInquiry(), id: ids });
     state.selected.clear();
-    toastOk(`已删除 ${result.count} 笔`);
+    toastOk(t('已删除 {count} 笔', { count: result.count }));
     await reload();
   } catch (err) {
     toastErr(err);
@@ -401,11 +406,11 @@ async function deleteSelected() {
 }
 
 async function deleteFiltered() {
-  if (!(await confirmModal('按当前筛选全选删除', `本次将删除当前筛选结果全集，共 ${state.count} 笔。删除是终态，没有恢复入口。`, '确认删除'))) return;
+  if (!(await confirmModal(t('按当前筛选全选删除'), t('本次将删除当前筛选结果全集，共 {count} 笔。删除是终态，没有恢复入口。', { count: state.count }), t('确认删除')))) return;
   try {
     const result = await api.deleteExpense({ ...state.inquiry, sort: '' });
     state.selected.clear();
-    toastOk(`已删除 ${result.count} 笔`);
+    toastOk(t('已删除 {count} 笔', { count: result.count }));
     await reload();
   } catch (err) {
     toastErr(err);
@@ -415,25 +420,25 @@ async function deleteFiltered() {
 function openUpload() {
   const input = el('input', { class: 'form-control', type: 'file' });
   const body = el('div', {}, [
-    el('p', { class: 'small text-secondary', text: '后端按文件内容认领解析器，不看扩展名。当前只有本系统标准 CSV 一种格式，表头必须与下面的契约完全一致，列名与顺序都不能差，否则没有解析器认领这个文件。' }),
+    el('p', { class: 'small text-secondary', text: t('后端按文件内容认领解析器，不看扩展名。当前只有本系统标准 CSV 一种格式，表头必须与下面的契约完全一致，列名与顺序都不能差，否则没有解析器认领这个文件。') }),
     el('pre', { class: 'small bg-body-secondary p-2 rounded', text: csvHeader().join(',') }),
     el('ul', { class: 'small text-secondary ps-3' }, [
-      el('li', { text: '支出日期格式 2006-01-02；支出金额允许 0 与负数' }),
-      el('li', { text: '折算汇率可留空，留空按支出日期自动获取；填了折算汇率就必须填记账币种' }),
-      el('li', { text: '记账币种留空则取本次请求携带的记账币种；摊销月数留空按 1 处理' }),
+      el('li', { text: t('支出日期格式 2006-01-02；支出金额允许 0 与负数') }),
+      el('li', { text: t('折算汇率可留空，留空按支出日期自动获取；填了折算汇率就必须填记账币种') }),
+      el('li', { text: t('记账币种留空则取本次请求携带的记账币种；摊销月数留空按 1 处理') }),
     ]),
     input,
   ]);
-  confirmModal('上传账单文件批量新增', body).then(async (confirmed) => {
+  confirmModal(t('上传账单文件批量新增'), body).then(async (confirmed) => {
     if (!confirmed) return;
     const file = input.files && input.files[0];
     if (!file) {
-      toastErr(new Error('没有选择文件'));
+      toastErr(new Error(t('没有选择文件')));
       return;
     }
     try {
       const result = await api.insertExpenseFile(file);
-      toastOk(`入库 ${result.count} 笔，进入核实视图`);
+      toastOk(t('入库 {count} 笔，进入核实视图', { count: result.count }));
       location.hash = `#/expense?operation_id=${result.object}&verify=1`;
     } catch (err) {
       toastErr(err);
@@ -449,7 +454,7 @@ function openColumnSetting() {
     const input = el('input', { class: 'form-check-input', type: 'checkbox', checked: chosen.has(field.key) ? true : null });
     boxes.push({ key: field.key, input });
     list.appendChild(el('div', { class: 'col-6 col-md-4' }, [
-      el('label', { class: 'form-check' }, [input, el('span', { class: 'form-check-label small ms-1', text: field.name })]),
+      el('label', { class: 'form-check' }, [input, el('span', { class: 'form-check-label small ms-1', text: t(field.name) })]),
     ]));
   }
   const setAll = (keys) => {
@@ -457,12 +462,12 @@ function openColumnSetting() {
   };
   const body = el('div', {}, [
     el('div', { class: 'd-flex gap-2 mb-3' }, [
-      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '默认 10 列', onclick: () => setAll(EXPENSE_COLUMN_DEFAULT) }),
-      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '全字段平铺', onclick: () => setAll(EXPENSE_FIELDS.map((field) => field.key)) }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('默认 10 列'), onclick: () => setAll(EXPENSE_COLUMN_DEFAULT) }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('全字段平铺'), onclick: () => setAll(EXPENSE_FIELDS.map((field) => field.key)) }),
     ]),
     list,
   ]);
-  confirmModal('表头设置', body).then((confirmed) => {
+  confirmModal(t('表头设置'), body).then((confirmed) => {
     if (!confirmed) return;
     const columns = boxes.filter((box) => box.input.checked).map((box) => box.key);
     state.columns = columns.length > 0 ? columns : EXPENSE_COLUMN_DEFAULT.slice();
@@ -474,15 +479,15 @@ function openColumnSetting() {
 function openCurrencySwitch() {
   const control = currencyInput(getAccountingCurrency(), {});
   const body = el('div', {}, [
-    el('p', { class: 'small text-secondary', text: '筛选记账币种不等于目标币种的全部明细（含已删除），逐笔按其支出日期重新获取汇率并覆盖，同步重算记账金额。允许部分失败，重试即续跑。' }),
+    el('p', { class: 'small text-secondary', text: t('筛选记账币种不等于目标币种的全部明细（含已删除），逐笔按其支出日期重新获取汇率并覆盖，同步重算记账金额。允许部分失败，重试即续跑。') }),
     control.node,
   ]);
-  confirmModal('记账币种切换', body).then(async (confirmed) => {
+  confirmModal(t('记账币种切换'), body).then(async (confirmed) => {
     if (!confirmed) return;
     const target = control.input.value.trim().toUpperCase();
     try {
       const result = await api.switchAccountingCurrency(target);
-      toastOk(`记账币种切换完成，成功 ${result.object.done} 笔，失败 ${result.object.failed} 笔`);
+      toastOk(t('记账币种切换完成，成功 {done} 笔，失败 {failed} 笔', { done: result.object.done, failed: result.object.failed }));
       await reload();
     } catch (err) {
       toastErr(err);
@@ -516,39 +521,39 @@ function buildToolbar() {
     el('button', {
       class: 'btn btn-sm btn-primary',
       type: 'button',
-      text: '新增一行',
+      text: t('新增一行'),
       onclick: () => {
         state.adding = true;
         state.addDraft = emptyDraft();
         renderTable(false);
       },
     }),
-    el('button', { class: 'btn btn-sm btn-outline-primary', type: 'button', text: '上传账单文件', onclick: openUpload }),
+    el('button', { class: 'btn btn-sm btn-outline-primary', type: 'button', text: t('上传账单文件'), onclick: openUpload }),
     templateButton(),
     el('button', {
       class: 'btn btn-sm btn-outline-secondary',
       type: 'button',
       disabled: state.count === 0 ? true : null,
-      text: `导出查询结果（${state.count}）`,
+      text: t('导出查询结果（{count}）', { count: state.count }),
       onclick: exportFiltered,
     }),
     el('button', {
       class: 'btn btn-sm btn-outline-danger',
       type: 'button',
       disabled: selectedCount === 0 ? true : null,
-      text: `批量删除（${selectedCount}）`,
+      text: t('批量删除（{count}）', { count: selectedCount }),
       onclick: deleteSelected,
     }),
     el('button', {
       class: 'btn btn-sm btn-outline-danger',
       type: 'button',
       disabled: state.count === 0 || state.verify ? true : null,
-      text: '全选筛选结果并删除',
+      text: t('全选筛选结果并删除'),
       onclick: deleteFiltered,
     }),
     el('div', { class: 'ms-auto d-flex gap-2' }, [
-      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '表头设置', onclick: openColumnSetting }),
-      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '刷新', onclick: () => reload() }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('表头设置'), onclick: openColumnSetting }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('刷新'), onclick: () => reload() }),
     ]),
   ]);
 }
@@ -561,26 +566,26 @@ function buildCurrencyHint() {
   const mixed = codes.length > 1 || codes[0] !== current;
   if (!mixed) return null;
   return el('div', { class: 'alert alert-warning py-2 d-flex flex-wrap align-items-center gap-2' }, [
-    el('span', { class: 'small', text: `全库记账币种：${codes.join('、')}；当前选择：${current}。混合口径会让金额统计失真。` }),
-    el('button', { class: 'btn btn-sm btn-warning ms-auto', type: 'button', text: '执行记账币种切换', onclick: openCurrencySwitch }),
+    el('span', { class: 'small', text: t('全库记账币种：{codes}；当前选择：{current}。混合口径会让金额统计失真。', { codes: codes.join(t('、')), current }) }),
+    el('button', { class: 'btn btn-sm btn-warning ms-auto', type: 'button', text: t('执行记账币种切换'), onclick: openCurrencySwitch }),
   ]);
 }
 
 function buildVerifyHint() {
   if (!state.verify) return null;
   return el('div', { class: 'alert alert-info py-2 d-flex flex-wrap align-items-center gap-2' }, [
-    el('span', { class: 'small', text: `核实视图：审计ID ${state.verify} 这一批次，以及全库中与本批次「支出日期+支出金额+支出币种」命中的未删除明细，共 ${state.count} 行。` }),
-    el('a', { class: 'btn btn-sm btn-outline-secondary ms-auto', href: '#/expense', text: '返回全部明细' }),
+    el('span', { class: 'small', text: t('核实视图：审计ID {id} 这一批次，以及全库中与本批次「支出日期+支出金额+支出币种」命中的未删除明细，共 {count} 行。', { id: state.verify, count: state.count }) }),
+    el('a', { class: 'btn btn-sm btn-outline-secondary ms-auto', href: '#/expense', text: t('返回全部明细') }),
   ]);
 }
 
 function headerCell(field) {
   const codes = accountingCurrencySet();
   if (field.key !== 'accounting_currency' || codes.length === 0) {
-    return el('th', { class: 'text-nowrap', text: field.name });
+    return el('th', { class: 'text-nowrap', text: t(field.name) });
   }
   return el('th', { class: 'text-nowrap' }, [
-    field.name,
+    t(field.name),
     el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${codes.join('/')}）` }),
   ]);
 }
@@ -617,7 +622,7 @@ function buildRow(row, marks) {
       ? el('button', {
         class: 'btn btn-sm btn-outline-primary py-0',
         type: 'button',
-        text: '复制新增',
+        text: t('复制新增'),
         onclick: () => {
           //复制已删除行：以其字段为初值，明细ID 与删除时间都清空，按新增处理
           state.adding = true;
@@ -629,14 +634,14 @@ function buildRow(row, marks) {
       : el('button', {
         class: 'btn btn-sm btn-outline-secondary py-0',
         type: 'button',
-        text: state.editingId === row.id ? '收起' : '编辑',
+        text: state.editingId === row.id ? t('收起') : t('编辑'),
         onclick: () => {
           state.editingId = state.editingId === row.id ? 0 : row.id;
           state.editDraft = null;
           renderTable(false);
         },
       }),
-    el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: '来源' }),
+    el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源') }),
   ]);
 
   const tr = el('tr', { class: `${deleted ? 'row-deleted' : ''} ${mark || ''}` }, [
@@ -678,7 +683,7 @@ function buildTable() {
         }),
       ]),
       ...state.columns.map((key) => FIELD_OF[key]).filter(Boolean).map(headerCell),
-      el('th', { class: 'text-nowrap', text: '操作' }),
+      el('th', { class: 'text-nowrap', text: t('操作') }),
     ]),
   ]);
 
@@ -686,8 +691,8 @@ function buildTable() {
   if (state.adding && state.addDraft) {
     body.appendChild(el('tr', {}, [el('td', { colspan: columnCount, class: 'p-0' }, [
       expenseEditor(state.addDraft, {
-        title: '新增一行（等价于一份只有 1 行的 CSV）',
-        saveText: '入库',
+        title: t('新增一行（等价于一份只有 1 行的 CSV）'),
+        saveText: t('入库'),
         onSave: saveAdd,
         onCancel: () => {
           state.adding = false;
@@ -707,7 +712,7 @@ function buildTable() {
       if (!state.editDraft) state.editDraft = draftOfRow(row);
       body.appendChild(el('tr', {}, [el('td', { colspan: columnCount, class: 'p-0' }, [
         expenseEditor(state.editDraft, {
-          title: `编辑明细 ${row.id}（版本号 ${row.version}，保存走乐观锁）`,
+          title: t('编辑明细 {id}（版本号 {version}，保存走乐观锁）', { id: row.id, version: row.version }),
           onSave: (draft) => saveEdit(row, draft),
           onCancel: () => {
             state.editingId = 0;
@@ -751,7 +756,7 @@ function renderTable(loading) {
     }));
   }
   tableHost.appendChild(el('p', { class: 'small text-secondary' }, [
-    '带框高亮的行是「支出日期 + 支出金额 + 支出币种」相同的疑似重复组，系统只标记不阻断，由你人工裁定后批量软删除。',
+    t('带框高亮的行是「支出日期 + 支出金额 + 支出币种」相同的疑似重复组，系统只标记不阻断，由你人工裁定后批量软删除。'),
   ]));
 }
 
@@ -777,7 +782,7 @@ export function render(container, query) {
 
   tableHost = el('div');
   clear(container).appendChild(el('div', {}, [
-    el('h5', { class: 'mb-3', text: '支出明细' }),
+    el('h5', { class: 'mb-3', text: t('支出明细') }),
     state.verify ? null : buildFilter(),
     tableHost,
   ]));

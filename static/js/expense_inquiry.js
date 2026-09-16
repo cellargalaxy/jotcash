@@ -10,6 +10,7 @@ import {
   select,
   textInput,
 } from './component.js';
+import { t } from './i18n.js';
 import { compact, dateToRfc3339, el, formatDate } from './util.js';
 
 //明细的筛选条件。没有 page/page_size：条件只描述「筛什么」，后端不带分页参数即返回全集，
@@ -97,32 +98,32 @@ export function expenseFilter(inquiry, onApply, onReset) {
     return combo.node;
   };
   const items = [
-    filterItem('支出日期起', (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2),
-    filterItem('支出日期止', (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2),
-    filterItem('支出金额下限', (controls.expense_amount_min = textInput({ value: inquiry.expense_amount_min || '' })), 2),
-    filterItem('支出金额上限', (controls.expense_amount_max = textInput({ value: inquiry.expense_amount_max || '' })), 2),
-    filterItem('支出币种', comboField('expense_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.expense_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, '可多选，逗号分隔'),
-    filterItem('记账币种', comboField('accounting_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.accounting_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, '可多选，逗号分隔'),
-    filterItem('交易对手方', (controls.counterparty_like = textInput({ value: inquiry.counterparty_like })), 3, '模糊匹配，输入片段即可'),
-    filterItem('交易备注', (controls.remark_like = textInput({ value: inquiry.remark_like })), 3, '模糊匹配，输入片段即可'),
-    filterItem('支出类型', singleComboField('expense_type_like', () => candidateOf('expense_type'), inquiry.expense_type_like, {}), 2, '模糊匹配，也可下拉选已有'),
-    filterItem('银行名称', comboField('bank_name', () => candidateOf('bank_name'), inquiry.bank_name.join(','), {}), 2, '可多选，逗号分隔'),
-    filterItem('卡号后四位', comboField('card_last_4', () => candidateOf('card_last_4'), inquiry.card_last_4.join(','), {}), 2, '可多选，逗号分隔'),
-    filterItem('来源审计ID', (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
-    filterItem('文件ID', (controls.file_id = textInput({ value: inquiry.file_id.join(',') })), 2),
-    filterItem('已删除', (controls.deleted = select([
+    filterItem(t('支出日期起'), (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2),
+    filterItem(t('支出日期止'), (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2),
+    filterItem(t('支出金额下限'), (controls.expense_amount_min = textInput({ value: inquiry.expense_amount_min || '' })), 2),
+    filterItem(t('支出金额上限'), (controls.expense_amount_max = textInput({ value: inquiry.expense_amount_max || '' })), 2),
+    filterItem(t('支出币种'), comboField('expense_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.expense_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
+    filterItem(t('记账币种'), comboField('accounting_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.accounting_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
+    filterItem(t('交易对手方'), (controls.counterparty_like = textInput({ value: inquiry.counterparty_like })), 3, t('模糊匹配，输入片段即可')),
+    filterItem(t('交易备注'), (controls.remark_like = textInput({ value: inquiry.remark_like })), 3, t('模糊匹配，输入片段即可')),
+    filterItem(t('支出类型'), singleComboField('expense_type_like', () => candidateOf('expense_type'), inquiry.expense_type_like, {}), 2, t('模糊匹配，也可下拉选已有')),
+    filterItem(t('银行名称'), comboField('bank_name', () => candidateOf('bank_name'), inquiry.bank_name.join(','), {}), 2, t('可多选，逗号分隔')),
+    filterItem(t('卡号后四位'), comboField('card_last_4', () => candidateOf('card_last_4'), inquiry.card_last_4.join(','), {}), 2, t('可多选，逗号分隔')),
+    filterItem(t('来源审计ID'), (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
+    filterItem(t('文件ID'), (controls.file_id = textInput({ value: inquiry.file_id.join(',') })), 2),
+    filterItem(t('已删除'), (controls.deleted = select([
       { value: DELETED_NO, name: '不显示已删除' },
       { value: DELETED_ALL, name: '全部' },
       { value: DELETED_ONLY, name: '只看已删除' },
     ], inquiry.deleted)), 2),
-    filterItem('排序', (controls.sort = select(EXPENSE_SORTS, inquiry.sort)), 3),
+    filterItem(t('排序'), (controls.sort = select(EXPENSE_SORTS, inquiry.sort)), 3),
   ];
 
   const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
     ...items,
     el('div', { class: 'col-12 d-flex gap-2 pt-2' }, [
-      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: '查询' }),
-      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: '重置', onclick: onReset }),
+      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: t('查询') }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('重置'), onclick: onReset }),
     ]),
   ]);
   form.addEventListener('submit', (event) => {

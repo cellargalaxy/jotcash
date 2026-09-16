@@ -8,7 +8,8 @@
   vertical-align: middle;
 }
 
-/* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界 */
+/* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界。
+   底色走半透明而不是实色，明暗两种主题下都是在各自的表格底色上加一层，不会盖死行的原有状态 */
 .duplicate-a > td {
   background-color: rgba(255, 193, 7, 0.16);
   border-top: 1px solid rgba(255, 193, 7, 0.75);
@@ -19,6 +20,15 @@
   background-color: rgba(13, 110, 253, 0.12);
   border-top: 1px solid rgba(13, 110, 253, 0.6);
   border-bottom: 1px solid rgba(13, 110, 253, 0.6);
+}
+
+/* 深色底下同样的透明度会糊成一团看不出分组，往上抬一档 */
+[data-bs-theme="dark"] .duplicate-a > td {
+  background-color: rgba(255, 193, 7, 0.24);
+}
+
+[data-bs-theme="dark"] .duplicate-b > td {
+  background-color: rgba(13, 110, 253, 0.26);
 }
 
 .duplicate-a > td:first-child,

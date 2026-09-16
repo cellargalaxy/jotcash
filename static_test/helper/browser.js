@@ -229,6 +229,9 @@ export function queryAll(root, selector) {
 
 const documentShim = {
   body: new ShimElement('body'),
+  //主题落在 html 上，语言也落在 html 上，两条链路都要够得着这个节点
+  documentElement: new ShimElement('html'),
+  title: '',
   createElement: (tag) => new ShimElement(tag),
   createTextNode: (text) => new ShimText(text),
   querySelector: (selector) => queryAll(documentShim.body, selector)[0] || null,
@@ -288,6 +291,9 @@ const bootstrapShim = {
 
 const openedModals = [];
 
+let systemDark = false;
+const mediaListeners = [];
+
 // ===== Chart 录像机 =====
 
 //不装真 Chart.js：它要量 canvas 与 2d 上下文，Node 里没有。
@@ -318,6 +324,14 @@ const rawSetTimeout = globalThis.setTimeout;
 
 globalThis.document = documentShim;
 globalThis.window = globalThis;
+//系统主题：默认不是深色，用例要验「跟随系统」时自己改 systemDark
+globalThis.matchMedia = (query) => ({
+  media: query,
+  get matches() {
+    return systemDark && query.includes('dark');
+  },
+  addEventListener: (type, handler) => mediaListeners.push(handler),
+});
 globalThis.location = locationShim;
 globalThis.isSecureContext = true;
 globalThis.Node = ShimNode;
@@ -326,8 +340,6 @@ globalThis.bootstrap = bootstrapShim;
 globalThis.Chart = ChartShim;
 globalThis.ChartDataLabels = { id: 'datalabels' };
 globalThis.getComputedStyle = () => ({ getPropertyValue: () => '', fontFamily: '' });
-globalThis.sessionStorage = newStorage();
-globalThis.localStorage = newStorage();
 globalThis.setTimeout = (handler, delay, ...args) => {
   const timer = rawSetTimeout(handler, delay, ...args);
   if (timer && typeof timer.unref === 'function') timer.unref();
@@ -344,16 +356,6 @@ URL.createObjectURL = (blob) => {
 URL.revokeObjectURL = () => {
 };
 
-function newStorage() {
-  const box = new Map();
-  return {
-    getItem: (key) => (box.has(key) ? box.get(key) : null),
-    setItem: (key, value) => box.set(key, String(value)),
-    removeItem: (key) => box.delete(key),
-    clear: () => box.clear(),
-  };
-}
-
 // ===== 给用例的抓手 =====
 
 export { documentShim as document, locationShim as location, ShimElement, ShimEvent };
@@ -368,7 +370,7 @@ export function resetDom() {
 //页面都往 #page-host 里渲染，先把 index.html 里那几个容器摆好
 export function mountHost() {
   resetDom();
-  for (const id of ['notice-host', 'nav-wrap', 'nav-host', 'session-host', 'page-host', 'toast-container']) {
+  for (const id of ['notice-host', 'nav-wrap', 'nav-host', 'session-host', 'pref-host', 'page-host', 'toast-container']) {
     documentShim.body.appendChild(new ShimElement('div')).setAttribute('id', id);
   }
   return documentShim.querySelector('#page-host');
@@ -388,4 +390,15 @@ export function modals() {
 
 export function fireWindow(type) {
   for (const handler of (windowListeners.get(type) || []).slice()) handler(new ShimEvent(type));
+}
+
+//把系统主题偏好切过去并发一枪，等同于用户在操作系统里改了深浅色
+export function setSystemDark(dark) {
+  systemDark = dark;
+  for (const handler of mediaListeners.slice()) handler({ matches: dark });
+}
+
+//默认语言取自 navigator，用例要验「浏览器是英文」只能把它换掉
+export function setNavigatorLanguage(language) {
+  globalThis.navigator = { language, languages: [language] };
 }

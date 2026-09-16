@@ -1,4 +1,5 @@
 import { AMOUNT_SCALE, CURRENCIES } from './config.js';
+import { serverText, t } from './i18n.js';
 
 // ===== DOM =====
 
@@ -106,7 +107,7 @@ export function currencyDigits(code) {
 
 export function currencyName(code) {
   const currency = CURRENCIES.find((item) => item.code === code);
-  return currency ? `${code} ${currency.name}` : code;
+  return currency ? `${code} ${t(currency.name)}` : code;
 }
 
 //金额字段在后端是 decimal，序列化出来是字符串。按金额精度补齐小数位，
@@ -284,17 +285,18 @@ export function toastOk(message) {
   toast(message, 'success');
 }
 
+//后端不改，报错原样是中文；这里是错误唯一的显形处，转译放在这里就不必逐个调用方去记
 export function toastErr(err) {
-  toast(err && err.message ? err.message : String(err), 'danger');
+  toast(serverText(err && err.message ? err.message : String(err)), 'danger');
 }
 
 //二次确认：需要输入指定文案才放行的场景传 keyword
 export function confirmModal(title, body, keyword) {
   return new Promise((resolve) => {
     const input = keyword
-      ? el('input', { class: 'form-control mt-3', placeholder: `请输入「${keyword}」以确认` })
+      ? el('input', { class: 'form-control mt-3', placeholder: t('请输入「{keyword}」以确认', { keyword }) })
       : null;
-    const okButton = el('button', { class: 'btn btn-danger', type: 'button', disabled: keyword ? true : null, text: '确认' });
+    const okButton = el('button', { class: 'btn btn-danger', type: 'button', disabled: keyword ? true : null, text: t('确认') });
     if (input) {
       input.addEventListener('input', () => {
         okButton.disabled = input.value.trim() !== keyword;
@@ -309,7 +311,7 @@ export function confirmModal(title, body, keyword) {
             input,
           ]),
           el('div', { class: 'modal-footer' }, [
-            el('button', { class: 'btn btn-secondary', type: 'button', 'data-bs-dismiss': 'modal', text: '取消' }),
+            el('button', { class: 'btn btn-secondary', type: 'button', 'data-bs-dismiss': 'modal', text: t('取消') }),
             okButton,
           ]),
         ]),

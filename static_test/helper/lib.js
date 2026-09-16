@@ -18,3 +18,24 @@ function loadUmd(path, name) {
 }
 
 loadUmd('lib/decimal/decimal.min.js', 'Decimal');
+
+//纯逻辑模块也会碰宿主：语言判定要读 navigator，偏好读写要碰 storage。
+//两者在 Node 里要么没有、要么取自跑测试那台机器的系统区域，不钉死就会让用例随机器变结果
+Object.defineProperty(globalThis, 'navigator', {
+  value: { language: 'zh-CN', languages: ['zh-CN', 'en'] },
+  configurable: true,
+  writable: true,
+});
+
+export function newStorage() {
+  const box = new Map();
+  return {
+    getItem: (key) => (box.has(key) ? box.get(key) : null),
+    setItem: (key, value) => box.set(key, String(value)),
+    removeItem: (key) => box.delete(key),
+    clear: () => box.clear(),
+  };
+}
+
+globalThis.sessionStorage = newStorage();
+globalThis.localStorage = newStorage();

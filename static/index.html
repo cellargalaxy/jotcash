@@ -1,23 +1,44 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-bs-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>jotcash · 记账</title>
   <!-- 空图标，免得浏览器去请求根路径的 favicon.ico，在反代前缀下那是个必然 404 -->
   <link rel="icon" href="data:,">
+  <!-- 主题必须在样式表生效前就落到 html 上，否则深色偏好的人会先被闪一屏白。
+       模块脚本一律是 defer 的，等不及，所以这一段只能内联同步跑。
+       它是 js/theme.js 的最小复刻，键名与取值要跟那边一起改 -->
+  <script>
+    (function () {
+      var theme = '';
+      try {
+        theme = localStorage.getItem('jotcash.theme') || '';
+      } catch (err) {
+        theme = '';
+      }
+      if (theme !== 'light' && theme !== 'dark') {
+        theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-bs-theme', theme);
+    })();
+  </script>
   <!-- 三方库全部落到本地 lib 目录，不走 CDN；一律相对路径，反代加前缀也能跟着走 -->
   <link rel="stylesheet" href="lib/bootstrap/bootstrap.min.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<nav class="navbar navbar-expand navbar-dark bg-dark">
+<!-- 导航条自己是一块常暗区域，data-bs-theme 只作用于这一块，明暗两种主题下品牌色与链接色都不用另调 -->
+<nav class="navbar navbar-expand bg-dark" data-bs-theme="dark">
   <div class="container-fluid">
     <a class="navbar-brand" href="#/expense">jotcash</a>
     <div id="nav-wrap" hidden>
       <ul class="navbar-nav" id="nav-host"></ul>
     </div>
-    <div class="ms-auto d-flex align-items-center" id="session-host"></div>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <div class="d-flex align-items-center" id="session-host"></div>
+      <div class="d-flex align-items-center gap-2" id="pref-host"></div>
+    </div>
   </div>
 </nav>
 

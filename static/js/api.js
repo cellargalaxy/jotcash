@@ -12,6 +12,7 @@ import {
   UPLOAD_FILE_KEY,
   USE_MOCK,
 } from './config.js';
+import { t } from './i18n.js';
 import * as mock from './mock.js';
 import { getAccountingCurrency, getClientToken, getServerToken } from './store.js';
 
@@ -33,8 +34,8 @@ async function signKey(serverToken) {
 //口令与记账币种都签进 jwt，且只允许走请求头；一旦落到 query 就会被访问日志原样记下来
 async function signJwt() {
   const serverToken = getServerToken();
-  if (!serverToken) throw new Error('未解锁，缺少后端口令');
-  if (!crypto.subtle) throw new Error('当前环境不支持 Web Crypto，请改用 HTTPS 或 localhost 访问');
+  if (!serverToken) throw new Error(t('未解锁，缺少后端口令'));
+  if (!crypto.subtle) throw new Error(t('当前环境不支持 Web Crypto，请改用 HTTPS 或 localhost 访问'));
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64Url(JSON.stringify({
@@ -56,7 +57,7 @@ async function authHeader() {
 
 //业务失败时 HTTP 状态码仍是 200，成败一律看响应体里的 code
 function unwrap(resp) {
-  if (!resp || resp.code !== 200) throw new Error((resp && resp.msg) || '请求失败');
+  if (!resp || resp.code !== 200) throw new Error((resp && resp.msg) || t('请求失败'));
   const data = resp.data || {};
   return { object: data.object, count: data.count || 0 };
 }
@@ -83,7 +84,7 @@ async function postDownload(path) {
   const contentType = response.headers.get('Content-Type') || '';
   if (contentType.includes('application/json')) {
     unwrap(await response.json());
-    throw new Error('数据库导出，响应体异常');
+    throw new Error(t('数据库导出，响应体异常'));
   }
   const disposition = response.headers.get('Content-Disposition') || '';
   const matched = /filename="?([^";]+)"?/.exec(disposition);
@@ -103,7 +104,7 @@ function cleanInquiry(inquiry) {
 }
 
 function notImplemented(name) {
-  return Promise.reject(new Error(`${name}，后端接口尚未实现，当前只能在 mock 模式下体验`));
+  return Promise.reject(new Error(t('{name}，后端接口尚未实现，当前只能在 mock 模式下体验', { name: t(name) })));
 }
 
 // ===== 对外能力：mock 与真实实现共用同一组签名与返回形态 =====

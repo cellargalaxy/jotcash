@@ -77,3 +77,41 @@ export function getColumns() {
 export function setColumns(columns) {
   localStorage.setItem(COLUMN_KEY, JSON.stringify(columns));
 }
+
+//语言与主题都是偏好不是凭据，与列显隐同一档，跨会话留着。
+//键名同时写在 index.html 的首屏主题脚本里，改这里要一并改那边
+export const LANG_KEY = 'jotcash.lang';
+export const THEME_KEY = 'jotcash.theme';
+
+//隐私模式下 storage 的读写都可能直接抛，取不到偏好该回落到自动判定，不该把整页带崩
+function readPreference(key) {
+  try {
+    return localStorage.getItem(key) || '';
+  } catch (err) {
+    return '';
+  }
+}
+
+function writePreference(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    //存不下就只在本次会话内生效，不影响当前这一屏
+  }
+}
+
+export function getLang() {
+  return readPreference(LANG_KEY);
+}
+
+export function setLang(lang) {
+  writePreference(LANG_KEY, lang);
+}
+
+export function getTheme() {
+  return readPreference(THEME_KEY);
+}
+
+export function setTheme(theme) {
+  writePreference(THEME_KEY, theme);
+}

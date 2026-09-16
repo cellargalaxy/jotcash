@@ -1,4 +1,5 @@
 import { CURRENCIES, PAGE_SIZES } from './config.js';
+import { t } from './i18n.js';
 import { clear, el, formatAmount, formatDate, formatDateTime, formatMonth } from './util.js';
 
 //筛选区的一格：统一标签与控件的排布，免得每个页面各写一套栅格
@@ -22,10 +23,12 @@ export function numberInput(attrs) {
   return el('input', { class: 'form-control form-control-sm', type: 'number', ...attrs });
 }
 
+//下拉的候选一律来自配置枚举，展示名就是词条原文，所以在这里统一转译。
+//用户录入的取值走的是组合框那条路，不经过这里——那些是数据，翻译它才是错的
 export function select(options, value, attrs) {
   const node = el('select', { class: 'form-select form-select-sm', ...attrs });
   for (const option of options) {
-    node.appendChild(el('option', { value: option.value, selected: String(option.value) === String(value) ? true : null }, option.name));
+    node.appendChild(el('option', { value: option.value, selected: String(option.value) === String(value) ? true : null }, t(option.name)));
   }
   return node;
 }
@@ -67,7 +70,7 @@ function buildCombo(getOptions, value, attrs, append) {
     clear(menu);
     const options = (getOptions() || []).map(comboOption);
     if (options.length === 0) {
-      menu.appendChild(el('li', {}, [el('span', { class: 'dropdown-item-text small text-secondary', text: '暂无候选' })]));
+      menu.appendChild(el('li', {}, [el('span', { class: 'dropdown-item-text small text-secondary', text: t('暂无候选') })]));
       return;
     }
     for (const option of options) {
@@ -100,7 +103,7 @@ export function comboFilterInput(getOptions, value, attrs) {
 
 //币种控件：常用币种走下拉，罕见币种允许直接敲三位代码，后端认的是 ISO 4217 全集
 export function currencyOptions(extra) {
-  const options = CURRENCIES.map((currency) => ({ value: currency.code, name: `${currency.code} ${currency.name}` }));
+  const options = CURRENCIES.map((currency) => ({ value: currency.code, name: `${currency.code} ${t(currency.name)}` }));
   const known = new Set(CURRENCIES.map((currency) => currency.code));
   for (const code of extra || []) {
     if (code && !known.has(code)) {
@@ -115,13 +118,13 @@ export function currencyInput(value, attrs) {
   return comboInput(() => currencyOptions(), value, {
     class: 'form-control form-control-sm text-uppercase',
     maxlength: '3',
-    placeholder: '币种代码',
+    placeholder: t('币种代码'),
     ...attrs,
   });
 }
 
 export function currencySelect(value, attrs) {
-  return select(CURRENCIES.map((currency) => ({ value: currency.code, name: `${currency.code} ${currency.name}` })), value, attrs);
+  return select(CURRENCIES.map((currency) => ({ value: currency.code, name: `${currency.code} ${t(currency.name)}` })), value, attrs);
 }
 
 //多选用复选框组而不是 multiple select：条数少、看得见、点得准
@@ -143,7 +146,7 @@ export function checkGroup(options, values, onChange) {
     });
     node.appendChild(el('div', { class: 'form-check form-check-inline me-0' }, [
       input,
-      el('label', { class: 'form-check-label small', for: id, text: option }),
+      el('label', { class: 'form-check-label small', for: id, text: t(option) }),
     ]));
   }
   return node;
@@ -158,7 +161,7 @@ function pageSizeDropdown(pageSize, onChange) {
       el('button', {
         class: `dropdown-item small ${size === pageSize ? 'active' : ''}`,
         type: 'button',
-        text: `${size} 条/页`,
+        text: t('{size} 条/页', { size }),
         onclick: () => onChange({ page: 1, page_size: size }),
       }),
     ]));
@@ -169,7 +172,7 @@ function pageSizeDropdown(pageSize, onChange) {
       type: 'button',
       'data-bs-toggle': 'dropdown',
       'aria-expanded': 'false',
-      text: `${pageSize} 条/页`,
+      text: t('{size} 条/页', { size: pageSize }),
     }),
     menu,
   ]);
@@ -188,25 +191,25 @@ export function pager(state, count, onChange) {
     text,
   });
   return el('div', { class: 'd-flex flex-wrap align-items-center gap-2 py-2' }, [
-    el('span', { class: 'text-secondary small', text: `共 ${count} 条 · 第 ${page}/${total} 页` }),
+    el('span', { class: 'text-secondary small', text: t('共 {count} 条 · 第 {page}/{total} 页', { count, page, total }) }),
     el('div', { class: 'btn-group btn-group-sm ms-auto' }, [
-      button('首页', 1, page <= 1),
-      button('上一页', page - 1, page <= 1),
-      button('下一页', page + 1, page >= total),
-      button('末页', total, page >= total),
+      button(t('首页'), 1, page <= 1),
+      button(t('上一页'), page - 1, page <= 1),
+      button(t('下一页'), page + 1, page >= total),
+      button(t('末页'), total, page >= total),
     ]),
     pageSizeDropdown(pageSize, onChange),
   ]);
 }
 
 export function emptyRow(colspan, text) {
-  return el('tr', {}, [el('td', { colspan, class: 'text-center text-secondary py-4', text: text || '没有匹配的数据' })]);
+  return el('tr', {}, [el('td', { colspan, class: 'text-center text-secondary py-4', text: text || t('没有匹配的数据') })]);
 }
 
 export function loadingRow(colspan) {
   return el('tr', {}, [el('td', { colspan, class: 'text-center text-secondary py-4' }, [
     el('span', { class: 'spinner-border spinner-border-sm me-2' }),
-    '加载中',
+    t('加载中'),
   ])]);
 }
 
@@ -241,10 +244,11 @@ export function badge(text, level) {
   return el('span', { class: `badge text-bg-${level || 'secondary'}`, text });
 }
 
-//审计结果只有三种，颜色固定，一眼能分出成功与部分成功
+//审计结果只有三种，颜色固定，一眼能分出成功与部分成功。
+//颜色认后端原文、文案走转译：取值是契约，展示才是文案
 export function resultBadge(result) {
   const level = result === '成功' ? 'success' : result === '失败' ? 'danger' : 'warning';
-  return badge(result, level);
+  return badge(t(result), level);
 }
 
 //筛选条件在手机上会占满一屏，折叠起来才看得到表格
@@ -252,13 +256,13 @@ export function filterCard(form) {
   const id = `filter-${Math.random().toString(36).slice(2, 8)}`;
   return el('div', { class: 'card mb-3' }, [
     el('div', { class: 'card-header py-2 d-flex align-items-center' }, [
-      el('span', { class: 'small fw-semibold', text: '筛选条件' }),
+      el('span', { class: 'small fw-semibold', text: t('筛选条件') }),
       el('button', {
         class: 'btn btn-sm btn-link ms-auto p-0 text-decoration-none',
         type: 'button',
         'data-bs-toggle': 'collapse',
         'data-bs-target': `#${id}`,
-        text: '展开 / 收起',
+        text: t('展开 / 收起'),
       }),
     ]),
     el('div', { class: 'collapse show', id }, [el('div', { class: 'card-body py-3' }, [form])]),

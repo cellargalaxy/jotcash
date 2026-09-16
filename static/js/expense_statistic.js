@@ -1,4 +1,5 @@
 import { AMOUNT_SCALE } from './config.js';
+import { t } from './i18n.js';
 import { addMonth, formatDate, formatMonth, monthOf } from './util.js';
 
 export const MEASURE_ACCOUNTING = 'accounting';
@@ -9,8 +10,11 @@ export const MEASURES = [
   { value: MEASURE_AMORTIZATION, name: '摊销金额' },
 ];
 
-//支出类型、交易对手方留空的行不能丢掉，归到这一档里
-export const UNFILLED = '未填写';
+//支出类型、交易对手方留空的行不能丢掉，归到这一档里。
+//写成函数而不是常量：这一档是我们造的分类名，得跟着语言走，而常量在模块求值时就定死了
+export function unfilled() {
+  return t('未填写');
+}
 
 //连续月轴的长度上限。摊销月数没有上限，真填了个离谱的值月轴会长到画不出来，超了就退回只画有数据的月份
 const MONTH_AXIS_MAX = 120;
@@ -73,16 +77,17 @@ export function aggregate(rows, measure) {
   const counterpartyTotal = new Map();
   let total = new Decimal(0);
   let largest = new Decimal(0);
+  const unfilledName = unfilled();
   for (const row of rows) {
     const amount = new Decimal(row.accounting_amount || 0);
     total = total.plus(amount);
     if (amount.abs().gt(largest.abs())) largest = amount;
-    addAmount(typeTotal, row.expense_type || UNFILLED, amount);
-    addAmount(counterpartyTotal, row.counterparty || UNFILLED, amount);
+    addAmount(typeTotal, row.expense_type || unfilledName, amount);
+    addAmount(counterpartyTotal, row.counterparty || unfilledName, amount);
     for (const share of monthShares(row, measure)) {
       if (!share.month) continue;
       if (!monthType.has(share.month)) monthType.set(share.month, new Map());
-      addAmount(monthType.get(share.month), row.expense_type || UNFILLED, share.amount);
+      addAmount(monthType.get(share.month), row.expense_type || unfilledName, share.amount);
       addAmount(monthTotal, share.month, share.amount);
     }
   }

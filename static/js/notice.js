@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 import { clear, el, query } from './util.js';
 
 //公告被关掉之后就不再出现，免得每次切页面又弹一次
@@ -22,13 +23,13 @@ function checkLevel() {
 function noticeText(level) {
   switch (level) {
     case 'success':
-      return '连接已加密。口令只存在本标签页的 sessionStorage，传输过程受 TLS 保护。';
+      return t('连接已加密。口令只存在本标签页的 sessionStorage，传输过程受 TLS 保护。');
     case 'warning':
-      return '协议是 HTTPS，但浏览器没有把这个页面当作安全上下文——证书很可能不被信任。口令仍有被窃取的风险，请先确认证书。';
+      return t('协议是 HTTPS，但浏览器没有把这个页面当作安全上下文——证书很可能不被信任。口令仍有被窃取的风险，请先确认证书。');
     default:
       return isLoopback()
-        ? '连接未加密。当前是本机地址，请求不出网卡，风险有限；但部署到服务器后必须改用 HTTPS，否则口令会以明文过网。'
-        : '连接未加密！口令会以明文在网络上传输，链路上任何一个节点都能看到它，请立刻改用 HTTPS 访问。';
+        ? t('连接未加密。当前是本机地址，请求不出网卡，风险有限；但部署到服务器后必须改用 HTTPS，否则口令会以明文过网。')
+        : t('连接未加密！口令会以明文在网络上传输，链路上任何一个节点都能看到它，请立刻改用 HTTPS 访问。');
     }
 }
 
@@ -65,10 +66,10 @@ async function copyUrl() {
 }
 
 function copyButton() {
-  const button = el('button', { class: 'btn btn-sm btn-outline-secondary py-0 px-2', type: 'button', text: '复制' });
+  const button = el('button', { class: 'btn btn-sm btn-outline-secondary py-0 px-2', type: 'button', text: t('复制') });
   button.addEventListener('click', async () => {
-    button.textContent = (await copyUrl()) ? '已复制' : '复制失败';
-    setTimeout(() => { button.textContent = '复制'; }, 2000);
+    button.textContent = (await copyUrl()) ? t('已复制') : t('复制失败');
+    setTimeout(() => { button.textContent = t('复制'); }, 2000);
   });
   return button;
 }
@@ -93,7 +94,7 @@ export function renderNotice(unlocked) {
         ? el('button', {
           class: 'btn-close ms-auto',
           type: 'button',
-          'aria-label': '关闭',
+          'aria-label': t('关闭'),
           onclick: () => {
             dismissed = true;
             clear(host);

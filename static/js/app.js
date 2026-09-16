@@ -1,5 +1,7 @@
 import * as api from './api.js';
+import { refreshChartTheme } from './chart.js';
 import { USE_MOCK } from './config.js';
+import { LANGS, getLang, setLang, t } from './i18n.js';
 import { render as renderExpense } from './page_expense.js';
 import { render as renderFileMeta } from './page_file_meta.js';
 import { render as renderOperationLog } from './page_operation_log.js';
@@ -8,6 +10,7 @@ import { render as renderStatistic } from './page_statistic.js';
 import { renderUnlock } from './page_unlock.js';
 import { renderNotice } from './notice.js';
 import { getAccountingCurrency, isUnlocked, lock } from './store.js';
+import { THEMES, applyTheme, getTheme, setTheme, watchSystemTheme } from './theme.js';
 import { clear, el, query } from './util.js';
 
 const ROUTES = [
@@ -40,7 +43,7 @@ function renderNav(activePath) {
       el('a', {
         class: `nav-link ${route.path === activePath ? 'active' : ''}`,
         href: `#${route.path}`,
-        text: route.name,
+        text: t(route.name),
       }),
     ]));
   }
@@ -50,11 +53,11 @@ function renderSession() {
   const host = query('#session-host');
   clear(host);
   if (!isUnlocked()) return;
-  host.appendChild(el('span', { class: 'badge text-bg-light', text: `记账币种 ${getAccountingCurrency()}` }));
+  host.appendChild(el('span', { class: 'badge text-bg-light', text: t('记账币种 {currency}', { currency: getAccountingCurrency() }) }));
   host.appendChild(el('button', {
     class: 'btn btn-sm btn-outline-light ms-2',
     type: 'button',
-    text: '锁定',
+    text: t('锁定'),
     onclick: () => {
       lock();
       location.reload();
@@ -62,9 +65,56 @@ function renderSession() {
   }));
 }
 
+//name 传进来就是最终文案：主题名要翻译，语言名恰恰不能翻译
+function preferenceSelect(options, value, title, onChange) {
+  const node = el('select', { class: 'form-select form-select-sm w-auto', title });
+  for (const option of options) {
+    node.appendChild(el('option', { value: option.value, selected: option.value === value ? true : null }, option.name));
+  }
+  node.addEventListener('change', () => onChange(node.value));
+  return node;
+}
+
+//这两个下拉不跟解锁走：看不懂中文的人得先能把语言换掉，才轮得到输口令
+function renderPreference() {
+  const host = query('#pref-host');
+  clear(host);
+  host.appendChild(preferenceSelect(
+    THEMES.map((theme) => ({ value: theme.value, name: t(theme.name) })),
+    getTheme(),
+    t('主题'),
+    (value) => {
+      setTheme(value);
+      applyTheme();
+      //Chart.js 的默认色是建实例时读的，得先换默认色再整屏重绘，否则图表还是上一套配色
+      refreshChartTheme();
+      renderRoute();
+    },
+  ));
+  host.appendChild(preferenceSelect(
+    LANGS,
+    getLang(),
+    t('语言'),
+    (value) => {
+      setLang(value);
+      applyLang();
+      renderRoute();
+    },
+  ));
+}
+
+//语言落到 html 上，屏幕阅读器与浏览器的翻译提示都认它
+function applyLang() {
+  document.documentElement.setAttribute('lang', getLang() === 'zh' ? 'zh-CN' : 'en');
+  document.title = t('jotcash · 记账');
+}
+
+//换语言、换主题都走这里整屏重来，而不是刷新页面：
+//mock 模式下刷新会把内存库连同这一轮的改动一起清掉
 function renderRoute() {
   const host = query('#page-host');
   renderNotice(isUnlocked());
+  renderPreference();
   if (!isUnlocked()) {
     query('#nav-wrap').hidden = true;
     renderSession();
@@ -85,6 +135,12 @@ function renderRoute() {
 
 function start() {
   if (USE_MOCK) api.seedMock();
+  applyTheme();
+  applyLang();
+  watchSystemTheme(() => {
+    refreshChartTheme();
+    renderRoute();
+  });
   window.addEventListener('hashchange', renderRoute);
   renderRoute();
 }
