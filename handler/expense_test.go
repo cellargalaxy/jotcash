@@ -340,12 +340,12 @@ func TestUpdateExpense(t *testing.T) {
 	if !object.ExchangeRate.Equal(early.ExchangeRate) || !object.AccountingAmount.Equal(want) {
 		t.Errorf("记账金额应重算: rate=%s amount=%s want=%s", object.ExchangeRate, object.AccountingAmount, want)
 	}
-	//摊分起始月=支出日期所属月，结束月=起始月+月数-1
+	//摊销起始月=支出日期所属月，结束月=起始月+月数-1
 	ctx := util.GenCtx()
 	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, object.AmortizationStartMonth, nil)
 	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, object.AmortizationEndMonth, nil)
 	if startMonth != "2026-01-01" || endMonth != "2026-03-01" {
-		t.Errorf("摊分起止月应跟着刷新: %s %s", startMonth, endMonth)
+		t.Errorf("摊销起止月应跟着刷新: %s %s", startMonth, endMonth)
 	}
 	//来源字段与记账币种不随编辑改动
 	if object.OperationId != early.OperationId || object.FileId != early.FileId || object.AccountingCurrency != early.AccountingCurrency {
@@ -479,7 +479,7 @@ func TestUpdateExpenseImmutable(t *testing.T) {
 		t.Errorf("记账金额应按公式算: got=%s want=%s", object.AccountingAmount, want)
 	}
 	if util.Time2Str(util.GenCtx(), util.DateLayout_2006_01_02, object.AmortizationStartMonth, nil) != "2026-01-01" {
-		t.Errorf("摊分起始月应按支出日期算: %v", object.AmortizationStartMonth)
+		t.Errorf("摊销起始月应按支出日期算: %v", object.AmortizationStartMonth)
 	}
 	//响应里的创建时间与删除时间取库内值，不能把请求里塞的那份回显出去
 	if object.DeletedAt.Valid || !object.CreatedAt.Equal(before.Data.Object[0].CreatedAt) {

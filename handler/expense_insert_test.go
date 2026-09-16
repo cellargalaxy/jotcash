@@ -17,7 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
+const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数\n"
 
 func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) common_model.HttpResp {
 	t.Helper()
@@ -79,21 +79,21 @@ func TestInsertExpense(t *testing.T) {
 	if second.AccountingCurrency != testAccountingCurrency {
 		t.Errorf("记账币种应取jwt携带值: %s", second.AccountingCurrency)
 	}
-	//摊分月数留空默认1，起始月=支出日期所属月，结束月=起始月+月数-1
+	//摊销月数留空默认1，起始月=支出日期所属月，结束月=起始月+月数-1
 	if first.AmortizationMonths != 1 {
-		t.Errorf("摊分月数应默认1: %d", first.AmortizationMonths)
+		t.Errorf("摊销月数应默认1: %d", first.AmortizationMonths)
 	}
 	ctx := util.GenCtx()
 	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationStartMonth, nil)
 	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationEndMonth, nil)
 	if startMonth != "2026-01-01" || endMonth != "2026-01-01" {
-		t.Errorf("摊分起止月不符: %s %s", startMonth, endMonth)
+		t.Errorf("摊销起止月不符: %s %s", startMonth, endMonth)
 	}
-	//CSV里填了摊分月数就照填的算
+	//CSV里填了摊销月数就照填的算
 	startMonth = util.Time2Str(ctx, util.DateLayout_2006_01_02, second.AmortizationStartMonth, nil)
 	endMonth = util.Time2Str(ctx, util.DateLayout_2006_01_02, second.AmortizationEndMonth, nil)
 	if second.AmortizationMonths != 3 || startMonth != "2026-03-01" || endMonth != "2026-05-01" {
-		t.Errorf("CSV里的摊分月数不符: months=%d %s %s", second.AmortizationMonths, startMonth, endMonth)
+		t.Errorf("CSV里的摊销月数不符: months=%d %s %s", second.AmortizationMonths, startMonth, endMonth)
 	}
 	//可选列有值就带上，金额往返不丢精度
 	if first.BankName != "招商银行" || first.Counterparty != "亚马逊" || first.ExpenseType != "购物" {
@@ -253,7 +253,7 @@ func TestInsertExpenseInvalid(t *testing.T) {
 		"折算汇率非法":     testCsvHeader + ",,2026-01-02,USD,1,,,abc,CNY,,\n",
 		"填了汇率没填记账币种": testCsvHeader + ",,2026-01-02,USD,1,,,7.1234,,,\n",
 		"记账币种非法":     testCsvHeader + ",,2026-01-02,USD,1,,,1,XYZ,,\n",
-		"摊分月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
+		"摊销月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
 	}
 	for name, csv := range cases {
 		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {

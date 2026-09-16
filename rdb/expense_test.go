@@ -403,7 +403,7 @@ func TestExpenseInquiryField(t *testing.T) {
 		"支出币种":  {ExpenseCurrency: []string{hit.ExpenseCurrency}},
 		"记账币种":  {AccountingCurrency: []string{hit.AccountingCurrency}, BankName: []string{hit.BankName}},
 		"支出类型":  {ExpenseType: []string{hit.ExpenseType}},
-		"摊分月数":  {AmortizationMonths: []int{hit.AmortizationMonths}},
+		"摊销月数":  {AmortizationMonths: []int{hit.AmortizationMonths}},
 		"操作Id":  {OperationId: []int64{hit.OperationId}},
 		"文件Id":  {FileId: []int64{fileId}},
 		"版本号":   {Version: []int{hit.Version}},

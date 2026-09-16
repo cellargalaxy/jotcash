@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊分月数\n"
+const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数\n"
 
 func TestParse(t *testing.T) {
 	ctx := util.GenCtx()
@@ -55,14 +55,14 @@ func TestParse(t *testing.T) {
 	if first.Version != 1 {
 		t.Errorf("版本号应从1开始: %d", first.Version)
 	}
-	//摊分月数默认1，起始月=支出日期所属月，结束月=起始月+月数-1
+	//摊销月数默认1，起始月=支出日期所属月，结束月=起始月+月数-1
 	if first.AmortizationMonths != 1 {
-		t.Errorf("摊分月数应默认1: %d", first.AmortizationMonths)
+		t.Errorf("摊销月数应默认1: %d", first.AmortizationMonths)
 	}
 	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationStartMonth, nil)
 	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationEndMonth, nil)
 	if startMonth != "2026-01-01" || endMonth != "2026-01-01" {
-		t.Errorf("摊分起止月不符: %s %s", startMonth, endMonth)
+		t.Errorf("摊销起止月不符: %s %s", startMonth, endMonth)
 	}
 }
 
@@ -85,11 +85,11 @@ func TestParseAccountingCurrency(t *testing.T) {
 	if objects[1].AccountingCurrency != "CNY" {
 		t.Errorf("文件里没给记账币种应用请求带的: %+v", objects[1])
 	}
-	//摊分月数填了3，结束月=起始月+2
+	//摊销月数填了3，结束月=起始月+2
 	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, objects[0].AmortizationStartMonth, nil)
 	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, objects[0].AmortizationEndMonth, nil)
 	if objects[0].AmortizationMonths != 3 || startMonth != "2026-01-01" || endMonth != "2026-03-01" {
-		t.Errorf("摊分起止月不符: months=%d %s %s", objects[0].AmortizationMonths, startMonth, endMonth)
+		t.Errorf("摊销起止月不符: months=%d %s %s", objects[0].AmortizationMonths, startMonth, endMonth)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestParseInvalid(t *testing.T) {
 	}
 	//月数大到让结束月绕回起始月之前，宁可报错也不能把脏数据写进去
 	if _, err := expense.Parse(ctx, []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,99999999999999999999\n"), "CNY"); err == nil {
-		t.Errorf("摊分月数过大应报错")
+		t.Errorf("摊销月数过大应报错")
 	}
 	//别家的CSV没有解析器认领，不能当成本系统的格式硬解
 	if _, err := expense.Parse(ctx, []byte("交易日期,摘要,发生额\n2026-01-02,消费,100.50\n"), "CNY"); err == nil {
