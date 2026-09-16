@@ -3,6 +3,7 @@ package expense_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -151,5 +152,45 @@ func TestParseBadRate(t *testing.T) {
 	//报错要带笔数，几十笔的文件里才定位得到是哪一笔
 	if !strings.Contains(err.Error(), "第1笔") {
 		t.Errorf("报错应带笔数: %+v", err)
+	}
+}
+
+// 样例账单是真实流水、随时会被删，所以只按目录扫，不写死文件名，也不断言里面的任何内容
+func TestParseSamplePdf(t *testing.T) {
+	ctx := util.GenCtx()
+
+	paths, err := filepath.Glob("../../resource/*.pdf")
+	if err != nil || len(paths) == 0 {
+		t.Skip("没有样例PDF，跳过真实账单校验")
+	}
+	for i := range paths {
+		data, err := os.ReadFile(paths[i])
+		if err != nil {
+			t.Fatalf("读取第%d个样例PDF异常: %+v", i+1, err)
+		}
+		objects, err := expense.Parse(ctx, data, "CNY")
+		if err != nil {
+			t.Fatalf("第%d个样例解析异常: %+v", i+1, err)
+		}
+		if len(objects) == 0 {
+			t.Fatalf("第%d个样例应解析出明细", i+1)
+		}
+		for j, object := range objects {
+			if object.BankName == "" || len(object.CardLast4) != 4 {
+				t.Errorf("第%d个样例第%d笔银行名称或卡号后四位为空: bank=%s cardLast4长度=%d", i+1, j+1, object.BankName, len(object.CardLast4))
+			}
+			if object.Id == 0 || object.Version != 1 || object.AccountingCurrency != "CNY" || object.AmortizationMonths != 1 {
+				t.Errorf("第%d个样例第%d笔派生字段不符: id=%d version=%d 记账币种=%s 摊销月数=%d", i+1, j+1, object.Id, object.Version, object.AccountingCurrency, object.AmortizationMonths)
+			}
+			if !object.ExchangeRate.IsPositive() {
+				t.Errorf("第%d个样例第%d笔折算汇率非正: %s", i+1, j+1, object.ExchangeRate)
+			}
+			if object.ExpenseCurrency == object.AccountingCurrency && !object.AccountingAmount.Equal(object.ExpenseAmount) {
+				t.Errorf("第%d个样例第%d笔同币种记账金额应等于支出金额: %s %s", i+1, j+1, object.AccountingAmount, object.ExpenseAmount)
+			}
+			if object.AmortizationStartMonth.IsZero() || object.AmortizationEndMonth.IsZero() {
+				t.Errorf("第%d个样例第%d笔摊销起止月为空", i+1, j+1)
+			}
+		}
 	}
 }
