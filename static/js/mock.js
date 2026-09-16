@@ -316,7 +316,7 @@ export function deleteExpense(inquiry) {
     operation_type: '明细删除',
     object_type: '',
     object_id: 0,
-    summary: `批量软删除明细 ${rows.length} 笔`,
+    summary: '批量软删除明细',
     changes: '',
     result: '成功',
     created_at: at,
@@ -345,12 +345,8 @@ export function updateExpense(object) {
   next.version = row.version + 1;
   next.updated_at = now();
 
-  const changes = {};
-  for (const field of EXPENSE_FIELDS) {
-    if (String(before[field.key]) !== String(next[field.key])) {
-      changes[field.name] = { before: before[field.key], after: next[field.key] };
-    }
-  }
+  //与后端 model.ExpenseChanges 同形：记前后两份整快照，逐字段比对交给渲染层做
+  const changes = JSON.stringify({ before, after: next });
   Object.assign(row, next);
   db.operationLog.push({
     id: genId(),
@@ -358,7 +354,7 @@ export function updateExpense(object) {
     object_type: '支出明细',
     object_id: row.id,
     summary: `编辑明细 ${row.id}`,
-    changes: JSON.stringify(changes),
+    changes,
     result: '成功',
     created_at: next.updated_at,
   });
@@ -495,7 +491,7 @@ export function changeToken(clientToken, newToken) {
       operation_type: '更换口令',
       object_type: '',
       object_id: 0,
-      summary: '更换口令',
+      summary: '数据库已用新口令重新加密',
       changes: '',
       result: '成功',
       created_at: now(),
@@ -510,7 +506,7 @@ export function exportDb() {
     operation_type: '数据库导出',
     object_type: '',
     object_id: 0,
-    summary: '数据库导出',
+    summary: '导出加密数据库快照',
     changes: '',
     result: '成功',
     created_at: now(),
@@ -520,13 +516,13 @@ export function exportDb() {
   return ok({ file_name: `jotcash-mock-${genId()}.json`, data: snapshot }, 0);
 }
 
-export function importDb(filename) {
+export function importDb() {
   db.operationLog.push({
     id: genId(),
     operation_type: '数据库导入',
     object_type: '',
     object_id: 0,
-    summary: `数据库导入，来源 ${filename}`,
+    summary: '导入加密数据库，整库覆盖',
     changes: '',
     result: '成功',
     created_at: now(),
@@ -776,7 +772,7 @@ export function seed() {
     operation_type: '系统初始化',
     object_type: '',
     object_id: 0,
-    summary: '系统初始化，建库并写入初始审计',
+    summary: '系统初始化，创建加密数据库',
     changes: '',
     result: '成功',
     created_at: `${daysAgo(90)}T08:00:00+08:00`,

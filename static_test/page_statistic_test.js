@@ -1,13 +1,13 @@
 import test from 'node:test';
 import './helper/browser.js';
-import { charts, click, find, findAll, findByText, flush, renderPage, setValue } from './helper/fixture.js';
+import { charts, click, find, findAll, findByText, flush, mockSession, renderPage, setValue } from './helper/fixture.js';
 import { equal, excludes, includes, near, not, ok, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
 import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import { render as renderStatistic } from '../static/js/page_statistic.js';
 import { formatDate } from '../static/js/util.js';
 
-api.seedMock();
+mockSession();
 
 //辅助函数：按标签文案取筛选格里的输入框
 function filterInput(host, label) {

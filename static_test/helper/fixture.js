@@ -1,6 +1,16 @@
 import { blobs, document, modals, mountHost, queryAll, ShimEvent } from './browser.js';
+import { seedMock } from '../../static/js/api.js';
+import { MODE_MOCK } from '../../static/js/config.js';
+import { unlock } from '../../static/js/store.js';
 
 export { blobs, charts, document, location, mountHost, modals, fireWindow } from './browser.js';
+
+//页面用例跑的是「已解锁 + 数据来自 mock」这一门会话：api 的分发判据挂在会话上，
+//没有会话它就会去打真实接口，而种子也只有在 mock 会话里才播得进去
+export function mockSession(currency) {
+  unlock('后端口令', '前端口令', currency || 'CNY', MODE_MOCK);
+  seedMock();
+}
 
 //页面的 render 是同步返回、异步填数据的（内部 reload 不被 await），
 //用例得把微任务与宏任务都排空才看得到最终那一屏。mock 全是立即兑现的 Promise，转几圈足够
@@ -21,6 +31,16 @@ export function findAll(root, selector) {
 //按文案找控件：页面上的按钮都是中文文案，用文案定位比用第几个稳
 export function findByText(root, selector, text) {
   return queryAll(root, selector).find((node) => node.textContent.includes(text)) || null;
+}
+
+//解锁表单上现在既有模式单选也有口令框，按 type 分比按第几个稳。
+//垫片不做同名单选的互斥，选中哪一个由用例自己说了算，正与真浏览器里点一下等价
+export function unlockForm(root) {
+  const inputs = queryAll(root, 'input');
+  return {
+    modes: inputs.filter((node) => node.type === 'radio'),
+    tokens: inputs.filter((node) => node.type === 'password'),
+  };
 }
 
 export function texts(root, selector) {

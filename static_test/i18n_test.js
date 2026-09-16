@@ -13,6 +13,7 @@ import {
   EXPENSE_FIELDS,
   EXPENSE_SORTS,
   FILE_META_SORTS,
+  MODE_MOCK,
   OPERATION_LOG_SORTS,
   OPERATION_RESULTS,
   OPERATION_TYPES,
@@ -225,10 +226,8 @@ test('语言下拉：两种语言下选项名都不翻译', () => {
 
 test('英文态：明细页与统计页整屏没有残留的中文文案', async () => {
   setLang(LANG_EN);
-  const api = await import('../static/js/api.js');
-  api.seedMock();
-  const { unlock } = await import('../static/js/store.js');
-  unlock('后端口令', '前端口令', 'CNY');
+  const { mockSession } = await import('./helper/fixture.js');
+  mockSession();
 
   const expense = await renderPage((await import('../static/js/page_expense.js')).render, {});
   includes('标题是英文', expense.textContent, 'Expense records');
@@ -254,7 +253,7 @@ test('英文态：明细页与统计页整屏没有残留的中文文案', async
 test('英文态：设置页与解锁页一个中文字都不剩', async () => {
   setLang(LANG_EN);
   const { lock, unlock } = await import('../static/js/store.js');
-  unlock('后端口令', '前端口令', 'CNY');
+  unlock('后端口令', '前端口令', 'CNY', MODE_MOCK);
   const setting = await renderPage((await import('../static/js/page_setting.js')).render, {});
   same('设置页残留的中文', setting.textContent.match(/[\u4e00-\u9fff]+/g) || [], []);
 
@@ -266,6 +265,9 @@ test('英文态：设置页与解锁页一个中文字都不剩', async () => {
 
 test('英文态：审计页把后端给的操作类型、结果与摘要一并转过来', async () => {
   setLang(LANG_EN);
+  //上一条用例末尾把会话锁掉了，这一屏要有数据就得重新起一门 mock 会话
+  const { mockSession } = await import('./helper/fixture.js');
+  mockSession();
   const log = await renderPage((await import('../static/js/page_operation_log.js')).render, {});
   includes('操作类型', log.textContent, 'Data ingest');
   includes('操作结果', log.textContent, 'Success');
@@ -292,8 +294,9 @@ test('英文态：前端自己产生的校验失败也走词表', async () => {
 //mock 是后端在前端这一侧的替身，它的种子是我们自己造的演示内容，所以跟着界面语言走；
 //而用户自己录进去的值不在种子词表里，一个字都不该被改
 test('mock 数据：种子跟着语言走，用户自己录的原样不动', async () => {
+  const { mockSession } = await import('./helper/fixture.js');
+  mockSession();
   const api = await import('../static/js/api.js');
-  api.seedMock();
   await api.insertExpense('我自己的账单.csv', [
     '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
     ',,2026-09-15,CNY,1,我录的对手方,我录的备注,,,我录的类型,',

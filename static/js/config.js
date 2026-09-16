@@ -4,9 +4,13 @@ export const API_BASE = '../api/';
 export const PATH_PING = 'ping';
 export const PATH_EXPENSE_INSERT = 'expense/insert';
 export const PATH_EXPENSE_SELECT = 'expense/select';
+export const PATH_EXPENSE_UPDATE = 'expense/update';
 export const PATH_EXPENSE_DELETE = 'expense/delete';
+export const PATH_EXPENSE_SWITCH = 'expense/switch_currency';
+export const PATH_EXPENSE_DISTINCT = 'expense/distinct';
 export const PATH_OPERATION_LOG_SELECT = 'operation_log/select';
 export const PATH_FILE_META_SELECT = 'file_meta/select';
+export const PATH_FILE_META_DOWNLOAD = 'file_meta/download';
 export const PATH_CHANGE_TOKEN = 'token/change';
 export const PATH_EXPORT_DB = 'db/export';
 export const PATH_IMPORT_DB = 'db/import';
@@ -14,8 +18,11 @@ export const PATH_IMPORT_DB = 'db/import';
 //上传字段名，与后端 config.ExpenseFileKey / config.ImportFileKey 一致
 export const UPLOAD_FILE_KEY = 'file';
 
-//本轮不联调，全部数据走内存 mock；联调时把它改成 false
-export const USE_MOCK = true;
+//解锁模式：数据来源逐会话选定，存在会话里，锁定即失效。
+//页面是 embed 进后端二进制、由后端托出来的，能打开它就说明后端在跑，所以默认打真实接口
+export const MODE_MOCK = 'mock';
+export const MODE_REAL = 'real';
+export const MODE_DEFAULT = MODE_REAL;
 
 //金额精度，与后端配置 amount_scale 的默认值一致
 export const AMOUNT_SCALE = 2;

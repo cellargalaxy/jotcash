@@ -1,12 +1,14 @@
 import test from 'node:test';
 import './helper/browser.js';
 import { equal, not, ok, same } from './helper/check.js';
-import { CURRENCY_DEFAULT, EXPENSE_COLUMN_DEFAULT } from '../static/js/config.js';
+import { CURRENCY_DEFAULT, EXPENSE_COLUMN_DEFAULT, MODE_DEFAULT, MODE_MOCK, MODE_REAL } from '../static/js/config.js';
 import {
   getAccountingCurrency,
   getClientToken,
   getColumns,
+  getMode,
   getServerToken,
+  isMock,
   isUnlocked,
   lock,
   setAccountingCurrency,
@@ -21,11 +23,13 @@ test('会话：解锁写入、锁定清空，口令只落 sessionStorage', () =>
   equal('未解锁取不到后端口令', getServerToken(), '');
   equal('未解锁回落默认记账币种', getAccountingCurrency(), CURRENCY_DEFAULT);
 
-  unlock('后端口令', '前端口令', 'USD');
+  unlock('后端口令', '前端口令', 'USD', MODE_REAL);
   ok('已解锁', isUnlocked());
   equal('后端口令', getServerToken(), '后端口令');
   equal('前端口令', getClientToken(), '前端口令');
   equal('记账币种', getAccountingCurrency(), 'USD');
+  equal('数据来源', getMode(), MODE_REAL);
+  not('真实模式不是 mock', isMock());
   ok('只进 sessionStorage', sessionStorage.getItem('jotcash.session') !== null);
   equal('不进 localStorage', localStorage.getItem('jotcash.session'), null);
 
@@ -34,9 +38,28 @@ test('会话：解锁写入、锁定清空，口令只落 sessionStorage', () =>
   equal('会话已从 sessionStorage 抹掉', sessionStorage.getItem('jotcash.session'), null);
 });
 
+//数据来源与口令同生共死：锁定之后不能还留着「上一门会话是 mock」这件事
+test('会话：数据来源存在会话里，锁定即回默认', () => {
+  unlock('后端口令', '前端口令', 'CNY', MODE_MOCK);
+  ok('mock 会话', isMock());
+  equal('取回的就是存进去的', getMode(), MODE_MOCK);
+
+  lock();
+  not('锁定之后不再是 mock', isMock());
+  equal('没有会话就回默认来源', getMode(), MODE_DEFAULT);
+});
+
+//会话是活过刷新的：刷新之后仍然得是同一门数据来源，否则页面会一边说解锁着、一边换了库
+test('会话：数据来源跟着会话活过刷新', () => {
+  unlock('后端口令', '前端口令', 'CNY', MODE_MOCK);
+  const fresh = JSON.parse(sessionStorage.getItem('jotcash.session'));
+  equal('模式落在了会话里', fresh.mode, MODE_MOCK);
+  lock();
+});
+
 //换口令与换口径都只改一个字段，不能把会话里其余的东西顺手冲掉
 test('会话：改记账币种与改前端口令都只动一个字段', () => {
-  unlock('后端口令', '前端口令', 'CNY');
+  unlock('后端口令', '前端口令', 'CNY', MODE_MOCK);
   setAccountingCurrency('JPY');
   equal('币种已改', getAccountingCurrency(), 'JPY');
   equal('后端口令没动', getServerToken(), '后端口令');

@@ -8,18 +8,19 @@ import {
   findByText,
   flush,
   lastBlobText,
+  mockSession,
   modals,
   renderPage,
   setValue,
   takeToast,
 } from './helper/fixture.js';
-import { equal, includes, not, ok, same } from './helper/check.js';
+import { equal, excludes, includes, not, ok, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
 import { CSV_FIELDS } from '../static/js/config.js';
 import { render as renderFileMeta } from '../static/js/page_file_meta.js';
 import { render as renderOperationLog } from '../static/js/page_operation_log.js';
 
-api.seedMock();
+mockSession();
 
 const COLUMNS = CSV_FIELDS.map((field) => field.column);
 
@@ -69,8 +70,10 @@ test('审计页：变更内容能展开看全文，没有变更就不给入口',
   click(findByText(host, 'button', '查看'));
   const modal = answerModal(false);
   includes('弹窗标题带审计ID', modal.textContent, '的变更内容');
-  includes('变更内容是格式化过的 JSON', modal.textContent, '"交易备注"');
+  //后端记的是前后两份整快照，铺开就是两坨 21 字段 JSON，所以这一层自己比一遍只列变了的字段
+  includes('列的是字段展示名', modal.textContent, '交易备注');
   includes('记了后值', modal.textContent, '为了造一条变更内容');
+  excludes('没变的字段不占地方', modal.textContent, '摊销起始月');
 });
 
 test('审计页：只留痕不承载业务，关联入口是两条查询链接', async () => {

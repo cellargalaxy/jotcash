@@ -1,6 +1,6 @@
 import test from 'node:test';
 import { document, fireWindow, mountHost } from './helper/browser.js';
-import { click, find, findAll, findByText, flush, location, setValue, texts } from './helper/fixture.js';
+import { check, click, find, findAll, findByText, flush, location, setValue, texts, unlockForm } from './helper/fixture.js';
 import { equal, includes, not, ok, same } from './helper/check.js';
 import { candidateOf } from '../static/js/expense_inquiry.js';
 import { isUnlocked, lock } from '../static/js/store.js';
@@ -34,9 +34,11 @@ test('启动：没解锁之前只给解锁页，导航整条藏起来', async ()
 });
 
 test('启动：解锁之后导航显出来，统计紧跟在明细后面', async () => {
-  const inputs = findAll(page(), 'input');
-  setValue(inputs[0], '后端口令');
-  setValue(inputs[1], 'jotcash-2026');
+  const form = unlockForm(page());
+  //整屏跑的是 mock 这门会话：真实模式会去打 fetch，而这套用例里没有后端
+  check(form.modes[1], true);
+  setValue(form.tokens[0], '后端口令');
+  setValue(form.tokens[1], 'jotcash-2026');
   click(findByText(page(), 'button', '解锁'));
   await flush();
 

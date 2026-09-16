@@ -2,6 +2,7 @@ import test from 'node:test';
 import './helper/browser.js';
 import {
   answerModal,
+  check,
   click,
   find,
   findAll,
@@ -9,51 +10,95 @@ import {
   flush,
   lastBlobText,
   location,
+  mockSession,
   modals,
   renderPage,
   setValue,
   takeToast,
+  unlockForm,
 } from './helper/fixture.js';
 import { equal, includes, not, ok } from './helper/check.js';
 import * as api from '../static/js/api.js';
-import { TOKEN_MIN_LEN } from '../static/js/config.js';
+import { MODE_MOCK, TOKEN_MIN_LEN } from '../static/js/config.js';
 import { render as renderSetting } from '../static/js/page_setting.js';
 import { renderUnlock } from '../static/js/page_unlock.js';
-import { getAccountingCurrency, getClientToken, isUnlocked, lock, unlock } from '../static/js/store.js';
+import { getAccountingCurrency, getClientToken, isMock, isUnlocked, lock, unlock } from '../static/js/store.js';
 
-api.seedMock();
+mockSession();
 
 test('解锁页：两把口令都要填，探针通过才算解锁', async () => {
   lock();
   let unlocked = 0;
   const host = await renderPage((container) => renderUnlock(container, () => { unlocked += 1; }), {});
-  includes('mock 模式要标明', host.textContent, '当前是 mock 模式');
+  includes('两种模式都摆出来了', host.textContent, '真实后端');
+  includes('mock 那一项写明了它是什么', host.textContent, '刷新页面即复位');
   includes('说清了口令只在本标签页', host.textContent, '关掉标签页即失效');
 
-  const inputs = findAll(host, 'input');
-  setValue(inputs[0], '后端口令');
-  setValue(inputs[1], '');
+  const form = unlockForm(host);
+  equal('默认选真实后端', form.modes[0].checked, true);
+  check(form.modes[1], true);
+  setValue(form.tokens[0], '后端口令');
+  setValue(form.tokens[1], '');
   click(findByText(host, 'button', '解锁'));
   await flush();
   includes('缺一把都不行', takeToast(), '两个口令都要填');
   equal('没解锁', unlocked, 0);
   not('会话没建起来', isUnlocked());
 
-  setValue(inputs[1], 'jotcash-2026');
+  setValue(form.tokens[1], 'jotcash-2026');
   click(findByText(host, 'button', '解锁'));
   await flush();
   equal('解锁回调只走一次', unlocked, 1);
   ok('会话建起来了', isUnlocked());
+  ok('选的 mock 模式落进了会话', isMock());
   equal('记账币种取下拉选的', getAccountingCurrency(), find(host, 'select').value);
+});
+
+//选真实后端就必须真的发请求：mock 那条路一个字节都不该被走到
+test('解锁页：选了真实后端就去打接口，不碰 mock', async () => {
+  lock();
+  const calls = [];
+  const original = globalThis.fetch;
+  //jwt 签名走的是真 Web Crypto，落在线程池上，转几圈微任务不一定等得到；
+  //所以等的是「接口被打到」这件事本身，而不是拍一个圈数
+  let arrived = null;
+  const called = new Promise((resolve) => { arrived = resolve; });
+  globalThis.fetch = (url, init) => {
+    calls.push({ url, init });
+    arrived();
+    return Promise.resolve({
+      headers: { get: (name) => (name === 'Content-Type' ? 'application/json' : '') },
+      status: 200,
+      json: () => Promise.resolve({ code: 200, msg: '', data: { object: { sn: 'jotcash' }, count: 0 } }),
+    });
+  };
+  try {
+    let unlocked = 0;
+    const host = await renderPage((container) => renderUnlock(container, () => { unlocked += 1; }), {});
+    const form = unlockForm(host);
+    setValue(form.tokens[0], '后端口令');
+    setValue(form.tokens[1], 'jotcash-2026');
+    click(findByText(host, 'button', '解锁'));
+    await called;
+    await flush();
+    equal('解锁成功', unlocked, 1);
+    not('会话不是 mock', isMock());
+    equal('探针打的是 ping', calls.length, 1);
+    includes('路径拼对了', calls[0].url, '../api/ping');
+    includes('带着签好的凭据', calls[0].init.headers.Authorization, 'Bearer ');
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('解锁页：口令不对时探针会失败，会话要退回锁定态', async () => {
   lock();
   let unlocked = 0;
   const host = await renderPage((container) => renderUnlock(container, () => { unlocked += 1; }), {});
-  const inputs = findAll(host, 'input');
-  setValue(inputs[0], '后端口令');
-  setValue(inputs[1], '对不上的口令');
+  const form = unlockForm(host);
+  check(form.modes[1], true);
+  setValue(form.tokens[0], '后端口令');
+  setValue(form.tokens[1], '对不上的口令');
   click(findByText(host, 'button', '解锁'));
   await flush();
   includes('失败提示', takeToast(), '口令错误或数据库文件损坏');
@@ -66,7 +111,7 @@ test('解锁页：口令输入框带明文开关', async () => {
   lock();
   const host = await renderPage((container) => renderUnlock(container, () => {}), {});
   const toggle = findAll(host, 'button').find((button) => button.textContent === '显示');
-  const input = findAll(host, 'input')[0];
+  const input = unlockForm(host).tokens[0];
   equal('默认是密码框', input.type, 'password');
   click(toggle);
   equal('点一下变明文', input.type, 'text');
@@ -77,7 +122,7 @@ test('解锁页：口令输入框带明文开关', async () => {
 
 //辅助函数：跑设置页，之前得先解锁，否则会话卡片里读到的都是空的
 async function renderSettingPage() {
-  unlock('后端口令', 'jotcash-2026', 'CNY');
+  unlock('后端口令', 'jotcash-2026', 'CNY', MODE_MOCK);
   return renderPage(renderSetting, {});
 }
 
@@ -138,7 +183,7 @@ test('设置页：改本会话记账口径只动会话，不动已有数据', as
   const rows = await api.selectExpense({ deleted: 1, sort: 'id asc' });
   not('已有明细的记账币种没被顺手改掉', rows.object.some((row) => row.accounting_currency === 'JPY'));
   includes('页面写明了要改已有数据得走切换', host.textContent, '必须执行记账币种切换');
-  unlock('后端口令', 'jotcash-2026', 'CNY');
+  unlock('后端口令', 'jotcash-2026', 'CNY', MODE_MOCK);
 });
 
 test('设置页：记账币种切换要二次确认，确认后逐笔重算', async () => {

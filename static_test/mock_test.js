@@ -153,9 +153,12 @@ test('编辑：乐观锁挡住落后的版本，审计记下前后值', async ()
 
   const logs = await mock.selectOperationLog({ object_id: [row.id], sort: 'id desc' });
   equal('留下一条明细编辑审计', logs.count, 1);
+  //与后端 model.ExpenseChanges 同形：前后两份整快照，逐字段比对由渲染层做
   const changes = JSON.parse(logs.object[0].changes);
-  equal('变更内容记了前值', changes['支出类型'].before, '日用');
-  equal('变更内容记了后值', changes['支出类型'].after, '数码');
+  equal('变更内容记了前值', changes.before.expense_type, '日用');
+  equal('变更内容记了后值', changes.after.expense_type, '数码');
+  equal('前快照留的是改之前的版本号', changes.before.version, row.version);
+  equal('后快照是自增之后的版本号', changes.after.version, row.version + 1);
 });
 
 test('编辑：改支出币种会重取汇率，已删除的明细不可编辑', async () => {

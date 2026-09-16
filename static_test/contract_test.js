@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import './helper/lib.js';
+import './helper/browser.js';
 import { equal, ok, rejects, same } from './helper/check.js';
 import {
   AMOUNT_SCALE,
@@ -18,9 +18,13 @@ import {
   OPERATION_TYPES,
   PATH_CHANGE_TOKEN,
   PATH_EXPENSE_DELETE,
+  PATH_EXPENSE_DISTINCT,
   PATH_EXPENSE_INSERT,
   PATH_EXPENSE_SELECT,
+  PATH_EXPENSE_SWITCH,
+  PATH_EXPENSE_UPDATE,
   PATH_EXPORT_DB,
+  PATH_FILE_META_DOWNLOAD,
   PATH_FILE_META_SELECT,
   PATH_IMPORT_DB,
   PATH_OPERATION_LOG_SELECT,
@@ -28,6 +32,8 @@ import {
   TOKEN_MIN_LEN,
   UPLOAD_FILE_KEY,
 } from '../static/js/config.js';
+import { CANDIDATE_FIELDS } from '../static/js/expense_inquiry.js';
+import { LANG_EN, LANG_ZH, serverText, setLang } from '../static/js/i18n.js';
 import * as mock from '../static/js/mock.js';
 
 //前端那些「必须与后端逐字一致」的常量，靠人盯是盯不住的：
@@ -91,9 +97,13 @@ test('接口路径：拼出来的地址与后端注册的路由相等', () => {
   const pairs = [
     [PATH_EXPENSE_INSERT, paths.get('PathExpenseInsert')],
     [PATH_EXPENSE_SELECT, paths.get('PathExpenseSelect')],
+    [PATH_EXPENSE_UPDATE, paths.get('PathExpenseUpdate')],
     [PATH_EXPENSE_DELETE, paths.get('PathExpenseDelete')],
+    [PATH_EXPENSE_SWITCH, paths.get('PathExpenseSwitch')],
+    [PATH_EXPENSE_DISTINCT, paths.get('PathExpenseDistinct')],
     [PATH_OPERATION_LOG_SELECT, paths.get('PathOperationLogSelect')],
     [PATH_FILE_META_SELECT, paths.get('PathFileMetaSelect')],
+    [PATH_FILE_META_DOWNLOAD, paths.get('PathFileMetaDownload')],
     [PATH_CHANGE_TOKEN, paths.get('PathChangeToken')],
     [PATH_EXPORT_DB, paths.get('PathExportDb')],
     [PATH_IMPORT_DB, paths.get('PathImportDb')],
@@ -103,6 +113,12 @@ test('接口路径：拼出来的地址与后端注册的路由相等', () => {
     equal(`路径 ${front}`, API_BASE.replace('../', '/') + front, back);
   }
   equal('ping 走的是共享库的路径', `/api/${PATH_PING}`, '/api/ping');
+  //后端注册了几条业务路由，前端就得接几条：少一条就是一个点不动的按钮
+  const registered = [...goSource('handler/handler.go').matchAll(/config\.(Path\w+)/g)].map((matched) => matched[1]);
+  same('后端注册的路由前端一条不落', [...new Set(registered)].sort(), [...pairs.map((pair) => pair[1])].sort().map((path) => {
+    for (const [name, value] of paths) if (value === path) return name;
+    throw new Error(`前端没接这条路由: ${path}`);
+  }).sort());
   const fileKeys = goConsts('config/handler.go', '');
   equal('明细上传字段名', UPLOAD_FILE_KEY, fileKeys.get('ExpenseFileKey'));
   equal('整库导入字段名', UPLOAD_FILE_KEY, fileKeys.get('ImportFileKey'));
@@ -136,5 +152,66 @@ test('mock 的排序白名单与后端三张表逐条等价', async () => {
       ok(`${name}接受白名单内的 ${sort}`, Array.isArray(result.object));
     }
     await rejects(`${name}拒绝白名单外的排序`, call('remark desc'), '不在白名单内');
+  }
+});
+
+//候选下拉能问哪几个字段是后端说了算的：多问一个后端直接报错，少问一个就是一个永远空着的下拉
+test('候选取值：字段白名单与后端 expenseDistinctMap 逐条相等', async () => {
+  const block = /var expenseDistinctMap = map\[string\]string\{([\s\S]*?)\n\}/.exec(goSource('rdb/expense.go'));
+  ok('找得到后端白名单', block);
+  const whitelist = [...block[1].matchAll(/"([^"]+)"\s*:/g)].map((matched) => matched[1]).sort();
+  const distinct = /const DISTINCT_FIELDS = \[([^\]]*)\]/.exec(readFileSync(join(ROOT, 'static/js/mock.js'), 'utf8'));
+  ok('找得到 mock 的白名单', distinct);
+  same('mock 认的字段与后端一样', [...distinct[1].matchAll(/'([^']+)'/g)].map((matched) => matched[1]).sort(), whitelist);
+
+  for (const field of CANDIDATE_FIELDS) {
+    ok(`筛选卡片问的 ${field} 在白名单内`, whitelist.includes(field));
+    const result = await mock.selectDistinct(field);
+    ok(`mock 也答得上 ${field}`, Array.isArray(result.object));
+  }
+  await rejects('白名单外的字段两边都拒', mock.selectDistinct('remark'), '字段不支持');
+});
+
+//辅助函数：把 Go 的 %s/%d 与 JS 的 ${...} 都归一成同一个占位符，两边才比得起来
+function summaryShape(text) {
+  return text.replace(/\$\{[^}]*\}/g, '%v').replace(/%[sdv]/g, '%v');
+}
+
+//辅助函数：走一遍 Go 源码，抓出所有写进审计的摘要
+function goSummaries() {
+  const found = new Set();
+  for (const name of readdirSync(ROOT, { recursive: true })) {
+    const path = String(name);
+    if (!path.endsWith('.go') || path.endsWith('_test.go')) continue;
+    for (const matched of readFileSync(join(ROOT, path), 'utf8').matchAll(/Summary:\s*(?:fmt\.Sprintf\()?"([^"]+)"/g)) {
+      found.add(summaryShape(matched[1]));
+    }
+  }
+  return [...found].sort();
+}
+
+//审计摘要是后端原文，前端只负责转译。mock 要是自己编一套写法，英文词表就会照着 mock 配，
+//切到真实后端那一刻，审计页的这几行会原样露出中文——而且 mock 全绿，联调之前谁也看不见
+test('审计摘要：mock 说的话与后端逐字相同', () => {
+  const backend = goSummaries();
+  ok('抓到了后端的摘要', backend.length >= 8);
+  const mockSource = readFileSync(join(ROOT, 'static/js/mock.js'), 'utf8');
+  const mocked = [...mockSource.matchAll(/summary: ['`]([^'`]+)['`]/g)].map((matched) => summaryShape(matched[1]));
+  same('两边的摘要集合相等', [...new Set(mocked)].sort(), backend);
+});
+
+//后端的摘要走的是 serverText 这一个出口，漏一条，英文界面的审计页就露一行中文
+test('审计摘要：后端每一条都翻得过去，英文态不留中文', () => {
+  setLang(LANG_EN);
+  try {
+    for (const shape of goSummaries()) {
+      //占位符填成真实取值的样子：币种是三位大写，其余按数字与文件名来
+      let index = 0;
+      const sample = shape.replace(/%v/g, () => (index++ === 0 && shape.startsWith('切换记账币种') ? 'USD' : '7'));
+      const translated = serverText(sample);
+      same(`摘要「${sample}」翻完不留中文，实得「${translated}」`, translated.match(/[一-鿿]+/g) || [], []);
+    }
+  } finally {
+    setLang(LANG_ZH);
   }
 });

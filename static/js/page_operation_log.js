@@ -1,9 +1,10 @@
 import * as api from './api.js';
-import { OPERATION_LOG_SORTS, OPERATION_RESULTS, OPERATION_TYPES } from './config.js';
+import { EXPENSE_FIELDS, OPERATION_LOG_SORTS, OPERATION_RESULTS, OPERATION_TYPES } from './config.js';
 import {
   checkGroup,
   dateInput,
   emptyRow,
+  fieldText,
   filterCard,
   filterItem,
   idText,
@@ -55,15 +56,42 @@ async function reload() {
   renderTable(false);
 }
 
-//变更内容是前后值快照，通常是一段 JSON，列表里只给入口，展开看全文
+//后端记的是前后两份整快照（model.ExpenseChanges），原样铺开就是两坨 21 字段的 JSON。
+//逐字段比对放在这一层做，mock 与真实两条链路看到的就是同一张表；认不出这个形态再回退到原文
+function changesTable(changes) {
+  if (!changes || typeof changes !== 'object') return null;
+  const { before, after } = changes;
+  if (!before || !after || typeof before !== 'object' || typeof after !== 'object') return null;
+  const body = el('tbody');
+  for (const field of EXPENSE_FIELDS) {
+    if (String(before[field.key] ?? '') === String(after[field.key] ?? '')) continue;
+    body.appendChild(el('tr', {}, [
+      el('td', { class: 'text-nowrap', text: t(field.name) }),
+      el('td', { class: 'text-secondary', text: fieldText(field, before) }),
+      el('td', { text: fieldText(field, after) }),
+    ]));
+  }
+  if (body.childNodes.length === 0) body.appendChild(emptyRow(3, t('前后值没有差异')));
+  return el('div', { class: 'table-responsive' }, [
+    el('table', { class: 'table table-sm align-middle mb-0' }, [
+      el('thead', {}, [el('tr', {}, ['字段', '前值', '后值'].map((name) => el('th', { class: 'text-nowrap', text: t(name) })))]),
+      body,
+    ]),
+  ]);
+}
+
+//变更内容是前后值快照，列表里只给入口，展开看全文
 function openChanges(row) {
+  let parsed = null;
   let text = row.changes || '';
   try {
-    text = JSON.stringify(JSON.parse(row.changes), null, 2);
+    parsed = JSON.parse(row.changes);
+    text = JSON.stringify(parsed, null, 2);
   } catch (err) {
     //不是 JSON 就原样展示
   }
-  confirmModal(t('审计 {id} 的变更内容', { id: row.id }), el('pre', { class: 'small bg-body-secondary p-2 rounded mb-0', text }));
+  const body = changesTable(parsed) || el('pre', { class: 'small bg-body-secondary p-2 rounded mb-0', text });
+  confirmModal(t('审计 {id} 的变更内容', { id: row.id }), body);
 }
 
 function buildFilter() {

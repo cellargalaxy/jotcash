@@ -11,6 +11,7 @@ import {
   lastBlobBytes,
   lastBlobText,
   location,
+  mockSession,
   renderPage,
   setValue,
   takeToast,
@@ -23,7 +24,7 @@ import * as mock from '../static/js/mock.js';
 import { render as renderExpense } from '../static/js/page_expense.js';
 import { formatDate, parseCsv } from '../static/js/util.js';
 
-api.seedMock();
+mockSession();
 
 const COLUMNS = CSV_FIELDS.map((field) => field.column);
 

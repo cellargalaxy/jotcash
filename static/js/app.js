@@ -1,6 +1,5 @@
 import * as api from './api.js';
 import { refreshChartTheme } from './chart.js';
-import { USE_MOCK } from './config.js';
 import { resetCandidate } from './expense_inquiry.js';
 import { LANGS, getLang, setLang, t } from './i18n.js';
 import { render as renderExpense } from './page_expense.js';
@@ -139,7 +138,8 @@ function renderRoute() {
 }
 
 function start() {
-  if (USE_MOCK) api.seedMock();
+  //刷新会把 mock 的内存库清空，而会话是活过刷新的：会话还说着 mock，就得把演示数据重新播一遍
+  api.seedMock();
   applyTheme();
   applyLang();
   watchSystemTheme(() => {

@@ -114,7 +114,7 @@ func create(ctx context.Context, dbPath, token string) error {
 		"dbPath":      dbPath,
 		"serverToken": config.GetConfig(ctx).ServerToken,
 		"clientToken": token,
-	}).Info("创建数据库，口令")
+	}).Warn("创建数据库，口令")
 	return nil
 }
 

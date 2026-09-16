@@ -1,4 +1,4 @@
-import { CURRENCY_DEFAULT, EXPENSE_COLUMN_DEFAULT } from './config.js';
+import { CURRENCY_DEFAULT, EXPENSE_COLUMN_DEFAULT, MODE_DEFAULT, MODE_MOCK } from './config.js';
 
 //口令只活在 sessionStorage 里，关标签页即失效，绝不进 localStorage、不进 URL
 const SESSION_KEY = 'jotcash.session';
@@ -23,8 +23,9 @@ function write(value) {
   else sessionStorage.removeItem(SESSION_KEY);
 }
 
-export function unlock(serverToken, clientToken, accountingCurrency) {
-  write({ serverToken, clientToken, accountingCurrency });
+//mode 不给默认值：没有数据来源的会话是坏会话，让它在调用处显形，好过在 api 那一层静默回落
+export function unlock(serverToken, clientToken, accountingCurrency, mode) {
+  write({ serverToken, clientToken, accountingCurrency, mode });
 }
 
 export function lock() {
@@ -43,6 +44,16 @@ export function getServerToken() {
 export function getClientToken() {
   const value = read();
   return value ? value.clientToken : '';
+}
+
+//数据来源与口令同生共死：锁定即清，关标签页即失效，刷新之后仍是同一门来源
+export function getMode() {
+  const value = read();
+  return value && value.mode ? value.mode : MODE_DEFAULT;
+}
+
+export function isMock() {
+  return getMode() === MODE_MOCK;
 }
 
 export function getAccountingCurrency() {

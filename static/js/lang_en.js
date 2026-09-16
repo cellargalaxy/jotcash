@@ -212,6 +212,10 @@ export const TEXT = {
   '本批明细': 'Records of this batch',
   '本批文件': 'Files of this batch',
   '审计 {id} 的变更内容': 'Changes of audit {id}',
+  '字段': 'Field',
+  '前值': 'Before',
+  '后值': 'After',
+  '前后值没有差异': 'No difference between the two snapshots',
   '审计只留痕、不承载业务：这里没有回滚、撤销与重放入口，「本批明细」只是一次按审计ID 的查询。':
     'The audit trail only records; it carries no business action. There is no rollback, undo or replay here — “Records of this batch” is just a query by audit ID.',
 
@@ -272,8 +276,7 @@ export const TEXT = {
   '正在读取全库记账币种…': 'Reading the accounting currencies in use…',
   '全库暂无明细': 'No records yet',
   '全库记账币种：{codes}': 'Accounting currencies in use: {codes}',
-  '记账币种集合接口尚未实现，联调后这里会显示全库有哪些记账币种':
-    'The accounting currency listing endpoint is not implemented yet; once wired up, the currencies in use will show here',
+  '全库记账币种读取失败：{reason}': 'Could not read the accounting currencies in use: {reason}',
   '本会话记账币种': 'Accounting currency for this session',
   '保存本会话口径': 'Save session basis',
   '本会话记账币种已改为 {currency}': 'Session accounting currency changed to {currency}',
@@ -337,7 +340,14 @@ export const TEXT = {
   '两个口令都要填': 'Both passphrases are required',
   '校验中': 'Checking',
   '个人记账 · 只记支出 · 整库加密 · 无登录态': 'Personal expense log · expenses only · fully encrypted · no login',
-  '当前是 mock 模式：数据全在浏览器内存里，不会发任何请求，刷新页面即复位。口令随便填即可进入。':
+  '解锁模式': 'Unlock mode',
+  '真实后端': 'Real backend',
+  '打后端的真实接口，读写已部署的加密数据库，两把口令都必须是真的':
+    'Calls the real backend endpoints against the deployed encrypted database; both passphrases must be the real ones',
+  'mock 试用': 'Mock trial',
+  '数据全在浏览器内存里，不发任何请求，刷新页面即复位，口令随便填':
+    'All data lives in browser memory, no request is ever sent, a refresh resets it, and any passphrase will do',
+  'mock 模式：数据全在浏览器内存里，不会发任何请求，刷新页面即复位。口令随便填即可进入。':
     'Mock mode: all data lives in browser memory, no request is ever sent, and a refresh resets it. Any passphrase gets you in.',
   '两把口令都只存在本标签页的 sessionStorage，关掉标签页即失效':
     'Both passphrases live only in this tab’s sessionStorage and die with the tab',
@@ -364,11 +374,11 @@ export const TEXT = {
   '当前环境不支持 Web Crypto，请改用 HTTPS 或 localhost 访问':
     'This environment has no Web Crypto; open the page over HTTPS or on localhost',
   '请求失败': 'Request failed',
-  '数据库导出，响应体异常': 'Database export: unexpected response body',
-  '{name}，后端接口尚未实现，当前只能在 mock 模式下体验':
-    '{name}: the backend endpoint is not implemented yet and only works in mock mode',
-  '候选取值查询': 'Suggestion lookup',
-  '文件下载': 'File download',
+  '下载失败，响应体异常': 'Download failed: unexpected response body',
+  '请求失败，HTTP {status}，响应不是 JSON。页面可能不是由后端托管的，可改用 mock 模式试用':
+    'Request failed with HTTP {status} and a non-JSON response. This page may not be served by the backend; try mock mode instead.',
+  '连不上后端接口 {path}，请确认服务在跑、地址没被反代改掉':
+    'Cannot reach the backend endpoint {path}; check that the service is running and that no proxy rewrote the address',
 
   // ===== mock 种子数据 =====
   //这些词是 mock 自己造的演示内容，不是用户录的。它们要跟着语言走，
@@ -446,7 +456,10 @@ export const TEXT = {
   '数据库导出，已开始写出，改不回错误响应':
     'Database export: the body is already being written, it can no longer be turned into an error response',
   '批量软删除明细': 'Bulk soft delete of records',
-  '系统初始化，建库并写入初始审计': 'System init: database created and the first audit entry written',
+  '系统初始化，创建加密数据库': 'System init: encrypted database created',
+  '导出加密数据库快照': 'Exported an encrypted database snapshot',
+  '导入加密数据库，整库覆盖': 'Imported an encrypted database, overwriting everything',
+  '数据库已用新口令重新加密': 'The database has been re-encrypted with the new passphrase',
 };
 
 //后端原文里带变量的那些：整句命中不了，就按模板匹配。
@@ -498,8 +511,6 @@ export const SERVER = [
   { pattern: /^连接数据库，异常: (.*)$/, text: 'Connect to database: $1' },
   //以下是审计摘要，不是报错；摘要与报错同走一张表，因为它们都是后端原文
   { pattern: /^入库 (\d+) 笔，来源 (.+)$/, text: 'Ingested $1 record(s) from $2' },
-  { pattern: /^批量软删除明细 (\d+) 笔$/, text: 'Bulk soft delete of $1 record(s)' },
   { pattern: /^编辑明细 (\d+)$/, text: 'Edited record $1' },
   { pattern: /^切换记账币种为 ([A-Z]{3})，成功 (\d+) 笔，失败 (\d+) 笔$/, text: 'Switched accounting currency to $1: $2 succeeded, $3 failed' },
-  { pattern: /^数据库导入，来源 (.+)$/, text: 'Database import from $1' },
 ];

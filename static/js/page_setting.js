@@ -1,8 +1,8 @@
 import * as api from './api.js';
-import { API_BASE, TOKEN_MIN_LEN, USE_MOCK } from './config.js';
+import { API_BASE, TOKEN_MIN_LEN } from './config.js';
 import { currencySelect, sectionCard } from './component.js';
-import { t } from './i18n.js';
-import { getAccountingCurrency, lock, setAccountingCurrency, setClientToken } from './store.js';
+import { serverText, t } from './i18n.js';
+import { getAccountingCurrency, isMock, lock, setAccountingCurrency, setClientToken } from './store.js';
 import { clear, confirmModal, download, el, toastErr, toastOk } from './util.js';
 
 //与后端 tool.CheckToken 同一套判据：长度、空格、不得纯数字或纯字母
@@ -30,8 +30,8 @@ function currencyCard(onDone) {
       const list = result.object || [];
       distribution.textContent = list.length === 0 ? t('全库暂无明细') : t('全库记账币种：{codes}', { codes: list.join(t('、')) });
     })
-    .catch(() => {
-      distribution.textContent = t('记账币种集合接口尚未实现，联调后这里会显示全库有哪些记账币种');
+    .catch((err) => {
+      distribution.textContent = t('全库记账币种读取失败：{reason}', { reason: serverText(err && err.message ? err.message : String(err)) });
     });
 
   return sectionCard(
@@ -213,7 +213,7 @@ function sessionCard() {
         //如果它不是你启动的那个服务，说明页面是被别的服务（比如 IDE 的内置预览）托管的
         el('dd', { class: 'col-8 col-md-9 font-monospace text-break', text: `${API_BASE} → ${new URL(API_BASE, location.href).href}` }),
         el('dt', { class: 'col-4 col-md-3 text-secondary', text: t('数据来源') }),
-        el('dd', { class: 'col-8 col-md-9', text: USE_MOCK ? t('mock（浏览器内存，不发请求）') : t('真实后端接口') }),
+        el('dd', { class: 'col-8 col-md-9', text: isMock() ? t('mock（浏览器内存，不发请求）') : t('真实后端接口') }),
         el('dt', { class: 'col-4 col-md-3 text-secondary', text: t('本会话记账币种') }),
         el('dd', { class: 'col-8 col-md-9', text: getAccountingCurrency() }),
       ]),
