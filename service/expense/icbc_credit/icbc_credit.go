@@ -19,19 +19,21 @@ import (
 )
 
 const (
-	bankName = "中国工商银行"
+	bankName = "工商银行"
 
-	title           = "中国工商银行信用卡历史明细（电子版）"
-	colDate         = "入账日期"
-	colCard         = "交易卡号"
-	colDirection    = "收支"
-	colTxCurrency   = "交易币种"
-	colTxAmount     = "交易金额"
-	colPostCurrency = "入账币种"
-	colPostAmount   = "入账金额"
-	colBalance      = "账户余额"
-	colSummary      = "摘要"
-	colPlace        = "交易场所"
+	title                  = "中国工商银行信用卡历史明细（电子版）"
+	colDate                = "入账日期"
+	colCard                = "交易卡号"
+	colDirection           = "收支"
+	colTxCurrency          = "交易币种"
+	colTxAmount            = "交易金额"
+	colPostCurrency        = "入账币种"
+	colPostAmount          = "入账金额"
+	colBalance             = "账户余额"
+	colCounterpartyName    = "对方户名"
+	colCounterpartyAccount = "对方账号"
+	colSummary             = "摘要"
+	colPlace               = "交易场所"
 
 	directionOut = "借"
 	directionIn  = "贷"
@@ -54,11 +56,33 @@ var (
 		colPlace,
 	}
 
+	columnsWithCounterparty = []string{
+		colDate,
+		colCard,
+		colDirection,
+		colTxCurrency,
+		colTxAmount,
+		colPostCurrency,
+		colPostAmount,
+		colBalance,
+		colCounterpartyName,
+		colCounterpartyAccount,
+		colSummary,
+		colPlace,
+	}
+
+	supportedColumns = [][]string{columns, columnsWithCounterparty}
+
 	//合计行一出现，本页明细就结束了
 	footers = []string{"本页支出算术合计", "本页收入算术合计", "本页交易笔数", "下单时间"}
 
 	//贷方里只有这几个摘要能确认是还款，其余贷方（退货、冲正、说不清的）一律留下来记成负数支出
 	repaymentSummaries = []string{"转帐", "转账", "还款"}
+
+	//部分导出模板中包含对方户名与对方账号，若未打印则单元格为空，纯文本中该两列缺失
+	knownSummaries = []string{
+		"消费", "退货", "转帐", "转账", "还款", "贷款利息", "结息", "利息", "年费", "冲正", "分期", "违约金", "手续费",
+	}
 
 	currencyCodes = map[string]string{
 		"人民币":   "CNY",
@@ -108,28 +132,37 @@ func (this *Parser) Support(ctx context.Context, data []byte) bool {
 
 // 同一家银行换张卡、导出时多勾一列，表格就换了个样子，认错比不认更糟，所以列名与列序差一点都不认
 func checkContract(text string) bool {
+	return matchColumns(text) != nil
+}
+
+func matchColumns(text string) []string {
 	if !strings.Contains(text, title) || !strings.Contains(text, "起止日期：") {
-		return false
+		return nil
 	}
 	if !strings.Contains(text, "卡号:") && !strings.Contains(text, "卡号：") {
-		return false
+		return nil
 	}
 	start := strings.Index(text, colDate)
 	if start < 0 {
-		return false
+		return nil
 	}
 	fields := strings.Fields(text[start:])
-	if len(fields) < len(columns) || !slices.Equal(fields[:len(columns)], columns) {
-		return false
+	for _, cols := range supportedColumns {
+		if len(fields) < len(cols) || !slices.Equal(fields[:len(cols)], cols) {
+			continue
+		}
+		if len(fields) == len(cols) {
+			return cols
+		}
+		//表头后面必须直接是明细行或页脚，中间多出来的都是没认领的列
+		next := fields[len(cols)]
+		if dateRegexp.MatchString(next) || slices.ContainsFunc(footers, func(footer string) bool {
+			return strings.HasPrefix(next, footer)
+		}) {
+			return cols
+		}
 	}
-	if len(fields) == len(columns) {
-		return true
-	}
-	//表头后面必须直接是明细行或页脚，中间多出来的都是没认领的列
-	next := fields[len(columns)]
-	return dateRegexp.MatchString(next) || slices.ContainsFunc(footers, func(footer string) bool {
-		return strings.HasPrefix(next, footer)
-	})
+	return nil
 }
 
 func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
@@ -155,13 +188,18 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "err": err}).Warn("解析工商银行信用卡明细，读取页面文本异常")
 			return nil, errors.Errorf("解析工商银行信用卡明细，第%d页读取页面文本异常: %+v", pageIndex, err)
 		}
+		cols := matchColumns(text)
+		if cols == nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex}).Warn("解析工商银行信用卡明细，页面没有明细表头")
+			return nil, errors.Errorf("解析工商银行信用卡明细，第%d页没有明细表头", pageIndex)
+		}
 		chunks, ok := splitChunks(text)
 		if !ok {
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex}).Warn("解析工商银行信用卡明细，页面没有明细表头")
 			return nil, errors.Errorf("解析工商银行信用卡明细，第%d页没有明细表头", pageIndex)
 		}
 		for i := range chunks {
-			object, err := parseChunk(ctx, pageIndex, i+1, chunks[i])
+			object, err := parseChunk(ctx, cols, pageIndex, i+1, chunks[i])
 			if err != nil {
 				return nil, err
 			}
@@ -212,33 +250,71 @@ func splitChunks(text string) ([][]string, bool) {
 	return chunks, true
 }
 
-func parseChunk(ctx context.Context, pageIndex, chunkIndex int, chunk []string) (*model.Expense, error) {
+func normalizeChunk(cols []string, chunk []string) ([]string, error) {
+	if len(cols) == len(columns) {
+		if len(chunk) < len(columns) {
+			return nil, errors.Errorf("明细列缺失")
+		}
+		//交易场所折行时多出来的行都是它的后半截
+		if len(chunk) > len(columns) {
+			chunk = append(chunk[:len(columns)-1:len(columns)-1], strings.Join(chunk[len(columns)-1:], ""))
+		}
+		return chunk, nil
+	}
+
+	// 12列表头：对方户名与对方账号未打印时单元格为空，纯文本中该两列缺失
 	if len(chunk) < len(columns) {
+		return nil, errors.Errorf("明细列缺失")
+	}
+	if len(chunk) == len(columns) {
+		return []string{
+			chunk[0], chunk[1], chunk[2], chunk[3], chunk[4],
+			chunk[5], chunk[6], chunk[7], "", "", chunk[8], chunk[9],
+		}, nil
+	}
+	if len(chunk) >= len(columnsWithCounterparty) {
+		if len(chunk) > len(columnsWithCounterparty) {
+			chunk = append(chunk[:len(columnsWithCounterparty)-1:len(columnsWithCounterparty)-1], strings.Join(chunk[len(columnsWithCounterparty)-1:], ""))
+		}
+		return chunk, nil
+	}
+	// 长度介于10与12之间（如11）：判断第9项是否为摘要
+	if slices.Contains(knownSummaries, chunk[8]) {
+		return []string{
+			chunk[0], chunk[1], chunk[2], chunk[3], chunk[4],
+			chunk[5], chunk[6], chunk[7], "", "", chunk[8], strings.Join(chunk[9:], ""),
+		}, nil
+	}
+	return []string{
+		chunk[0], chunk[1], chunk[2], chunk[3], chunk[4],
+		chunk[5], chunk[6], chunk[7], chunk[8], chunk[9], chunk[10], "",
+	}, nil
+}
+
+func parseChunk(ctx context.Context, cols []string, pageIndex, chunkIndex int, chunk []string) (*model.Expense, error) {
+	chunk, err := normalizeChunk(cols, chunk)
+	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": util.JsonStruct2Str(chunk)}).Warn("解析工商银行信用卡明细，明细列缺失")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，明细列缺失", pageIndex, chunkIndex)
 	}
-	//交易场所折行时多出来的行都是它的后半截
-	if len(chunk) > len(columns) {
-		chunk = append(chunk[:len(columns)-1:len(columns)-1], strings.Join(chunk[len(columns)-1:], ""))
-	}
 
-	direction := chunkValue(chunk, colDirection)
-	summary := chunkValue(chunk, colSummary)
+	direction := chunkValue(cols, chunk, colDirection)
+	summary := chunkValue(cols, chunk, colSummary)
 	if direction == directionIn && slices.Contains(repaymentSummaries, summary) {
 		return nil, nil
 	}
 
-	expenseDate, err := parseDate(ctx, chunkValue(chunk, colDate))
+	expenseDate, err := parseDate(ctx, chunkValue(cols, chunk, colDate))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": chunkIndex}).Warn("解析工商银行信用卡明细，支出日期非法")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，支出日期非法", pageIndex, chunkIndex)
 	}
-	expenseCurrency, err := parseCurrency(chunkValue(chunk, colTxCurrency))
+	expenseCurrency, err := parseCurrency(chunkValue(cols, chunk, colTxCurrency))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": chunkIndex}).Warn("解析工商银行信用卡明细，支出币种非法")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，%s", pageIndex, chunkIndex, err)
 	}
-	expenseAmount, err := decimal.NewFromString(strings.ReplaceAll(chunkValue(chunk, colTxAmount), ",", ""))
+	expenseAmount, err := decimal.NewFromString(strings.ReplaceAll(chunkValue(cols, chunk, colTxAmount), ",", ""))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": chunkIndex, "err": err}).Warn("解析工商银行信用卡明细，支出金额非法")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，支出金额非法", pageIndex, chunkIndex)
@@ -252,7 +328,7 @@ func parseChunk(ctx context.Context, pageIndex, chunkIndex int, chunk []string) 
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": chunkIndex, "direction": direction}).Warn("解析工商银行信用卡明细，收支方向非法")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，收支方向非法: %s", pageIndex, chunkIndex, direction)
 	}
-	cardLast4 := parseCardLast4(chunkValue(chunk, colCard))
+	cardLast4 := parseCardLast4(chunkValue(cols, chunk, colCard))
 	if cardLast4 == "" {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": chunkIndex}).Warn("解析工商银行信用卡明细，交易卡号非法")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，交易卡号非法", pageIndex, chunkIndex)
@@ -264,15 +340,15 @@ func parseChunk(ctx context.Context, pageIndex, chunkIndex int, chunk []string) 
 		ExpenseDate:     expenseDate,
 		ExpenseCurrency: expenseCurrency,
 		ExpenseAmount:   expenseAmount,
-		Counterparty:    chunkValue(chunk, colPlace),
+		Counterparty:    chunkValue(cols, chunk, colPlace),
 		Remark:          summary,
 	}
 	return &object, nil
 }
 
 // 表头已经与契约对齐，列名在契约里的下标就是这一笔的下标
-func chunkValue(chunk []string, name string) string {
-	i := slices.Index(columns, name)
+func chunkValue(cols []string, chunk []string, name string) string {
+	i := slices.Index(cols, name)
 	if i < 0 || i >= len(chunk) {
 		return ""
 	}

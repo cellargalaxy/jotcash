@@ -35,8 +35,13 @@ func rangeSamplePdf(t *testing.T, handle func(index int, data []byte)) {
 	}
 }
 
-const testHeader = "中国工商银行\n中国工商银行信用卡历史明细（电子版）\n卡号: 9999999999999999\n户名：某某某\n起止日期：2099-01-01 — 2099-03-31\n" +
-	"入账日期\n交易卡号\n收支\n交易币种\n交易金额\n入账币种\n入账金额\n账户余额\n摘要\n交易场所\n"
+const (
+	testHeader = "中国工商银行\n中国工商银行信用卡历史明细（电子版）\n卡号: 9999999999999999\n户名：某某某\n起止日期：2099-01-01 — 2099-03-31\n" +
+		"入账日期\n交易卡号\n收支\n交易币种\n交易金额\n入账币种\n入账金额\n账户余额\n摘要\n交易场所\n"
+
+	testHeaderWithCounterparty = "中国工商银行\n中国工商银行信用卡历史明细（电子版）\n卡号: 9999999999999999\n户名：某某某\n起止日期：2099-01-01 — 2099-03-31\n" +
+		"入账日期\n交易卡号\n收支\n交易币种\n交易金额\n入账币种\n入账金额\n账户余额\n对方户名\n对方账号\n摘要\n交易场所\n"
+)
 
 func TestSupport(t *testing.T) {
 	ctx := util.GenCtx()
@@ -59,9 +64,12 @@ func TestSupport(t *testing.T) {
 // Support把PDF读成文本之后就交给它，列名与列序的判据都在这里
 func TestCheckContract(t *testing.T) {
 	accepts := map[string]string{
-		"表头后面跟明细行": testHeader + "2099-01-0112:30:00\n9999999999999999\n借\n人民币\n1.00\n人民币\n1.00\n-1.00\n消费\n某商户\n",
-		"表头后面跟页脚":  testHeader + "本页支出算术合计：1.00本页交易笔数：1\n",
-		"只有表头":     testHeader,
+		"表头后面跟明细行":    testHeader + "2099-01-0112:30:00\n9999999999999999\n借\n人民币\n1.00\n人民币\n1.00\n-1.00\n消费\n某商户\n",
+		"表头后面跟页脚":     testHeader + "本页支出算术合计：1.00本页交易笔数：1\n",
+		"只有表头":        testHeader,
+		"12列表头后面跟明细行": testHeaderWithCounterparty + "2099-01-0112:30:00\n9999999999999999\n借\n人民币\n1.00\n人民币\n1.00\n-1.00\n消费\n某商户\n",
+		"12列表头后面跟页脚":  testHeaderWithCounterparty + "本页支出算术合计：1.00本页交易笔数：1\n",
+		"12列表头只有表头":   testHeaderWithCounterparty,
 	}
 	for name, text := range accepts {
 		if !checkContract(text) {
@@ -70,13 +78,15 @@ func TestCheckContract(t *testing.T) {
 	}
 
 	rejects := map[string]string{
-		"没有标题":   strings.Replace(testHeader, title, "某某银行信用卡明细", 1),
-		"没有起止日期": strings.Replace(testHeader, "起止日期：", "账单周期：", 1),
-		"没有卡号":   strings.Replace(testHeader, "卡号: ", "账号 ", 1),
-		"少一列":    strings.Replace(testHeader, colBalance+"\n", "", 1),
-		"多一列":    testHeader + "授权号\n2099-01-0112:30:00\n",
-		"换顺序":    strings.Replace(testHeader, colDirection+"\n"+colTxCurrency, colTxCurrency+"\n"+colDirection, 1),
-		"列名不一样":  strings.Replace(testHeader, colPlace, "交易地点", 1),
+		"没有标题":     strings.Replace(testHeader, title, "某某银行信用卡明细", 1),
+		"没有起止日期":   strings.Replace(testHeader, "起止日期：", "账单周期：", 1),
+		"没有卡号":     strings.Replace(testHeader, "卡号: ", "账号 ", 1),
+		"少一列":      strings.Replace(testHeader, colBalance+"\n", "", 1),
+		"多一列":      testHeader + "授权号\n2099-01-0112:30:00\n",
+		"换顺序":      strings.Replace(testHeader, colDirection+"\n"+colTxCurrency, colTxCurrency+"\n"+colDirection, 1),
+		"列名不一样":    strings.Replace(testHeader, colPlace, "交易地点", 1),
+		"12列表头少一列": strings.Replace(testHeaderWithCounterparty, colCounterpartyAccount+"\n", "", 1),
+		"12列表头换顺序": strings.Replace(testHeaderWithCounterparty, colCounterpartyName+"\n"+colCounterpartyAccount, colCounterpartyAccount+"\n"+colCounterpartyName, 1),
 	}
 	for name, text := range rejects {
 		if checkContract(text) {
@@ -155,7 +165,7 @@ func TestParseInvalid(t *testing.T) {
 func TestParseChunk(t *testing.T) {
 	ctx := util.GenCtx()
 
-	object, err := parseChunk(ctx, 1, 1, []string{"2099-01-0112:30:00", "9999888877771234", "借", "人民币", "100.50", "人民币", "100.50", "-100.50", "消费", "虚拟商户"})
+	object, err := parseChunk(ctx, columns, 1, 1, []string{"2099-01-0112:30:00", "9999888877771234", "借", "人民币", "100.50", "人民币", "100.50", "-100.50", "消费", "虚拟商户"})
 	if err != nil || object == nil {
 		t.Fatalf("正常消费应解析出来: %+v", err)
 	}
@@ -168,7 +178,7 @@ func TestParseChunk(t *testing.T) {
 	}
 
 	//贷方的退货、冲正是支出抵扣，记成负数支出
-	object, err = parseChunk(ctx, 1, 2, []string{"2099-01-02", "9999888877775678", "贷", "美元", "20.00", "美元", "20.00", "-20.00", "退货", "虚拟商户"})
+	object, err = parseChunk(ctx, columns, 1, 2, []string{"2099-01-02", "9999888877775678", "贷", "美元", "20.00", "美元", "20.00", "-20.00", "退货", "虚拟商户"})
 	if err != nil || object == nil {
 		t.Fatalf("退货应解析出来: %+v", err)
 	}
@@ -177,12 +187,30 @@ func TestParseChunk(t *testing.T) {
 	}
 
 	//交易场所折行
-	object, err = parseChunk(ctx, 1, 3, []string{"2099-01-0318:00:00", "9999888877771234", "借", "人民币", "12,345.67", "人民币", "12,345.67", "-1.00", "消费", "虚拟商户", "（分店）"})
+	object, err = parseChunk(ctx, columns, 1, 3, []string{"2099-01-0318:00:00", "9999888877771234", "借", "人民币", "12,345.67", "人民币", "12,345.67", "-1.00", "消费", "虚拟商户", "（分店）"})
 	if err != nil || object == nil {
 		t.Fatalf("折行的交易场所应解析出来: %+v", err)
 	}
 	if object.Counterparty != "虚拟商户（分店）" || object.ExpenseAmount.String() != "12345.67" {
 		t.Errorf("折行拼接或千分位金额不符: %+v", object)
+	}
+
+	//12列表头：对方户名与对方账号未打印时，明细行为10项
+	object, err = parseChunk(ctx, columnsWithCounterparty, 1, 4, []string{"2099-01-0410:00:00", "9999888877771234", "借", "人民币", "50.00", "人民币", "50.00", "-50.00", "消费", "虚拟商户"})
+	if err != nil || object == nil {
+		t.Fatalf("12列表头未打印对方信息应解析出来: %+v", err)
+	}
+	if object.Counterparty != "虚拟商户" || object.Remark != "消费" || object.ExpenseAmount.String() != "50" {
+		t.Errorf("12列表头未打印对方信息字段不符: %+v", object)
+	}
+
+	//12列表头：对方户名与对方账号打印时，明细行为12项
+	object, err = parseChunk(ctx, columnsWithCounterparty, 1, 5, []string{"2099-01-0511:00:00", "9999888877771234", "借", "人民币", "60.00", "人民币", "60.00", "-60.00", "某某某", "9999****1234", "消费", "虚拟商户"})
+	if err != nil || object == nil {
+		t.Fatalf("12列表头打印对方信息应解析出来: %+v", err)
+	}
+	if object.Counterparty != "虚拟商户" || object.Remark != "消费" || object.ExpenseAmount.String() != "60" {
+		t.Errorf("12列表头打印对方信息字段不符: %+v", object)
 	}
 }
 
@@ -190,13 +218,18 @@ func TestParseChunk(t *testing.T) {
 func TestParseChunkDiscard(t *testing.T) {
 	ctx := util.GenCtx()
 
-	discards := map[string][]string{
-		"贷方转帐": {"2099-01-15", "9999888877771234", "贷", "人民币", "1,000.00", "人民币", "1,000.00", "0.00", "转帐", "网点营业室"},
-		"贷方转账": {"2099-01-15", "9999888877771234", "贷", "人民币", "1,000.00", "人民币", "1,000.00", "0.00", "转账", "网点营业室"},
-		"贷方还款": {"2099-01-15", "9999888877771234", "贷", "人民币", "500.00", "人民币", "500.00", "0.00", "还款", "网点营业室"},
+	discards := map[string]struct {
+		cols  []string
+		chunk []string
+	}{
+		"贷方转帐":    {columns, []string{"2099-01-15", "9999888877771234", "贷", "人民币", "1,000.00", "人民币", "1,000.00", "0.00", "转帐", "网点营业室"}},
+		"贷方转账":    {columns, []string{"2099-01-15", "9999888877771234", "贷", "人民币", "1,000.00", "人民币", "1,000.00", "0.00", "转账", "网点营业室"}},
+		"贷方还款":    {columns, []string{"2099-01-15", "9999888877771234", "贷", "人民币", "500.00", "人民币", "500.00", "0.00", "还款", "网点营业室"}},
+		"12列贷方转帐": {columnsWithCounterparty, []string{"2099-01-15", "9999888877771234", "贷", "人民币", "1,000.00", "人民币", "1,000.00", "0.00", "某某某", "9999****1234", "转帐", "手机银行"}},
+		"12列贷方还款": {columnsWithCounterparty, []string{"2099-01-15", "9999888877771234", "贷", "人民币", "500.00", "人民币", "500.00", "0.00", "还款", "手机银行"}},
 	}
-	for name, chunk := range discards {
-		object, err := parseChunk(ctx, 1, 1, chunk)
+	for name, item := range discards {
+		object, err := parseChunk(ctx, item.cols, 1, 1, item.chunk)
 		if err != nil {
 			t.Fatalf("%s解析异常: %+v", name, err)
 		}
@@ -205,15 +238,19 @@ func TestParseChunkDiscard(t *testing.T) {
 		}
 	}
 
-	keeps := map[string][]string{
-		"借方还款手续费":  {"2099-01-15", "9999888877771234", "借", "人民币", "10.00", "人民币", "10.00", "0.00", "还款", "网点营业室"},
-		"商户名带还款字样": {"2099-01-16", "9999888877771234", "贷", "人民币", "88.00", "人民币", "88.00", "0.00", "退货", "虚拟还款惠生活商户"},
-		"摘要带还款字样":  {"2099-01-17", "9999888877771234", "贷", "人民币", "88.00", "人民币", "88.00", "0.00", "还款冲正", "虚拟商户"},
-		"说不清的贷方":   {"2099-01-18", "9999888877771234", "贷", "人民币", "9.90", "人民币", "9.90", "0.00", "年费返还", "虚拟商户"},
-		"贷方结息":     {"2099-01-19", "9999888877771234", "贷", "人民币", "1.23", "人民币", "1.23", "0.00", "结息", "网点营业室"},
+	keeps := map[string]struct {
+		cols  []string
+		chunk []string
+	}{
+		"借方还款手续费":  {columns, []string{"2099-01-15", "9999888877771234", "借", "人民币", "10.00", "人民币", "10.00", "0.00", "还款", "网点营业室"}},
+		"商户名带还款字样": {columns, []string{"2099-01-16", "9999888877771234", "贷", "人民币", "88.00", "人民币", "88.00", "0.00", "退货", "虚拟还款惠生活商户"}},
+		"摘要带还款字样":  {columns, []string{"2099-01-17", "9999888877771234", "贷", "人民币", "88.00", "人民币", "88.00", "0.00", "还款冲正", "虚拟商户"}},
+		"说不清的贷方":   {columns, []string{"2099-01-18", "9999888877771234", "贷", "人民币", "9.90", "人民币", "9.90", "0.00", "年费返还", "虚拟商户"}},
+		"贷方结息":     {columns, []string{"2099-01-19", "9999888877771234", "贷", "人民币", "1.23", "人民币", "1.23", "0.00", "结息", "网点营业室"}},
+		"12列贷款利息":  {columnsWithCounterparty, []string{"2099-01-20", "9999888877771234", "借", "人民币", "114.52", "人民币", "114.52", "-114.52", "贷款利息", "卡清算中心"}},
 	}
-	for name, chunk := range keeps {
-		object, err := parseChunk(ctx, 1, 1, chunk)
+	for name, item := range keeps {
+		object, err := parseChunk(ctx, item.cols, 1, 1, item.chunk)
 		if err != nil {
 			t.Fatalf("%s解析异常: %+v", name, err)
 		}
@@ -235,7 +272,7 @@ func TestParseChunkInvalid(t *testing.T) {
 		"卡号非法":   {"2099-01-01", "****", "借", "人民币", "1.00", "人民币", "1.00", "0.00", "消费", "虚拟商户"},
 	}
 	for name, chunk := range rejects {
-		if _, err := parseChunk(ctx, 1, 1, chunk); err == nil {
+		if _, err := parseChunk(ctx, columns, 1, 1, chunk); err == nil {
 			t.Errorf("%s应报错", name)
 		}
 	}
