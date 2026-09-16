@@ -158,3 +158,6 @@ export const CURRENCIES = [
 ];
 
 export const CURRENCY_DEFAULT = 'CNY';
+
+//记账币种没设过时的初值跟着界面语言走：中文界面的人多半记人民币，其余语言默认美元
+export const CURRENCY_DEFAULT_OTHER = 'USD';

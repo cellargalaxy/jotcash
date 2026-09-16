@@ -2,11 +2,14 @@ import test from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import './helper/browser.js';
 import { setNavigatorLanguage } from './helper/browser.js';
-import { renderPage } from './helper/fixture.js';
+import { find, renderPage } from './helper/fixture.js';
 import { equal, excludes, includes, ok, same } from './helper/check.js';
 import { STATIC_DIR, staticPath } from './helper/lib.js';
 import {
   CURRENCIES,
+  CURRENCY_DEFAULT,
+  CURRENCY_DEFAULT_OTHER,
+  DELETED_ALL,
   EXPENSE_FIELDS,
   EXPENSE_SORTS,
   FILE_META_SORTS,
@@ -233,8 +236,9 @@ test('英文态：明细页与统计页整屏没有残留的中文文案', async
   includes('分页条是英文', expense.textContent, 'total · page');
   excludes('不再出现中文标题', expense.textContent, '支出明细');
   excludes('不再出现中文按钮', expense.textContent, '上传账单文件');
-  //种子里的对手方与支出类型是用户数据不是文案，翻译它才是错的
-  includes('用户数据原样留着', expense.textContent, '盒马鲜生');
+  //种子是 mock 自己造的演示内容，跟着语言走
+  includes('种子里的对手方也换了', expense.textContent, 'Starbucks');
+  excludes('不再有中文的种子对手方', expense.textContent, '星巴克');
 
   const statistic = await renderPage((await import('../static/js/page_statistic.js')).render, {});
   includes('统计页标题', statistic.textContent, 'Amount statistics');
@@ -267,7 +271,9 @@ test('英文态：审计页把后端给的操作类型、结果与摘要一并�
   includes('操作结果', log.textContent, 'Success');
   includes('摘要模板', log.textContent, 'record(s) from');
   excludes('不再出现中文操作类型', log.textContent, '数据入库');
-  includes('摘要里的文件名没被动过', log.textContent, 'Ingested 22 record(s) from 2609-招商.csv');
+  //文件名里嵌着批次名，它也是种子数据，跟着一起换
+  includes('摘要里的文件名跟着换', log.textContent, '2609-CMB.csv');
+  excludes('不再出现中文批次名', log.textContent, '2609-招商.csv');
   setLang(LANG_ZH);
 });
 
@@ -280,6 +286,53 @@ test('英文态：前端自己产生的校验失败也走词表', async () => {
   //后端原文进的也是同一个出口
   toastErr(new Error('明细编辑，已删除明细不可编辑'));
   equal('后端报错', takeToast(), 'Record edit: a deleted record cannot be edited');
+  setLang(LANG_ZH);
+});
+
+//mock 是后端在前端这一侧的替身，它的种子是我们自己造的演示内容，所以跟着界面语言走；
+//而用户自己录进去的值不在种子词表里，一个字都不该被改
+test('mock 数据：种子跟着语言走，用户自己录的原样不动', async () => {
+  const api = await import('../static/js/api.js');
+  api.seedMock();
+  await api.insertExpense('我自己的账单.csv', [
+    '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
+    ',,2026-09-15,CNY,1,我录的对手方,我录的备注,,,我录的类型,',
+  ].join('\r\n'));
+
+  setLang(LANG_EN);
+  api.relocalizeMock();
+  const rows = (await api.selectExpense({ deleted: DELETED_ALL, sort: 'id desc' })).object;
+  const mine = rows.find((row) => row.counterparty === '我录的对手方');
+  ok('用户录的那一笔还在', mine);
+  same('用户录的三个字段一个字没改', [mine.remark, mine.expense_type], ['我录的备注', '我录的类型']);
+  ok('种子里的对手方换成了英文', rows.some((row) => row.counterparty === 'Starbucks'));
+  ok('种子里的支出类型换成了英文', rows.some((row) => row.expense_type === 'Dining'));
+
+  const files = (await api.selectFileMeta({ sort: 'created_at desc' })).object;
+  ok('种子文件名跟着换', files.some((file) => file.file_name.includes('CMB')));
+  ok('用户上传的文件名没被动过', files.some((file) => file.file_name === '我自己的账单.csv'));
+
+  //库里存的就是展示值，所以英文态下按英文筛选必须能筛出来；只在展示时翻译就会一条都筛不到
+  const filtered = await api.selectExpense({ deleted: DELETED_ALL, sort: 'id desc', expense_type_like: 'Dining' });
+  ok('按英文支出类型筛得到', filtered.count > 0);
+
+  setLang(LANG_ZH);
+  api.relocalizeMock();
+  const back = (await api.selectExpense({ deleted: DELETED_ALL, sort: 'id desc' })).object;
+  ok('切回中文，种子也跟着回来', back.some((row) => row.counterparty === '星巴克'));
+  ok('用户录的仍然没被动过', back.some((row) => row.counterparty === '我录的对手方'));
+});
+
+//解锁页按定义就是没有会话的状态，记账币种一定没设过，初值只能由语言来定
+test('解锁页：记账币种初值跟着语言走', async () => {
+  const { renderUnlock } = await import('../static/js/page_unlock.js');
+  setLang(LANG_ZH);
+  const zhHost = await renderPage(renderUnlock, {});
+  equal('中文默认人民币', find(zhHost, 'select').value, CURRENCY_DEFAULT);
+
+  setLang(LANG_EN);
+  const enHost = await renderPage(renderUnlock, {});
+  equal('英文默认美元', find(enHost, 'select').value, CURRENCY_DEFAULT_OTHER);
   setLang(LANG_ZH);
 });
 

@@ -1,6 +1,7 @@
 import * as api from './api.js';
 import { refreshChartTheme } from './chart.js';
 import { USE_MOCK } from './config.js';
+import { resetCandidate } from './expense_inquiry.js';
 import { LANGS, getLang, setLang, t } from './i18n.js';
 import { render as renderExpense } from './page_expense.js';
 import { render as renderFileMeta } from './page_file_meta.js';
@@ -98,6 +99,10 @@ function renderPreference() {
     (value) => {
       setLang(value);
       applyLang();
+      //mock 的种子数据是演示内容，跟着界面语言走；筛选按库里存的值匹配，所以得先重写再重绘。
+      //候选是累积的，一并清掉，免得下拉里中英文各挂一份
+      api.relocalizeMock();
+      resetCandidate();
       renderRoute();
     },
   ));

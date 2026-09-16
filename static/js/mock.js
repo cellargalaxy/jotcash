@@ -1,5 +1,6 @@
 import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS } from './config.js';
-import { addMonth, dateToRfc3339, monthOf, parseCsv } from './util.js';
+import { LANGS, t, textOf } from './i18n.js';
+import { addMonth, dateToRfc3339, formatDate, monthOf, parseCsv, toCsv } from './util.js';
 
 //内存库：与后端三张表同名同字段，筛选、排序、分页、乐观锁都按后端语义复刻，
 //切到真实接口时 api.js 不必改调用方一行
@@ -11,14 +12,20 @@ const db = {
   clientToken: '',
 };
 
+//种子数据是我们自己造的演示内容，它跟着界面语言走，所以要记住哪些文件是种子文件
+const seedFileIds = new Set();
+
 // ===== ID 与时间 =====
 
 let idSeq = 0;
 
+function pad(value, len) {
+  return String(value).padStart(len, '0');
+}
+
 //与后端 util.GenIdByTime 同形：yyMMddHHmmss + 4 位序号，16 位十进制，仍在 JS 安全整数内
 function genId() {
   const now = new Date();
-  const pad = (value, len) => String(value).padStart(len, '0');
   idSeq = (idSeq + 1) % 10000;
   const text =
     pad(now.getFullYear() % 100, 2) +
@@ -565,17 +572,18 @@ const BANKS = [
   { bank_name: '', card_last_4: '' },
 ];
 
+//备注写成一个独立的词而不是「对手方+消费」拼出来的句子：拼出来的句子换语言时没法整值认回来
 const SHOPS = [
-  { counterparty: '盒马鲜生', expense_type: '餐饮' },
-  { counterparty: '滴滴出行', expense_type: '交通' },
-  { counterparty: '国家电网', expense_type: '居住' },
-  { counterparty: '京东商城', expense_type: '日用' },
-  { counterparty: 'Apple Store', expense_type: '数码' },
-  { counterparty: '链家物业', expense_type: '居住' },
-  { counterparty: '星巴克', expense_type: '餐饮' },
-  { counterparty: 'Steam', expense_type: '娱乐' },
-  { counterparty: '中国移动', expense_type: '通讯' },
-  { counterparty: '同仁堂药房', expense_type: '医疗' },
+  { counterparty: '盒马鲜生', expense_type: '餐饮', remark: '买菜' },
+  { counterparty: '滴滴出行', expense_type: '交通', remark: '打车' },
+  { counterparty: '国家电网', expense_type: '居住', remark: '电费' },
+  { counterparty: '京东商城', expense_type: '日用', remark: '日用补货' },
+  { counterparty: 'Apple Store', expense_type: '数码', remark: '配件' },
+  { counterparty: '链家物业', expense_type: '居住', remark: '物业费' },
+  { counterparty: '星巴克', expense_type: '餐饮', remark: '咖啡' },
+  { counterparty: 'Steam', expense_type: '娱乐', remark: '游戏' },
+  { counterparty: '中国移动', expense_type: '通讯', remark: '话费' },
+  { counterparty: '同仁堂药房', expense_type: '医疗', remark: '买药' },
 ];
 
 //固定序列而不是 Math.random：每次刷新看到同一批数据，验收时才对得上前后两次的差异
@@ -583,85 +591,181 @@ function pseudo(index, mod) {
   return (index * 7919 + 104729) % mod;
 }
 
+//种子日期一律相对今天算。写死年月的话，默认的「最近一年」窗口过一年就会把整批数据全筛掉；
+//当月还得停在今天：未来日期的支出既不真实，也正好落在那个窗口之外
+function seedMonth(monthsAgo) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+  return {
+    tag: `${pad(start.getFullYear() % 100, 2)}${pad(start.getMonth() + 1, 2)}`,
+    //往月统一封到 28，免得碰上 2 月越界；当月只取到今天
+    dayLimit: monthsAgo === 0 ? now.getDate() : 28,
+    dateOf: (day) => `${start.getFullYear()}-${pad(start.getMonth() + 1, 2)}-${pad(Math.min(day, monthsAgo === 0 ? now.getDate() : 28), 2)}`,
+  };
+}
+
+function daysAgo(count) {
+  const date = new Date();
+  date.setDate(date.getDate() - count);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)}`;
+}
+
+// ===== 种子数据的语言 =====
+
+//种子里这些词是我们自己造的演示内容，不是用户录进来的，所以只有它们跟着界面语言走。
+//用户在页面上录入或上传的值不在这两张表里，一个字都不会被改
+const SEED_WORDS = [
+  ...BANKS.map((bank) => bank.bank_name).filter(Boolean),
+  ...SHOPS.map((shop) => shop.counterparty),
+  ...SHOPS.map((shop) => shop.expense_type),
+  ...SHOPS.map((shop) => shop.remark),
+  '星巴克（重复导入）', '盒马鲜生（重复导入）', 'Apple Store 退款冲正', '退款', '退款重复',
+];
+
+//批次名嵌在文件名里、文件名又嵌在入库摘要里，整值认不出来，只能按子串换
+const SEED_FILE_WORDS = ['招商', '中行', '手工补录'];
+
+//一个种子词在各语言下的全部写法。换语言时库里存着的是上一门语言的写法，得先认回来
+function renderingsOf(word) {
+  return LANGS.map((lang) => textOf(lang.value, word));
+}
+
+function localizeWord(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (!text) return text;
+  const word = SEED_WORDS.find((item) => renderingsOf(item).includes(text));
+  return word ? t(word) : text;
+}
+
+function localizeInside(value) {
+  let text = value === null || value === undefined ? '' : String(value);
+  for (const word of SEED_FILE_WORDS) {
+    const target = t(word);
+    for (const rendering of renderingsOf(word)) {
+      if (rendering !== target && text.includes(rendering)) text = text.replace(rendering, target);
+    }
+  }
+  return text;
+}
+
+//种子文件的内容就是它那一批明细导出的 CSV。列名是落库契约，任何语言下都不翻；
+//但字段值跟着明细走，所以换语言之后这份内容要重新生成，不然下载与预览出来的还是上一门语言
+function fillSeedFile(fileId) {
+  const rows = db.expense.filter((row) => row.file_id === fileId);
+  const lines = rows.map((row) => CSV_FIELDS.map(({ key }) => {
+    if (key === 'expense_date') return formatDate(row[key]);
+    const value = row[key];
+    return value === null || value === undefined ? '' : String(value);
+  }));
+  const csv = `\ufeff${toCsv(CSV_FIELDS.map((field) => field.column), lines)}`;
+  db.fileBlob[fileId] = csv;
+  const meta = db.fileMeta.find((row) => row.id === fileId);
+  if (meta) meta.file_size = new Blob([csv]).size;
+}
+
+//内存库里存的就是展示值，筛选也是按存的值匹配的，所以换语言必须把库里重写一遍——
+//只在展示时翻译的话，按「餐饮」筛选会在英文界面下一条都筛不出来
+export function relocalize() {
+  for (const row of db.expense) {
+    row.bank_name = localizeWord(row.bank_name);
+    row.counterparty = localizeWord(row.counterparty);
+    row.remark = localizeWord(row.remark);
+    row.expense_type = localizeWord(row.expense_type);
+  }
+  for (const row of db.fileMeta) row.file_name = localizeInside(row.file_name);
+  for (const row of db.operationLog) row.summary = localizeInside(row.summary);
+  for (const fileId of seedFileIds) fillSeedFile(fileId);
+}
+
 export function seed() {
   if (db.expense.length > 0) return;
   const batches = [
-    { name: '2609-招商.csv', operation_id: genId(), file_id: genId(), created_at: '2026-09-02T10:12:33+08:00', count: 22 },
-    { name: '2608-中行.csv', operation_id: genId(), file_id: genId(), created_at: '2026-08-05T21:41:07+08:00', count: 18 },
-    { name: '2607-手工补录.csv', operation_id: genId(), file_id: genId(), created_at: '2026-07-11T09:03:52+08:00', count: 12 },
+    { monthsAgo: 0, word: '招商', count: 22, time: '10:12:33' },
+    { monthsAgo: 1, word: '中行', count: 18, time: '21:41:07' },
+    { monthsAgo: 2, word: '手工补录', count: 12, time: '09:03:52' },
   ];
 
   let index = 0;
   for (const batch of batches) {
+    const month = seedMonth(batch.monthsAgo);
+    batch.operation_id = genId();
+    batch.file_id = genId();
+    batch.name = `${month.tag}-${batch.word}.csv`;
+    batch.created_at = `${month.dateOf(2)}T${batch.time}+08:00`;
+    seedFileIds.add(batch.file_id);
     for (let line = 0; line < batch.count; line += 1) {
       const bank = BANKS[pseudo(index, BANKS.length)];
       const shop = SHOPS[pseudo(index + 3, SHOPS.length)];
-      const day = 1 + pseudo(index, 27);
-      const month = batch.name.slice(2, 4);
       //绝大多数是人民币记账，留两笔美元记账把 F-5 的「多种记账币种」提示撑出来
       const accountingCurrency = index % 19 === 5 ? 'USD' : 'CNY';
       const expenseCurrency = index % 11 === 3 ? 'USD' : index % 13 === 7 ? 'JPY' : 'CNY';
       seedExpense({
         ...bank,
         ...shop,
-        expense_date: `2026-${month}-${String(day).padStart(2, '0')}`,
+        expense_date: month.dateOf(1 + pseudo(index, month.dayLimit)),
         expense_currency: expenseCurrency,
         expense_amount: new Decimal(pseudo(index + 11, 90000) + 137).div(100).toDecimalPlaces(2).toString(),
         accounting_currency: accountingCurrency,
         amortization_months: index % 17 === 4 ? 12 : index % 23 === 9 ? 6 : 1,
-        remark: index % 5 === 0 ? `${shop.counterparty}消费` : '',
+        remark: index % 5 === 0 ? shop.remark : '',
         operation_id: batch.operation_id,
         file_id: batch.file_id,
         created_at: batch.created_at,
         //留几笔已删除的行，验收软删除终态与「复制新增」这条找回路径
-        deleted_at: index % 29 === 13 ? '2026-09-07T15:20:00+08:00' : null,
+        deleted_at: index % 29 === 13 ? `${daysAgo(9)}T15:20:00+08:00` : null,
       });
       index += 1;
     }
-    db.fileMeta.push({
-      id: batch.file_id,
-      file_hash: `mock${String(batch.file_id).slice(-12)}`,
-      file_name: batch.name,
-      file_size: batch.count * 96,
-      operation_id: batch.operation_id,
-      created_at: batch.created_at,
-    });
-    db.fileBlob[batch.file_id] = '';
-    db.operationLog.push({
-      id: batch.operation_id,
-      operation_type: '数据入库',
-      object_type: '',
-      object_id: 0,
-      summary: `入库 ${batch.count} 笔，来源 ${batch.name}`,
-      changes: '',
-      result: '成功',
-      created_at: batch.created_at,
-    });
   }
 
   //手工造几组疑似重复：三要素相同，既有同批次的也有跨批次的，
-  //其中一组落在最新的日期上，默认按支出日期倒序时第一页就能看见高亮
+  //其中一组就落在今天，默认按支出日期倒序时第一页就能看见高亮
   const duplicates = [
-    { expense_date: '2026-09-28', expense_amount: '68.00', expense_currency: 'CNY', counterparty: '星巴克', expense_type: '餐饮' },
-    { expense_date: '2026-09-28', expense_amount: '68.00', expense_currency: 'CNY', counterparty: '星巴克（重复导入）', expense_type: '餐饮' },
-    { expense_date: '2026-09-02', expense_amount: '328.00', expense_currency: 'CNY', counterparty: '盒马鲜生', expense_type: '餐饮' },
-    { expense_date: '2026-09-02', expense_amount: '328.00', expense_currency: 'CNY', counterparty: '盒马鲜生（重复导入）', expense_type: '餐饮' },
-    { expense_date: '2026-08-14', expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store', expense_type: '数码' },
-    { expense_date: '2026-08-14', expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store', expense_type: '数码' },
-    { expense_date: '2026-08-14', expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store 退款冲正', expense_type: '数码' },
-    { expense_date: '2026-07-20', expense_amount: '-120.00', expense_currency: 'CNY', counterparty: '京东商城', expense_type: '日用', remark: '退款' },
-    { expense_date: '2026-07-20', expense_amount: '-120.00', expense_currency: 'CNY', counterparty: '京东商城', expense_type: '日用', remark: '退款重复' },
+    { daysAgo: 0, expense_amount: '68.00', expense_currency: 'CNY', counterparty: '星巴克', expense_type: '餐饮' },
+    { daysAgo: 0, expense_amount: '68.00', expense_currency: 'CNY', counterparty: '星巴克（重复导入）', expense_type: '餐饮' },
+    { daysAgo: 14, expense_amount: '328.00', expense_currency: 'CNY', counterparty: '盒马鲜生', expense_type: '餐饮' },
+    { daysAgo: 14, expense_amount: '328.00', expense_currency: 'CNY', counterparty: '盒马鲜生（重复导入）', expense_type: '餐饮' },
+    { daysAgo: 33, expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store', expense_type: '数码' },
+    { daysAgo: 33, expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store', expense_type: '数码' },
+    { daysAgo: 33, expense_amount: '99.90', expense_currency: 'USD', counterparty: 'Apple Store 退款冲正', expense_type: '数码' },
+    { daysAgo: 58, expense_amount: '-120.00', expense_currency: 'CNY', counterparty: '京东商城', expense_type: '日用', remark: '退款' },
+    { daysAgo: 58, expense_amount: '-120.00', expense_currency: 'CNY', counterparty: '京东商城', expense_type: '日用', remark: '退款重复' },
   ];
   for (let i = 0; i < duplicates.length; i += 1) {
     const batch = batches[i % batches.length];
     seedExpense({
       ...duplicates[i],
+      expense_date: daysAgo(duplicates[i].daysAgo),
       bank_name: '招商银行',
       card_last_4: '8821',
       accounting_currency: 'CNY',
       amortization_months: 1,
       operation_id: batch.operation_id,
       file_id: batch.file_id,
+      created_at: batch.created_at,
+    });
+  }
+
+  //文件内容与入库摘要都等明细全部落库之后再生成：疑似重复那几笔也挂在这些批次上，
+  //先写的话就会出现「文件里 22 行、库里却挂着 24 行」这种对不上的账
+  for (const batch of batches) {
+    db.fileMeta.push({
+      id: batch.file_id,
+      file_hash: `mock${String(batch.file_id).slice(-12)}`,
+      file_name: batch.name,
+      file_size: 0,
+      operation_id: batch.operation_id,
+      created_at: batch.created_at,
+    });
+    fillSeedFile(batch.file_id);
+    db.operationLog.push({
+      id: batch.operation_id,
+      operation_type: '数据入库',
+      object_type: '',
+      object_id: 0,
+      summary: `入库 ${db.expense.filter((row) => row.file_id === batch.file_id).length} 笔，来源 ${batch.name}`,
+      changes: '',
+      result: '成功',
       created_at: batch.created_at,
     });
   }
@@ -675,6 +779,8 @@ export function seed() {
     summary: '系统初始化，建库并写入初始审计',
     changes: '',
     result: '成功',
-    created_at: '2026-07-01T08:00:00+08:00',
+    created_at: `${daysAgo(90)}T08:00:00+08:00`,
   });
+  //种子是按中文原文造的，这里把它转成当前语言；之后每次换语言再走一遍
+  relocalize();
 }

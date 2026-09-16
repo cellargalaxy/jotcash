@@ -18,9 +18,10 @@ import {
 import { equal, excludes, includes, not, ok, rejects, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
 import { CSV_FIELDS, EXPENSE_COLUMN_DEFAULT } from '../static/js/config.js';
+import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import * as mock from '../static/js/mock.js';
 import { render as renderExpense } from '../static/js/page_expense.js';
-import { parseCsv } from '../static/js/util.js';
+import { formatDate, parseCsv } from '../static/js/util.js';
 
 api.seedMock();
 
@@ -31,9 +32,10 @@ function dataRows(host) {
   return findAll(host, 'tbody tr').filter((row) => row.childNodes[0] && row.childNodes[0].getAttribute('colspan') === null);
 }
 
-//辅助函数：当前筛选下后端一共有多少条，页面上的分页与导出都该以它为准
+//辅助函数：当前筛选下后端一共有多少条，页面上的分页与导出都该以它为准。
+//页面初值就是 defaultInquiry，用例也得按同一份条件问，否则两边数的不是同一批数据
 async function totalCount() {
-  return (await api.selectExpense({ deleted: 0, sort: 'expense_date desc' })).count;
+  return (await api.selectExpense(defaultInquiry())).count;
 }
 
 //辅助函数：筛选条件是跨次渲染保留的（切页面回来不用重填），要全集就先按一次重置
@@ -42,6 +44,15 @@ async function renderAll() {
   click(findByText(host, 'button', '重置'));
   await flush();
   return host;
+}
+
+//辅助函数：按标签文案取筛选格里的输入框
+function filterItemOf(host, label) {
+  return findAll(host, '.filter-item').find((node) => node.childNodes[0].textContent === label);
+}
+
+function filterInput(host, label) {
+  return find(filterItemOf(host, label), 'input');
 }
 
 //辅助函数：按标签文案取编辑器里的输入框。编辑器是「一格一标签一控件」，认这一格的头一个 label
@@ -135,6 +146,29 @@ test('明细页：术语只说摊销，导入说明给的是契约列名', async
   excludes('整页不出现摊分', host.textContent, '摊分');
 });
 
+//全量拉取之后条件全空就等于把整个库拖到浏览器里，所以支出日期区间必填，默认给最近一年
+test('明细页：支出日期区间默认最近一年，且必填', async () => {
+  const host = await renderAll();
+  const from = filterInput(host, '支出日期起');
+  const to = filterInput(host, '支出日期止');
+  equal('默认起日', from.value, formatDate(defaultInquiry().expense_date_start));
+  equal('默认止日', to.value, formatDate(defaultInquiry().expense_date_end));
+  includes('小字写明必填', filterItemOf(host, '支出日期起').textContent, '必填');
+
+  const before = dataRows(host).map((row) => row.textContent);
+  setValue(from, '');
+  click(findByText(host, 'button', '查询'));
+  await flush();
+  includes('留空就拦下来', takeToast(), '支出日期起与支出日期止必填');
+  same('结果没被换掉', dataRows(host).map((row) => row.textContent), before);
+
+  setValue(from, formatDate(defaultInquiry().expense_date_start));
+  setValue(to, '');
+  click(findByText(host, 'button', '查询'));
+  await flush();
+  includes('只缺止日一样拦', takeToast(), '支出日期起与支出日期止必填');
+});
+
 test('明细页：编辑器的校验文案逐条对得上', async () => {
   const host = await renderAll();
   click(findByText(host, 'button', '新增一行'));
@@ -226,6 +260,8 @@ test('明细页：按来源审计ID 进来时筛选条件被 URL 覆盖', async 
   const host = await renderPage(renderExpense, { operation_id: String(seedRow.operation_id) });
   const expect = await api.selectExpense({ operation_id: [seedRow.operation_id], deleted: 0, sort: 'expense_date desc' });
   includes('条数按这一批算', host.textContent, `共 ${expect.count} 条`);
+  //这条路本来就被审计ID 圈死了，再叠一个最近一年的窗口，老批次点进来就会是一张空表
+  equal('不叠默认的日期窗口', filterInput(host, '支出日期起').value, '');
 });
 
 //导出的就是入库契约那 11 列，所以导出的文件必须能原样再传回去——这是一对镜像，只有往返恒等才算测到位

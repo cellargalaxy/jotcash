@@ -3,7 +3,9 @@ import './helper/browser.js';
 import { charts, click, find, findAll, findByText, flush, renderPage, setValue } from './helper/fixture.js';
 import { equal, excludes, includes, near, not, ok, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
+import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import { render as renderStatistic } from '../static/js/page_statistic.js';
+import { formatDate } from '../static/js/util.js';
 
 api.seedMock();
 
@@ -18,6 +20,13 @@ async function renderStatisticPage() {
   const host = await renderPage(renderStatistic);
   return { host, drawn: charts() };
 }
+
+//统计页与明细页共用同一套筛选条件，统计也是一次拉全量再前端算，所以同样得被日期窗口圈住
+test('统计页：支出日期区间默认最近一年', async () => {
+  const { host } = await renderStatisticPage();
+  equal('默认起日', filterInput(host, '支出日期起').value, formatDate(defaultInquiry().expense_date_start));
+  equal('默认止日', filterInput(host, '支出日期止').value, formatDate(defaultInquiry().expense_date_end));
+});
 
 test('统计页：四张图一次画齐，堆叠柱是双向堆叠', async () => {
   const { drawn } = await renderStatisticPage();

@@ -1,3 +1,4 @@
+import { CURRENCY_DEFAULT, CURRENCY_DEFAULT_OTHER } from './config.js';
 import { getLang as readLang, setLang as writeLang } from './store.js';
 import { SERVER as EN_SERVER, TEXT as EN_TEXT } from './lang_en.js';
 
@@ -46,8 +47,18 @@ function format(template, params) {
 }
 
 export function t(key, params) {
-  const dict = DICTS[getLang()];
-  return format((dict && dict.text[key]) || key, params);
+  return format(textOf(getLang(), key), params);
+}
+
+//指定语言下的词条，不看当前语言。换语言时要把上一门语言的写法认回来，只有这样才够得着
+export function textOf(lang, key) {
+  const dict = DICTS[lang];
+  return (dict && dict.text[key]) || key;
+}
+
+//记账币种没设过时的初值。它是语言的一部分：加第三种语言就得在这里表态它记什么币种
+export function defaultCurrency() {
+  return getLang() === LANG_ZH ? CURRENCY_DEFAULT : CURRENCY_DEFAULT_OTHER;
 }
 
 //后端不改，文案原样是中文，转译只能在前端做：先按整句命中，再按模板匹配。

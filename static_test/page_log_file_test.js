@@ -8,16 +8,20 @@ import {
   findByText,
   flush,
   lastBlobText,
+  modals,
   renderPage,
   setValue,
   takeToast,
 } from './helper/fixture.js';
 import { equal, includes, not, ok, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
+import { CSV_FIELDS } from '../static/js/config.js';
 import { render as renderFileMeta } from '../static/js/page_file_meta.js';
 import { render as renderOperationLog } from '../static/js/page_operation_log.js';
 
 api.seedMock();
+
+const COLUMNS = CSV_FIELDS.map((field) => field.column);
 
 //辅助函数：按标签文案取筛选格里的输入框
 function filterInput(host, label) {
@@ -120,6 +124,41 @@ test('文件页：下载走的是入库时那份内容，失败只提示不崩�
   await flush();
   includes('下载成功提示', takeToast(), '已下载 下载用例.csv');
   includes('下的就是入库那份内容', await lastBlobText(), '下载用例');
+});
+
+//种子文件存的就是那一批明细导出的 CSV，所以预览出来该是一张表，而且表头就是落库契约那 11 列
+test('文件页：预览种子文件，铺出来的是入库那份 CSV', async () => {
+  const host = await renderPage(renderFileMeta, {});
+  click(findByText(host, 'button', '重置'));
+  await flush();
+  setValue(filterInput(host, '文件名'), '招商');
+  click(findByText(host, 'button', '查询'));
+  await flush();
+
+  click(findByText(dataRows(host)[0], 'button', '预览'));
+  await flush();
+  const modal = modals()[modals().length - 1].node;
+  includes('弹窗标题带文件名', modal.textContent, '预览 2609-招商.csv');
+  same('表头就是落库契约那 11 列', findAll(modal, 'thead th').map((cell) => cell.textContent), COLUMNS);
+  ok('铺出了数据行', findAll(modal, 'tbody tr').length > 0);
+  ok('页脚同时给了下载', findByText(modal, 'button', '下载'));
+});
+
+//预览与下载取的是同一份内容，走的也是同一个接口；这里盯的是「铺出来的确实是上传那一份」
+test('文件页：预览上传上来的文件，铺的是上传那份内容', async () => {
+  await api.insertExpense('预览用例.csv', [
+    '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
+    ',,2026-09-15,CNY,1,预览用例,,,,,',
+  ].join('\r\n'));
+  const host = await renderPage(renderFileMeta, {});
+  setValue(filterInput(host, '文件名'), '预览用例');
+  click(findByText(host, 'button', '查询'));
+  await flush();
+  click(findByText(dataRows(host)[0], 'button', '预览'));
+  await flush();
+  const modal = modals()[modals().length - 1].node;
+  ok('上传的就是 CSV，按表格铺', find(modal, 'table'));
+  includes('铺的是上传那份内容', modal.textContent, '预览用例');
 });
 
 test('文件页：内容哈希只露前 16 位，全文挂在 title 上', async () => {

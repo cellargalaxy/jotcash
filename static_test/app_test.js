@@ -2,6 +2,7 @@ import test from 'node:test';
 import { document, fireWindow, mountHost } from './helper/browser.js';
 import { click, find, findAll, findByText, flush, location, setValue, texts } from './helper/fixture.js';
 import { equal, includes, not, ok, same } from './helper/check.js';
+import { candidateOf } from '../static/js/expense_inquiry.js';
 import { isUnlocked, lock } from '../static/js/store.js';
 
 //app.js 在 import 阶段就会跑起来：先摆好 index.html 里的容器，再让它启动
@@ -102,6 +103,9 @@ test('偏好：换语言，导航与当前这一屏一起换，页面不刷新',
   includes('当前这一屏也换了', page().textContent, 'Amount statistics');
   includes('会话区跟着换', document.querySelector('#session-host').textContent, 'Accounting CNY');
   equal('没有刷新页面', location.reloaded, before);
+  //mock 的种子数据跟着语言走，候选是从库里 distinct 出来的，所以也不该再留着上一门语言的取值
+  ok('候选取到了英文的支出类型', candidateOf('expense_type').includes('Dining'));
+  not('候选里不再有中文的支出类型', candidateOf('expense_type').includes('餐饮'));
 
   setValue(findAll(document.querySelector('#pref-host'), 'select')[1], 'zh');
   await flush();

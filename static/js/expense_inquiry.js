@@ -11,10 +11,12 @@ import {
   textInput,
 } from './component.js';
 import { t } from './i18n.js';
-import { compact, dateToRfc3339, el, formatDate } from './util.js';
+import { addYear, compact, dateToRfc3339, el, formatDate, toastErr, today } from './util.js';
 
-//明细的筛选条件。没有 page/page_size：条件只描述「筛什么」，后端不带分页参数即返回全集，
-//明细表格的分页、图表统计、导出都从这一份全量上再加工
+//明细的筛选条件骨架。没有 page/page_size：条件只描述「筛什么」，后端不带分页参数即返回全集，
+//明细表格的分页、图表统计、导出都从这一份全量上再加工。
+//这里**不带**支出日期区间：批量删除、核实视图、按审计ID/文件ID 跳转都复用它，
+//它们本来就被 ID 圈死了，再叠一个日期窗口只会把该删的没删掉、该看的看不见
 export function newInquiry() {
   return {
     id: [],
@@ -35,6 +37,13 @@ export function newInquiry() {
     deleted: DELETED_NO,
     sort: 'expense_date desc',
   };
+}
+
+//页面初值与重置值。全量拉取之后，条件全空就等于把整个库拖到浏览器里，
+//所以支出日期区间必填，默认给最近一年
+export function defaultInquiry() {
+  const end = today();
+  return { ...newInquiry(), expense_date_start: dateToRfc3339(addYear(end, -1)), expense_date_end: dateToRfc3339(end, true) };
 }
 
 // ===== 候选取值 =====
@@ -59,6 +68,12 @@ export function addCandidate(field, value) {
 
 export function candidateOf(field) {
   return candidates[field] || [];
+}
+
+//候选是累积的，换语言之后上一门语言的取值还留在里面，下拉里就会中英文各挂一份。
+//清空即可，下一次 loadCandidate 会按新语言重新取
+export function resetCandidate() {
+  for (const field of CANDIDATE_FIELDS) candidates[field] = [];
 }
 
 //全库真实存在的记账币种，与候选分开取：候选会合并用户现场录入的新值，混进来这个集合就不准了
@@ -98,8 +113,8 @@ export function expenseFilter(inquiry, onApply, onReset) {
     return combo.node;
   };
   const items = [
-    filterItem(t('支出日期起'), (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2),
-    filterItem(t('支出日期止'), (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2),
+    filterItem(t('支出日期起'), (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2, t('必填，默认最近一年')),
+    filterItem(t('支出日期止'), (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2, t('必填，默认最近一年')),
     filterItem(t('支出金额下限'), (controls.expense_amount_min = textInput({ value: inquiry.expense_amount_min || '' })), 2),
     filterItem(t('支出金额上限'), (controls.expense_amount_max = textInput({ value: inquiry.expense_amount_max || '' })), 2),
     filterItem(t('支出币种'), comboField('expense_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.expense_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
@@ -128,6 +143,11 @@ export function expenseFilter(inquiry, onApply, onReset) {
   ]);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
+    //不用 required 交给浏览器拦：原生提示是浏览器语言的，跟页面语言对不上
+    if (!controls.expense_date_start.value || !controls.expense_date_end.value) {
+      toastErr(new Error(t('支出日期起与支出日期止必填')));
+      return;
+    }
     onApply({
       ...newInquiry(),
       expense_date_start: dateToRfc3339(controls.expense_date_start.value),

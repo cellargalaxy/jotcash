@@ -114,3 +114,18 @@
   position: relative;
   height: 20rem;
 }
+
+/* PDF 预览：iframe 没有内容高度可言，给个视口比例的固定高度，弹窗里才铺得开 */
+.preview-frame {
+  width: 100%;
+  height: 70vh;
+  border: 0;
+}
+
+/* 文本预览：长行换行而不是撑出横向滚动；高度封顶，弹窗自己滚 */
+.preview-text {
+  max-height: 70vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

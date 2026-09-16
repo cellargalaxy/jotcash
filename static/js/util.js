@@ -89,6 +89,13 @@ export function monthOf(date) {
   return date ? date.slice(0, 7) : '';
 }
 
+//默认筛选区间要的「过去一年」。与 addMonth 同一形态，只是单位换成年
+export function addYear(date, count) {
+  if (!date) return '';
+  const moved = new Date(Number(date.slice(0, 4)) + count, Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+  return `${moved.getFullYear()}-${pad(moved.getMonth() + 1)}-${pad(moved.getDate())}`;
+}
+
 //摊销结束月 = 起始月 + 摊销月数 - 1
 export function addMonth(month, count) {
   if (!month) return '';
@@ -290,6 +297,19 @@ export function toastErr(err) {
   toast(serverText(err && err.message ? err.message : String(err)), 'danger');
 }
 
+//弹窗骨架：二次确认与只读预览共用同一层，差别只在对话框尺寸与页脚放什么
+function modalNode(title, body, footer, dialogClass) {
+  return el('div', { class: 'modal fade', tabindex: '-1' }, [
+    el('div', { class: `modal-dialog ${dialogClass}` }, [
+      el('div', { class: 'modal-content' }, [
+        el('div', { class: 'modal-header' }, [el('h5', { class: 'modal-title', text: title })]),
+        el('div', { class: 'modal-body' }, [body instanceof Node ? body : el('div', { class: 'text-body', text: body })]),
+        el('div', { class: 'modal-footer' }, footer),
+      ]),
+    ]),
+  ]);
+}
+
 //二次确认：需要输入指定文案才放行的场景传 keyword
 export function confirmModal(title, body, keyword) {
   return new Promise((resolve) => {
@@ -302,21 +322,11 @@ export function confirmModal(title, body, keyword) {
         okButton.disabled = input.value.trim() !== keyword;
       });
     }
-    const node = el('div', { class: 'modal fade', tabindex: '-1' }, [
-      el('div', { class: 'modal-dialog modal-dialog-centered' }, [
-        el('div', { class: 'modal-content' }, [
-          el('div', { class: 'modal-header' }, [el('h5', { class: 'modal-title', text: title })]),
-          el('div', { class: 'modal-body' }, [
-            body instanceof Node ? body : el('div', { class: 'text-body', text: body }),
-            input,
-          ]),
-          el('div', { class: 'modal-footer' }, [
-            el('button', { class: 'btn btn-secondary', type: 'button', 'data-bs-dismiss': 'modal', text: t('取消') }),
-            okButton,
-          ]),
-        ]),
-      ]),
-    ]);
+    const wrap = el('div', {}, [body instanceof Node ? body : el('div', { class: 'text-body', text: body }), input]);
+    const node = modalNode(title, wrap, [
+      el('button', { class: 'btn btn-secondary', type: 'button', 'data-bs-dismiss': 'modal', text: t('取消') }),
+      okButton,
+    ], 'modal-dialog-centered');
     document.body.appendChild(node);
     const modal = new bootstrap.Modal(node);
     let confirmed = false;
@@ -330,6 +340,19 @@ export function confirmModal(title, body, keyword) {
     });
     modal.show();
   });
+}
+
+//只读弹窗：看完就关，没有「确认」这一说，所以也没有返回值。extra 放在关闭按钮左边
+export function openModal(title, body, extra) {
+  const node = modalNode(title, body, [
+    ...(extra || []),
+    el('button', { class: 'btn btn-secondary', type: 'button', 'data-bs-dismiss': 'modal', text: t('关闭') }),
+  ], 'modal-xl modal-dialog-scrollable');
+  document.body.appendChild(node);
+  const modal = new bootstrap.Modal(node);
+  node.addEventListener('hidden.bs.modal', () => node.remove());
+  modal.show();
+  return node;
 }
 
 //数组去空：筛选框留空的条件不能进请求体，否则 in () 会把结果筛没

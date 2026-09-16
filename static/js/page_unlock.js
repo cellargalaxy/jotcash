@@ -1,8 +1,8 @@
 import * as api from './api.js';
-import { CURRENCY_DEFAULT, TOKEN_MIN_LEN, USE_MOCK } from './config.js';
+import { TOKEN_MIN_LEN, USE_MOCK } from './config.js';
 import { currencySelect } from './component.js';
-import { t } from './i18n.js';
-import { getAccountingCurrency, lock, unlock } from './store.js';
+import { defaultCurrency, t } from './i18n.js';
+import { lock, unlock } from './store.js';
 import { clear, el, toastErr } from './util.js';
 
 //口令输入框统一带一个明文开关：口令是手抄来的，看不见更容易抄错
@@ -20,7 +20,8 @@ function tokenInput(placeholder) {
 export function renderUnlock(container, onUnlocked) {
   const serverToken = tokenInput(t('后端口令，用于签发请求凭据'));
   const clientToken = tokenInput(t('前端口令，{min} 位起，不得纯数字或纯字母', { min: TOKEN_MIN_LEN }));
-  const currency = currencySelect(getAccountingCurrency() || CURRENCY_DEFAULT, { class: 'form-select' });
+  //解锁页按定义就是没有会话的状态，记账币种一定没设过，初值只能由语言来定
+  const currency = currencySelect(defaultCurrency(), { class: 'form-select' });
   const submit = el('button', { class: 'btn btn-primary w-100', type: 'submit', text: t('解锁') });
 
   const form = el('form', { class: 'vstack gap-3' }, [

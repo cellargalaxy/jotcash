@@ -1,8 +1,9 @@
 import * as api from './api.js';
 import { FILE_META_SORTS } from './config.js';
 import { dateInput, emptyRow, filterCard, filterItem, idText, loadingRow, pager, select, textInput } from './component.js';
+import { previewNode } from './file_preview.js';
 import { t } from './i18n.js';
-import { clear, compact, dateToRfc3339, download, el, formatDateTime, formatFileSize, toastErr, toastOk } from './util.js';
+import { clear, compact, dateToRfc3339, download, el, formatDateTime, formatFileSize, openModal, toastErr, toastOk } from './util.js';
 
 const state = {
   inquiry: newInquiry(),
@@ -48,6 +49,21 @@ async function downloadFile(row) {
     const object = result.object;
     download(object.file_name, object.blob || object.data);
     toastOk(t('已下载 {name}', { name: object.file_name }));
+  } catch (err) {
+    toastErr(err);
+  }
+}
+
+//预览与下载取的是同一份内容，走的也是同一个接口；差别只在拿到之后是铺开还是存盘
+async function openPreview(row) {
+  try {
+    const result = await api.downloadFile(row.id);
+    const object = result.object;
+    const blob = object.blob instanceof Blob ? object.blob : new Blob([object.data === undefined ? '' : object.data]);
+    const file = { name: row.file_name, text: await blob.text(), blob, size: blob.size };
+    openModal(t('预览 {name}', { name: row.file_name }), previewNode(file), [
+      el('button', { class: 'btn btn-outline-primary', type: 'button', text: t('下载'), onclick: () => downloadFile(row) }),
+    ]);
   } catch (err) {
     toastErr(err);
   }
@@ -105,7 +121,8 @@ function buildRow(row) {
     el('td', { class: 'font-monospace small text-nowrap', text: idText(row.operation_id) }),
     el('td', { class: 'text-nowrap small', text: formatDateTime(row.created_at) }),
     el('td', { class: 'text-nowrap' }, [
-      el('button', { class: 'btn btn-sm btn-outline-primary py-0', type: 'button', text: t('下载'), onclick: () => downloadFile(row) }),
+      el('button', { class: 'btn btn-sm btn-outline-primary py-0', type: 'button', text: t('预览'), onclick: () => openPreview(row) }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', type: 'button', text: t('下载'), onclick: () => downloadFile(row) }),
       el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源审计') }),
       el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/expense?file_id=${row.id}`, text: t('本文件明细') }),
     ]),

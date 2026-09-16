@@ -2,7 +2,7 @@ import * as api from './api.js';
 import { AMOUNT_SCALE } from './config.js';
 import { chartCard, doughnut, horizontalBar, line, mountChart, stackedBar } from './chart.js';
 import { emptyRow, select } from './component.js';
-import { expenseFilter, loadCandidate, newInquiry } from './expense_inquiry.js';
+import { defaultInquiry, expenseFilter, loadCandidate } from './expense_inquiry.js';
 import {
   MEASURES,
   MEASURE_ACCOUNTING,
@@ -22,7 +22,7 @@ const TOP_COUNT = 10;
 //跨次渲染保留筛选条件与口径，切页面回来不用重新填一遍。
 //与明细页各持一份：共享一份会让在统计页缩小范围把明细页的筛选也改掉
 const state = {
-  inquiry: newInquiry(),
+  inquiry: defaultInquiry(),
   rows: [],
   //默认摊销口径：大额分期的钱本来就不是当月花掉的，记账口径会让那一个月凭空拱起一根柱子
   measure: MEASURE_AMORTIZATION,
@@ -45,7 +45,7 @@ function buildFilter() {
       reload();
     },
     () => {
-      state.inquiry = newInquiry();
+      state.inquiry = defaultInquiry();
       render(host, {});
     },
   );

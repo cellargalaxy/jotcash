@@ -183,3 +183,8 @@ export function importDb(file) {
 export function seedMock() {
   if (USE_MOCK) mock.seed();
 }
+
+//换语言时把 mock 库里的种子数据重写成新语言。真实后端里没有这一步：那边存的是用户自己的数据
+export function relocalizeMock() {
+  if (USE_MOCK) mock.relocalize();
+}

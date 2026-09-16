@@ -23,6 +23,7 @@ import {
   accountingCurrencySet,
   addCandidate,
   candidateOf,
+  defaultInquiry,
   expenseFilter,
   loadCandidate,
   newInquiry,
@@ -55,7 +56,7 @@ const EDITABLE_FIELDS = EXPENSE_FIELDS.filter((field) => field.editable);
 
 //跨次渲染保留筛选条件与列偏好，切页面回来不用重新填一遍
 const state = {
-  inquiry: newInquiry(),
+  inquiry: defaultInquiry(),
   //筛选拉的是全集，分页只是对 rows 切片，换页不再回后端查
   paging: { page: 1, page_size: 20 },
   columns: getColumns(),
@@ -507,7 +508,7 @@ function buildFilter() {
       reload();
     },
     () => {
-      state.inquiry = newInquiry();
+      state.inquiry = defaultInquiry();
       state.paging.page = 1;
       state.selected.clear();
       render(host, {});
