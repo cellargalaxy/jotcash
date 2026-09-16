@@ -24,6 +24,7 @@ export const TEXT = {
   '确认': 'Confirm',
   '关闭': 'Close',
   '编辑': 'Edit',
+  '双击编辑': 'Double-click to edit',
   '收起': 'Collapse',
   '查看': 'View',
   '下载': 'Download',

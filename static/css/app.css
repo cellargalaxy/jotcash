@@ -6,6 +6,40 @@
 .expense-table td,
 .expense-table th {
   vertical-align: middle;
+  padding: 0.45rem 0.75rem;
+}
+
+/* 列之间加轻量分割线，消除右对齐数字与左对齐文本视觉粘连，表头与内容结构清晰 */
+.expense-table th:not(:last-child),
+.expense-table td:not(:last-child) {
+  border-right: 1px solid var(--bs-border-color-translucent);
+}
+
+/* 数字列采用等宽数字对齐 */
+.expense-table td.text-end,
+.expense-table th.text-end {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 可双击编辑的单元格：光标提示与悬停高亮 */
+.expense-table td.cell-editable {
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.expense-table td.cell-editable:hover {
+  background-color: var(--bs-tertiary-bg);
+}
+
+/* 行内编辑单元格控件紧凑展示 */
+.expense-table td.cell-editing {
+  padding: 0.2rem 0.35rem;
+}
+
+.expense-table td.cell-editing .form-control {
+  font-size: 0.86rem;
+  padding: 0.2rem 0.4rem;
+  min-width: 4rem;
 }
 
 /* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界。

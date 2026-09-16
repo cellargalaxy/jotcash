@@ -58,6 +58,11 @@ export function click(node) {
   if (parent) parent.dispatchEvent(new ShimEvent('submit', { bubbles: true }));
 }
 
+export function dblclick(node) {
+  if (node.disabled) return;
+  node.dispatchEvent(new ShimEvent('dblclick', { bubbles: true }));
+}
+
 export function setValue(input, value) {
   input.value = value;
   input.dispatchEvent(new ShimEvent('input', { bubbles: true }));

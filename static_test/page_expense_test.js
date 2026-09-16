@@ -4,6 +4,7 @@ import {
   answerModal,
   check,
   click,
+  dblclick,
   find,
   findAll,
   findByText,
@@ -247,6 +248,93 @@ test('明细页：编辑保存走乐观锁，版本号自增', async () => {
   await rejects('旧版本再存会被乐观锁挡住', mock.updateExpense({ ...before, expense_type: '再改一次' }), '数据已落后');
 });
 
+test('明细页：表格展示对齐与表头一致，可编辑列带提示', async () => {
+  const host = await renderAll();
+  const ths = findAll(host, 'thead th');
+  // 默认 10 列：0:checkbox, 1:expense_date, 2:expense_currency, 3:expense_amount, 4:exchange_rate, 5:accounting_currency, 6:accounting_amount, 7:counterparty, 8:remark, 9:expense_type, 10:amortization_months, 11:actions
+  ok('支出金额表头右对齐', ths[3].className.includes('text-end'));
+  ok('折算汇率表头右对齐', ths[4].className.includes('text-end'));
+  ok('记账金额表头右对齐', ths[6].className.includes('text-end'));
+  ok('摊销月数表头右对齐', ths[10].className.includes('text-end'));
+  ok('支出日期表头左对齐', ths[1].className.includes('text-start'));
+  ok('对手方表头左对齐', ths[7].className.includes('text-start'));
+
+  const row = dataRows(host)[0];
+  ok('支出金额数据格右对齐', row.childNodes[3].className.includes('text-end'));
+  ok('记账金额数据格右对齐', row.childNodes[6].className.includes('text-end'));
+  ok('对手方数据格左对齐', row.childNodes[7].className.includes('text-start'));
+
+  ok('对手方单元格可双击编辑', row.childNodes[7].className.includes('cell-editable'));
+  equal('对手方单元格提示文案', row.childNodes[7].getAttribute('title'), '双击编辑');
+  not('记账金额单元格不可编辑', row.childNodes[6].className.includes('cell-editable'));
+});
+
+test('明细页：双击单元格进入行内编辑，点击保存生效', async () => {
+  const host = await renderAll();
+  const row = dataRows(host)[0];
+  const targetCell = row.childNodes[7]; // 交易对手方
+  dblclick(targetCell);
+  await flush();
+
+  const freshRow = dataRows(host)[0];
+  const input = find(freshRow.childNodes[7], 'input');
+  ok('双击后单元格内出现输入框', input);
+
+  const saveBtn = findByText(freshRow, 'button', '保存');
+  const cancelBtn = findByText(freshRow, 'button', '取消');
+  ok('右侧动作列切换为保存按钮', saveBtn);
+  ok('右侧动作列切换为取消按钮', cancelBtn);
+
+  setValue(input, '瑞幸咖啡双击改');
+  click(saveBtn);
+  await flush();
+
+  includes('提示已保存', takeToast(), '已保存');
+  equal('页面数据已更新为新值', dataRows(host)[0].childNodes[7].textContent, '瑞幸咖啡双击改');
+  not('保存后退出编辑态', find(dataRows(host)[0].childNodes[7], 'input'));
+});
+
+test('明细页：同双击多列可同时行内编辑并一同保存', async () => {
+  const host = await renderAll();
+  let row = dataRows(host)[0];
+  dblclick(row.childNodes[7]); // 对手方
+  await flush();
+  row = dataRows(host)[0];
+  dblclick(row.childNodes[8]); // 备注
+  await flush();
+  row = dataRows(host)[0];
+
+  const counterpartyInput = find(row.childNodes[7], 'input');
+  const remarkInput = find(row.childNodes[8], 'input');
+  ok('两列均有输入框', counterpartyInput && remarkInput);
+
+  setValue(counterpartyInput, '全家便利店');
+  setValue(remarkInput, '早餐豆浆');
+  click(findByText(row, 'button', '保存'));
+  await flush();
+
+  includes('保存成功', takeToast(), '已保存');
+  equal('对手方已落盘', dataRows(host)[0].childNodes[7].textContent, '全家便利店');
+  equal('备注已落盘', dataRows(host)[0].childNodes[8].textContent, '早餐豆浆');
+});
+
+test('明细页：双击编辑后点击取消，修改丢弃且恢复展示', async () => {
+  const host = await renderAll();
+  let row = dataRows(host)[0];
+  const original = row.childNodes[7].textContent;
+  dblclick(row.childNodes[7]);
+  await flush();
+  row = dataRows(host)[0];
+
+  const input = find(row.childNodes[7], 'input');
+  setValue(input, '未保存的内容');
+  click(findByText(row, 'button', '取消'));
+  await flush();
+
+  not('取消后编辑框消失', find(dataRows(host)[0].childNodes[7], 'input'));
+  equal('内容未改变', dataRows(host)[0].childNodes[7].textContent, original);
+});
+
 test('明细页：核实视图只列本批次与命中的行，没有分页条', async () => {
   const seedRow = (await api.selectExpense({ deleted: 0, sort: 'id asc' })).object[0];
   const host = await renderPage(renderExpense, { operation_id: String(seedRow.operation_id), verify: '1' });
@@ -345,3 +433,4 @@ test('明细页：全选筛选结果并删除，要把关键字敲对才放行',
   includes('删除提示', takeToast(), `已删除 ${before} 笔`);
   equal('筛选全集都没了', await totalCount(), 0);
 });
+

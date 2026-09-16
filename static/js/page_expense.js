@@ -65,6 +65,8 @@ const state = {
   selected: new Set(),
   editingId: 0,
   editDraft: null,
+  inlineEdit: null,
+  inlineFocusKey: null,
   adding: false,
   addDraft: null,
   verify: null,
@@ -318,6 +320,7 @@ function templateButton() {
 // ===== 数据加载 =====
 
 async function reload() {
+  state.inlineEdit = null;
   renderTable(true);
   try {
     if (state.verify) {
@@ -380,6 +383,7 @@ async function saveEdit(row, draft) {
   await api.updateExpense(object);
   state.editingId = 0;
   state.editDraft = null;
+  state.inlineEdit = null;
   toastOk(t('明细 {id} 已保存', { id: row.id }));
   await reload();
 }
@@ -473,6 +477,7 @@ function openColumnSetting() {
     const columns = boxes.filter((box) => box.input.checked).map((box) => box.key);
     state.columns = columns.length > 0 ? columns : EXPENSE_COLUMN_DEFAULT.slice();
     setColumns(state.columns);
+    state.inlineEdit = null;
     renderTable(false);
   });
 }
@@ -580,25 +585,163 @@ function buildVerifyHint() {
   ]);
 }
 
+function isNumericField(field) {
+  return field.type === 'amount' || field.type === 'rate' || field.type === 'int';
+}
+
 function headerCell(field) {
   const codes = accountingCurrencySet();
+  const align = isNumericField(field) ? 'text-end' : 'text-start';
   if (field.key !== 'accounting_currency' || codes.length === 0) {
-    return el('th', { class: 'text-nowrap', text: t(field.name) });
+    return el('th', { class: `text-nowrap ${align}`, text: t(field.name) });
   }
-  return el('th', { class: 'text-nowrap' }, [
+  return el('th', { class: `text-nowrap ${align}` }, [
     t(field.name),
     el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${codes.join('/')}）` }),
   ]);
 }
 
+function startInlineEdit(row, fieldKey) {
+  if (row.deleted_at) return;
+  const field = FIELD_OF[fieldKey];
+  if (!field || !field.editable) return;
+  state.editingId = 0;
+  state.editDraft = null;
+  if (state.inlineEdit && state.inlineEdit.id === row.id) {
+    state.inlineEdit.fields.add(fieldKey);
+  } else {
+    state.inlineEdit = {
+      id: row.id,
+      fields: new Set([fieldKey]),
+      draft: draftOfRow(row),
+    };
+  }
+  state.inlineFocusKey = fieldKey;
+  renderTable(false);
+}
+
+function createInlineControl(row, field, draft) {
+  let input;
+  const initialValue = draft[field.key] === null || draft[field.key] === undefined ? '' : String(draft[field.key]);
+
+  if (field.type === 'date') {
+    input = el('input', {
+      type: 'date',
+      class: 'form-control form-control-sm',
+      value: initialValue,
+    });
+  } else if (field.type === 'int') {
+    input = el('input', {
+      type: 'number',
+      min: '1',
+      step: '1',
+      class: 'form-control form-control-sm text-end',
+      value: initialValue,
+    });
+  } else {
+    const isNum = field.type === 'amount' || field.type === 'rate';
+    const isUpper = field.key === 'expense_currency';
+    input = el('input', {
+      type: 'text',
+      class: `form-control form-control-sm ${isNum ? 'text-end' : ''} ${isUpper ? 'text-uppercase' : ''}`,
+      value: initialValue,
+      maxlength: field.key === 'card_last_4' ? '4' : field.key === 'expense_currency' ? '3' : null,
+    });
+  }
+
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('dblclick', (event) => event.stopPropagation());
+
+  input.addEventListener('input', () => {
+    let val = input.value;
+    if (field.key === 'expense_currency') {
+      val = val.toUpperCase();
+      draft.expense_currency = val;
+      if (val === (draft.accounting_currency || '').toUpperCase()) {
+        draft.exchange_rate = '1';
+      } else {
+        draft.exchange_rate = '';
+      }
+    } else if (field.key === 'expense_date') {
+      draft.expense_date = val;
+      draft.exchange_rate = '';
+    } else if (field.key === 'amortization_months') {
+      draft.amortization_months = Number(val) || 1;
+    } else {
+      draft[field.key] = val;
+    }
+  });
+
+  input.addEventListener('change', () => {
+    if (field.key === 'bank_name' || field.key === 'card_last_4' || field.key === 'expense_type') {
+      addCandidate(field.key, input.value);
+    }
+  });
+
+  input.addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const message = checkDraft(draft);
+      if (message) {
+        toastErr(new Error(message));
+        return;
+      }
+      try {
+        await saveEdit(row, draft);
+      } catch (err) {
+        toastErr(err);
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      state.inlineEdit = null;
+      renderTable(false);
+    }
+  });
+
+  return input;
+}
+
 function rowCells(row) {
   const cells = [];
+  const isInline = state.inlineEdit && state.inlineEdit.id === row.id;
+  const deleted = Boolean(row.deleted_at);
+
   for (const key of state.columns) {
     const field = FIELD_OF[key];
     if (!field) continue;
-    const text = fieldText(field, row);
-    const numeric = field.type === 'amount' || field.type === 'rate' || field.type === 'int';
-    cells.push(el('td', { class: `${numeric ? 'text-end' : ''} ${field.type === 'id' ? 'text-nowrap font-monospace small' : ''}`, text }));
+    const numeric = isNumericField(field);
+    const align = numeric ? 'text-end' : 'text-start';
+    const isEditingField = isInline && state.inlineEdit.fields.has(field.key);
+
+    if (isEditingField) {
+      const control = createInlineControl(row, field, state.inlineEdit.draft);
+      const td = el('td', {
+        class: `cell-editing ${align}`,
+      }, [control]);
+      cells.push(td);
+      if (state.inlineFocusKey === field.key) {
+        state.inlineFocusKey = null;
+        setTimeout(() => {
+          try {
+            if (typeof control.focus === 'function') control.focus();
+            if (typeof control.select === 'function') control.select();
+          } catch (_) {}
+        }, 0);
+      }
+    } else {
+      const text = fieldText(field, row);
+      const isEditable = !deleted && field.editable;
+      const td = el('td', {
+        class: `${align} ${field.type === 'id' ? 'text-nowrap font-monospace small' : ''} ${isEditable ? 'cell-editable' : ''}`,
+        title: isEditable ? t('双击编辑') : null,
+        text,
+        ondblclick: isEditable ? (event) => {
+          event.stopPropagation();
+          startInlineEdit(row, field.key);
+        } : null,
+      });
+      cells.push(td);
+    }
   }
   return cells;
 }
@@ -606,6 +749,7 @@ function rowCells(row) {
 function buildRow(row, marks) {
   const deleted = Boolean(row.deleted_at);
   const mark = marks.get(duplicateKey(row));
+  const isInline = state.inlineEdit && state.inlineEdit.id === row.id;
   const checkbox = el('input', {
     class: 'form-check-input',
     type: 'checkbox',
@@ -618,32 +762,70 @@ function buildRow(row, marks) {
     },
   });
   if (!deleted) rowCheckboxes.push({ id: row.id, node: checkbox });
-  const actions = el('td', { class: 'text-nowrap' }, [
-    deleted
-      ? el('button', {
-        class: 'btn btn-sm btn-outline-primary py-0',
+
+  const actionButtons = [];
+  if (deleted) {
+    actionButtons.push(el('button', {
+      class: 'btn btn-sm btn-outline-primary py-0',
+      type: 'button',
+      text: t('复制新增'),
+      onclick: () => {
+        //复制已删除行：以其字段为初值，明细ID 与删除时间都清空，按新增处理
+        state.adding = true;
+        state.addDraft = draftOfRow(row);
+        state.addDraft.accounting_currency = getAccountingCurrency();
+        state.inlineEdit = null;
+        renderTable(false);
+      },
+    }));
+  } else if (isInline) {
+    actionButtons.push(
+      el('button', {
+        class: 'btn btn-sm btn-primary py-0',
         type: 'button',
-        text: t('复制新增'),
+        text: t('保存'),
+        onclick: async () => {
+          const draft = state.inlineEdit.draft;
+          const message = checkDraft(draft);
+          if (message) {
+            toastErr(new Error(message));
+            return;
+          }
+          try {
+            await saveEdit(row, draft);
+          } catch (err) {
+            toastErr(err);
+          }
+        },
+      }),
+      el('button', {
+        class: 'btn btn-sm btn-outline-secondary py-0 ms-1',
+        type: 'button',
+        text: t('取消'),
         onclick: () => {
-          //复制已删除行：以其字段为初值，明细ID 与删除时间都清空，按新增处理
-          state.adding = true;
-          state.addDraft = draftOfRow(row);
-          state.addDraft.accounting_currency = getAccountingCurrency();
+          state.inlineEdit = null;
           renderTable(false);
         },
-      })
-      : el('button', {
+      }),
+    );
+  } else {
+    actionButtons.push(
+      el('button', {
         class: 'btn btn-sm btn-outline-secondary py-0',
         type: 'button',
         text: state.editingId === row.id ? t('收起') : t('编辑'),
         onclick: () => {
           state.editingId = state.editingId === row.id ? 0 : row.id;
           state.editDraft = null;
+          state.inlineEdit = null;
           renderTable(false);
         },
       }),
-    el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源') }),
-  ]);
+    );
+  }
+  actionButtons.push(el('a', { class: 'btn btn-sm btn-outline-secondary py-0 ms-1', href: `#/operation-log?id=${row.operation_id}`, text: t('来源') }));
+
+  const actions = el('td', { class: 'text-nowrap' }, actionButtons);
 
   const tr = el('tr', { class: `${deleted ? 'row-deleted' : ''} ${mark || ''}` }, [
     el('td', {}, [checkbox]),
@@ -753,6 +935,7 @@ function renderTable(loading) {
   if (!state.verify) {
     tableHost.appendChild(pager(state.paging, state.count, (change) => {
       Object.assign(state.paging, change);
+      state.inlineEdit = null;
       renderTable(false);
     }));
   }
@@ -775,9 +958,12 @@ export function render(container, query) {
     }
   }
   state.selected.clear();
+  state.columns = getColumns();
   state.paging.page = 1;
   state.editingId = 0;
   state.editDraft = null;
+  state.inlineEdit = null;
+  state.inlineFocusKey = null;
   state.adding = false;
   state.addDraft = null;
 
