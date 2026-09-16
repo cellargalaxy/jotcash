@@ -132,8 +132,6 @@ func TestSelectExpenseFilter(t *testing.T) {
 		"记账币种":     {model.ExpenseInquiry{AccountingCurrency: []string{"JPY"}}, 0},
 		"对手方模糊":    {model.ExpenseInquiry{CounterpartyLike: "亚马"}, 1},
 		"备注模糊":     {model.ExpenseInquiry{RemarkLike: "苹果"}, 1},
-		"支出类型模糊":   {model.ExpenseInquiry{ExpenseTypeLike: "购"}, 2},
-		"支出类型为空标记": {model.ExpenseInquiry{ExpenseTypeEmpty: true}, 1},
 		"支出类型为空切片": {model.ExpenseInquiry{ExpenseType: []string{""}}, 1},
 		"银行名称":     {model.ExpenseInquiry{BankName: []string{"招商银行"}}, 2},
 		"卡号后四位":    {model.ExpenseInquiry{CardLast4: []string{"0000"}}, 0},

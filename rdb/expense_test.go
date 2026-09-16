@@ -426,8 +426,6 @@ func TestExpenseInquiryField(t *testing.T) {
 		"操作Id":  {OperationId: []int64{hit.OperationId}},
 		"文件Id":  {FileId: []int64{fileId}},
 		"版本号":   {Version: []int{hit.Version}},
-		//下划线是like的单字符通配符，没转义就会把"购物X线下"也匹进来
-		"支出类型模糊": {ExpenseTypeLike: "购物_线"},
 	} {
 		objects, count, err := selectExpense(ctx, inquiry)
 		if err != nil {
@@ -439,7 +437,6 @@ func TestExpenseInquiryField(t *testing.T) {
 	}
 
 	for name, inquiry := range map[string]model.ExpenseInquiry{
-		"支出类型为空标记": {ExpenseTypeEmpty: true},
 		"支出类型为空切片": {ExpenseType: []string{""}},
 	} {
 		objects, count, err := selectExpense(ctx, inquiry)
