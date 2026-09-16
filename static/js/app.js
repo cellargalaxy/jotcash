@@ -4,6 +4,7 @@ import { render as renderExpense } from './page_expense.js';
 import { render as renderFileMeta } from './page_file_meta.js';
 import { render as renderOperationLog } from './page_operation_log.js';
 import { render as renderSetting } from './page_setting.js';
+import { render as renderStatistic } from './page_statistic.js';
 import { renderUnlock } from './page_unlock.js';
 import { renderNotice } from './notice.js';
 import { getAccountingCurrency, isUnlocked, lock } from './store.js';
@@ -11,6 +12,7 @@ import { clear, el, query } from './util.js';
 
 const ROUTES = [
   { path: '/expense', name: '明细', render: renderExpense },
+  { path: '/statistic', name: '统计', render: renderStatistic },
   { path: '/operation-log', name: '审计', render: renderOperationLog },
   { path: '/file-meta', name: '文件', render: renderFileMeta },
   { path: '/setting', name: '设置', render: renderSetting },

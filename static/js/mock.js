@@ -1,13 +1,4 @@
-import {
-  AMOUNT_SCALE,
-  CSV_FIELDS,
-  DELETED_ALL,
-  DELETED_NO,
-  DELETED_ONLY,
-  EXPENSE_FIELDS,
-  PAGE_SIZE_DEFAULT,
-  PAGE_SIZE_MAX,
-} from './config.js';
+import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS } from './config.js';
 import { addMonth, dateToRfc3339, monthOf, parseCsv } from './util.js';
 
 //内存库：与后端三张表同名同字段，筛选、排序、分页、乐观锁都按后端语义复刻，
@@ -72,7 +63,7 @@ function checkCurrency(name, code) {
 
 // ===== 派生字段 =====
 
-//与后端 fillExpense 同一套派生：汇率 → 记账金额 → 摊分起止月
+//与后端 fillExpense 同一套派生：汇率 → 记账金额 → 摊销起止月
 function fillExpense(object, accountingCurrency) {
   if (!object.accounting_currency) object.accounting_currency = accountingCurrency;
   let message = checkCurrency('记账币种', object.accounting_currency);
@@ -122,11 +113,6 @@ function checkTimeRange(start, end) {
   return new Date(start).getTime() > new Date(end).getTime() ? '查询，时间区间倒挂' : '';
 }
 
-function checkPageSize(pageSize) {
-  if (!pageSize || pageSize <= 0) return PAGE_SIZE_DEFAULT;
-  return pageSize > PAGE_SIZE_MAX ? PAGE_SIZE_MAX : pageSize;
-}
-
 //排序白名单越界后端直接报错，mock 同样报错，免得前端偷偷传了个不支持的值还看着正常
 function sortRows(rows, sort, whitelist, comparators) {
   if (!whitelist.includes(sort)) return `排序，不在白名单内: ${sort}`;
@@ -137,10 +123,11 @@ function sortRows(rows, sort, whitelist, comparators) {
   return '';
 }
 
+//与后端 rdb.pageLimit 同语义：分页参数非正即不限，全量导出与图表统计要的正是这个
 function pageRows(rows, page, pageSize) {
-  const size = checkPageSize(pageSize);
+  if (!pageSize || pageSize <= 0) return rows;
   const index = page && page > 1 ? page - 1 : 0;
-  return rows.slice(index * size, index * size + size);
+  return rows.slice(index * pageSize, index * pageSize + pageSize);
 }
 
 function compareNumber(left, right) {
@@ -231,7 +218,7 @@ export function selectExpense(inquiry) {
 export function insertExpense(filename, csvText, accountingCurrency) {
   const lines = parseCsv(csvText);
   const header = (lines[0] || []).map((cell) => cell.trim());
-  const expect = CSV_FIELDS.map((key) => EXPENSE_FIELDS.find((field) => field.key === key).name);
+  const expect = CSV_FIELDS.map((field) => field.column);
   if (header.length !== expect.length || header.some((cell, index) => cell !== expect[index])) {
     return fail('解析明细，文件格式无法识别');
   }
@@ -243,7 +230,7 @@ export function insertExpense(filename, csvText, accountingCurrency) {
   const objects = [];
   for (let index = 1; index < lines.length; index += 1) {
     const cells = lines[index];
-    const value = (key) => (cells[CSV_FIELDS.indexOf(key)] || '').trim();
+    const value = (key) => (cells[CSV_FIELDS.findIndex((field) => field.key === key)] || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value('expense_date'))) {
       return fail(`解析CSV，第${index + 1}行，支出日期非法: ${value('expense_date')}`);
     }
@@ -256,7 +243,7 @@ export function insertExpense(filename, csvText, accountingCurrency) {
     }
     const months = value('amortization_months');
     if (months && !(Number(months) >= 1)) {
-      return fail(`解析CSV，第${index + 1}行，摊分月数非法: ${months}`);
+      return fail(`解析CSV，第${index + 1}行，摊销月数非法: ${months}`);
     }
     const object = {
       id: genId(),

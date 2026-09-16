@@ -3,29 +3,30 @@ import {
   CSV_FIELDS,
   DELETED_ALL,
   DELETED_NO,
-  DELETED_ONLY,
   DUPLICATE_KEYS,
   EXPENSE_COLUMN_DEFAULT,
   EXPENSE_FIELDS,
-  EXPENSE_SORTS,
-  PAGE_SIZE_MAX,
 } from './config.js';
 import {
-  comboFilterInput,
   comboInput,
   currencyInput,
   currencyOptions,
   dateInput,
   emptyRow,
-  filterCard,
   fieldText,
-  filterItem,
   loadingRow,
   numberInput,
   pager,
-  select,
   textInput,
 } from './component.js';
+import {
+  accountingCurrencySet,
+  addCandidate,
+  candidateOf,
+  expenseFilter,
+  loadCandidate,
+  newInquiry,
+} from './expense_inquiry.js';
 import { getAccountingCurrency, getColumns, setColumns } from './store.js';
 import {
   addMonth,
@@ -33,7 +34,6 @@ import {
   blobUrl,
   clear,
   confirmModal,
-  compact,
   dateToRfc3339,
   download,
   downloadLink,
@@ -55,6 +55,8 @@ const EDITABLE_FIELDS = EXPENSE_FIELDS.filter((field) => field.editable);
 //跨次渲染保留筛选条件与列偏好，切页面回来不用重新填一遍
 const state = {
   inquiry: newInquiry(),
+  //筛选拉的是全集，分页只是对 rows 切片，换页不再回后端查
+  paging: { page: 1, page_size: 20 },
   columns: getColumns(),
   rows: [],
   count: 0,
@@ -64,57 +66,13 @@ const state = {
   adding: false,
   addDraft: null,
   verify: null,
-  //候选下拉的取值：接口的 distinct 结果与用户现场录入的新值都往这里合并
-  candidates: { expense_type: [], bank_name: [], card_last_4: [], expense_currency: [] },
-  currencySet: [],
 };
-
-const CANDIDATE_FIELDS = ['expense_type', 'bank_name', 'card_last_4', 'expense_currency'];
-
-//用户录入的新值立刻进候选，不必等它入库后 distinct 才认
-function addCandidate(field, value) {
-  const text = String(value || '').trim();
-  if (!text || !CANDIDATE_FIELDS.includes(field)) return;
-  const list = state.candidates[field];
-  if (!list.includes(text)) {
-    list.push(text);
-    list.sort();
-  }
-}
-
-function candidateOf(field) {
-  return state.candidates[field] || [];
-}
 
 let host = null;
 let tableHost = null;
 let toolbarHost = null;
 //行内勾选框的引用：改选中只需刷工具条与这些框，不必重绘整张表，免得把正在编辑的输入框焦点弄丢
 let rowCheckboxes = [];
-
-function newInquiry() {
-  return {
-    id: [],
-    bank_name: [],
-    card_last_4: [],
-    expense_currency: [],
-    accounting_currency: [],
-    expense_type: [],
-    operation_id: [],
-    file_id: [],
-    expense_date_start: '',
-    expense_date_end: '',
-    expense_amount_min: null,
-    expense_amount_max: null,
-    counterparty_like: '',
-    remark_like: '',
-    expense_type_like: '',
-    deleted: DELETED_NO,
-    sort: 'expense_date desc',
-    page: 1,
-    page_size: 20,
-  };
-}
 
 // ===== 疑似重复 =====
 
@@ -166,7 +124,7 @@ function checkDraft(draft) {
   if (!/^[A-Za-z]{3}$/.test(draft.expense_currency || '')) return '支出币种必须是三位币种代码';
   if (!isDecimal(draft.expense_amount)) return `支出金额非法: ${draft.expense_amount}`;
   if (draft.exchange_rate && !isPositiveDecimal(draft.exchange_rate)) return `折算汇率非正: ${draft.exchange_rate}`;
-  if (!(Number(draft.amortization_months) >= 1)) return '摊分月数不得小于 1';
+  if (!(Number(draft.amortization_months) >= 1)) return '摊销月数不得小于 1';
   return '';
 }
 
@@ -192,7 +150,7 @@ function expenseEditor(draft, options) {
       el('strong', { text: draft.expense_amount === '' || draft.expense_amount === null || draft.expense_amount === undefined
         ? '—'
         : rate ? multiplyAmount(draft.expense_amount, rate) : '（汇率留空，落库时自动获取）' }),
-      ` · 摊分 ${startMonth || '—'} 至 ${startMonth ? addMonth(startMonth, months - 1) : '—'}`,
+      ` · 摊销 ${startMonth || '—'} 至 ${startMonth ? addMonth(startMonth, months - 1) : '—'}`,
     ]));
   }
 
@@ -275,12 +233,12 @@ function expenseEditor(draft, options) {
 // ===== CSV =====
 
 function csvHeader() {
-  return CSV_FIELDS.map((key) => FIELD_OF[key].name);
+  return CSV_FIELDS.map((field) => field.column);
 }
 
 //单行新增就是一份只有 1 行的 CSV，与上传真实 CSV 走同一条入库链路
 function draftToCsv(draft) {
-  const row = CSV_FIELDS.map((key) => {
+  const row = CSV_FIELDS.map(({ key }) => {
     if (key === 'expense_date') return draft.expense_date;
     //填了折算汇率就必须一并填记账币种，否则后端解析这一行会直接报错；
     //汇率留空时记账币种也留空，让请求携带的口径生效
@@ -298,30 +256,16 @@ function csvFilename(prefix) {
   return `${prefix}-${stamp}.csv`;
 }
 
-//后端没有导出接口，前端按当前筛选逐页拉全量再拼。分页上限是后端定的，
-//撞到页数上限宁可报错也不悄悄截断——导出少了行比导不出来更难发现
-const EXPORT_PAGE_LIMIT = 500;
-
-async function fetchAllFiltered() {
-  const rows = [];
-  for (let page = 1; page <= EXPORT_PAGE_LIMIT; page += 1) {
-    const result = await api.selectExpense({ ...state.inquiry, page, page_size: PAGE_SIZE_MAX });
-    const objects = result.object || [];
-    rows.push(...objects);
-    if (objects.length < PAGE_SIZE_MAX || rows.length >= result.count) return rows;
-  }
-  throw new Error(`导出，超过 ${EXPORT_PAGE_LIMIT * PAGE_SIZE_MAX} 行，请先收窄筛选条件`);
-}
-
-//导出的就是入库契约那 11 列，所以导出的文件能原样再传回去
-async function exportFiltered() {
+//导出的就是入库契约那 11 列，所以导出的文件能原样再传回去。
+//state.rows 本来就是筛选全集，不必为导出再查一次
+function exportFiltered() {
   try {
-    const rows = state.verify ? state.rows.slice() : await fetchAllFiltered();
+    const rows = state.rows;
     if (rows.length === 0) {
       toastErr(new Error('当前筛选没有可导出的数据'));
       return;
     }
-    const lines = rows.map((row) => CSV_FIELDS.map((key) => {
+    const lines = rows.map((row) => CSV_FIELDS.map(({ key }) => {
       if (key === 'expense_date') return formatDate(row[key]);
       const value = row[key];
       return value === null || value === undefined ? '' : String(value);
@@ -340,7 +284,7 @@ async function exportFiltered() {
 }
 
 function templateCsv() {
-  const sample = CSV_FIELDS.map((key) => {
+  const sample = CSV_FIELDS.map(({ key }) => {
     switch (key) {
       case 'expense_date': return formatDate(new Date());
       case 'expense_currency': return 'CNY';
@@ -375,9 +319,11 @@ async function reload() {
     } else {
       const result = await api.selectExpense(state.inquiry);
       state.rows = result.object || [];
-      state.count = result.count;
     }
-    await loadHeaderHint();
+    state.count = state.rows.length;
+    //换筛选之后还停在第 7 页会看见一张空表，页码退回第一页
+    if ((state.paging.page - 1) * state.paging.page_size >= state.count) state.paging.page = 1;
+    await loadCandidate();
   } catch (err) {
     state.rows = [];
     state.count = 0;
@@ -392,7 +338,6 @@ async function loadVerify() {
     ...newInquiry(),
     operation_id: [state.verify],
     deleted: DELETED_ALL,
-    page_size: PAGE_SIZE_MAX,
   });
   const batchRows = batch.object || [];
   const keys = new Set(batchRows.map(duplicateKey));
@@ -410,7 +355,6 @@ async function loadVerify() {
       expense_amount_min: Decimal.min(...amounts).toString(),
       expense_amount_max: Decimal.max(...amounts).toString(),
       deleted: DELETED_NO,
-      page_size: PAGE_SIZE_MAX,
     });
     const seen = new Set(batchRows.map((row) => row.id));
     for (const row of candidate.object || []) {
@@ -419,26 +363,6 @@ async function loadVerify() {
   }
   merged.sort((left, right) => duplicateKey(left).localeCompare(duplicateKey(right)));
   state.rows = merged;
-  state.count = merged.length;
-}
-
-async function loadHeaderHint() {
-  try {
-    //F-5 的表头提示要的是「库里真实存在哪些记账币种」，所以单独取一次 distinct，
-    //不跟候选下拉共用——候选会合并用户现场录入的新值，混进来这个集合就不准了
-    const [currencies, ...distincts] = await Promise.all([
-      api.selectDistinct('accounting_currency'),
-      ...CANDIDATE_FIELDS.map((field) => api.selectDistinct(field)),
-    ]);
-    state.currencySet = currencies.object || [];
-    CANDIDATE_FIELDS.forEach((field, index) => {
-      //接口的 distinct 与本地现场录入的新值合并，两边都不丢
-      for (const value of distincts[index].object || []) addCandidate(field, value);
-    });
-  } catch (err) {
-    //候选与表头提示是锦上添花，取不到不该拦住列表
-    state.currencySet = [];
-  }
 }
 
 // ===== 动作 =====
@@ -479,8 +403,7 @@ async function deleteSelected() {
 async function deleteFiltered() {
   if (!(await confirmModal('按当前筛选全选删除', `本次将删除当前筛选结果全集，共 ${state.count} 笔。删除是终态，没有恢复入口。`, '确认删除'))) return;
   try {
-    const inquiry = { ...state.inquiry, page: 1, page_size: 0, sort: '' };
-    const result = await api.deleteExpense(inquiry);
+    const result = await api.deleteExpense({ ...state.inquiry, sort: '' });
     state.selected.clear();
     toastOk(`已删除 ${result.count} 笔`);
     await reload();
@@ -497,7 +420,7 @@ function openUpload() {
     el('ul', { class: 'small text-secondary ps-3' }, [
       el('li', { text: '支出日期格式 2006-01-02；支出金额允许 0 与负数' }),
       el('li', { text: '折算汇率可留空，留空按支出日期自动获取；填了折算汇率就必须填记账币种' }),
-      el('li', { text: '记账币种留空则取本次请求携带的记账币种；摊分月数留空按 1 处理' }),
+      el('li', { text: '记账币种留空则取本次请求携带的记账币种；摊销月数留空按 1 处理' }),
     ]),
     input,
   ]);
@@ -570,88 +493,21 @@ function openCurrencySwitch() {
 // ===== 渲染 =====
 
 function buildFilter() {
-  const inquiry = state.inquiry;
-  const controls = {};
-  //组合框返回的是 {node,input}，控件登记的得是里面那个 input，栅格里放的是外层 node
-  const comboField = (key, getOptions, value, attrs) => {
-    const combo = comboFilterInput(getOptions, value, attrs);
-    controls[key] = combo.input;
-    return combo.node;
-  };
-  const singleComboField = (key, getOptions, value, attrs) => {
-    const combo = comboInput(getOptions, value, attrs);
-    controls[key] = combo.input;
-    return combo.node;
-  };
-  const items = [
-    filterItem('支出日期起', (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2),
-    filterItem('支出日期止', (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2),
-    filterItem('支出金额下限', (controls.expense_amount_min = textInput({ value: inquiry.expense_amount_min || '' })), 2),
-    filterItem('支出金额上限', (controls.expense_amount_max = textInput({ value: inquiry.expense_amount_max || '' })), 2),
-    filterItem('支出币种', comboField('expense_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.expense_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, '可多选，逗号分隔'),
-    filterItem('记账币种', comboField('accounting_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.accounting_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, '可多选，逗号分隔'),
-    filterItem('交易对手方', (controls.counterparty_like = textInput({ value: inquiry.counterparty_like })), 3, '模糊匹配，输入片段即可'),
-    filterItem('交易备注', (controls.remark_like = textInput({ value: inquiry.remark_like })), 3, '模糊匹配，输入片段即可'),
-    filterItem('支出类型', singleComboField('expense_type_like', () => candidateOf('expense_type'), inquiry.expense_type_like, {}), 2, '模糊匹配，也可下拉选已有'),
-    filterItem('银行名称', comboField('bank_name', () => candidateOf('bank_name'), inquiry.bank_name.join(','), {}), 2, '可多选，逗号分隔'),
-    filterItem('卡号后四位', comboField('card_last_4', () => candidateOf('card_last_4'), inquiry.card_last_4.join(','), {}), 2, '可多选，逗号分隔'),
-    filterItem('来源审计ID', (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
-    filterItem('文件ID', (controls.file_id = textInput({ value: inquiry.file_id.join(',') })), 2),
-    filterItem('已删除', (controls.deleted = select([
-      { value: DELETED_NO, name: '不显示已删除' },
-      { value: DELETED_ALL, name: '全部' },
-      { value: DELETED_ONLY, name: '只看已删除' },
-    ], inquiry.deleted)), 2),
-    filterItem('排序', (controls.sort = select(EXPENSE_SORTS, inquiry.sort)), 3),
-  ];
-
-  function apply() {
-    state.inquiry = {
-      ...newInquiry(),
-      expense_date_start: dateToRfc3339(controls.expense_date_start.value),
-      expense_date_end: dateToRfc3339(controls.expense_date_end.value, true),
-      expense_amount_min: controls.expense_amount_min.value.trim() || null,
-      expense_amount_max: controls.expense_amount_max.value.trim() || null,
-      expense_currency: compact(controls.expense_currency.value.toUpperCase().split(',')),
-      accounting_currency: compact(controls.accounting_currency.value.toUpperCase().split(',')),
-      counterparty_like: controls.counterparty_like.value.trim(),
-      remark_like: controls.remark_like.value.trim(),
-      expense_type_like: controls.expense_type_like.value.trim(),
-      bank_name: compact(controls.bank_name.value.split(',')),
-      card_last_4: compact(controls.card_last_4.value.split(',')),
-      operation_id: compact(controls.operation_id.value.split(',')).map(Number),
-      file_id: compact(controls.file_id.value.split(',')).map(Number),
-      deleted: Number(controls.deleted.value),
-      sort: controls.sort.value,
-      page: 1,
-      page_size: state.inquiry.page_size,
-    };
-    state.selected.clear();
-    reload();
-  }
-
-  const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
-    ...items,
-    el('div', { class: 'col-12 d-flex gap-2 pt-2' }, [
-      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: '查询' }),
-      el('button', {
-        class: 'btn btn-sm btn-outline-secondary',
-        type: 'button',
-        text: '重置',
-        onclick: () => {
-          state.inquiry = newInquiry();
-          state.selected.clear();
-          render(host, {});
-        },
-      }),
-    ]),
-  ]);
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    apply();
-  });
-
-  return filterCard(form);
+  return expenseFilter(
+    state.inquiry,
+    (inquiry) => {
+      state.inquiry = inquiry;
+      state.paging.page = 1;
+      state.selected.clear();
+      reload();
+    },
+    () => {
+      state.inquiry = newInquiry();
+      state.paging.page = 1;
+      state.selected.clear();
+      render(host, {});
+    },
+  );
 }
 
 function buildToolbar() {
@@ -700,7 +556,7 @@ function buildToolbar() {
 //F-5：表头列出全库存在的记账币种，多于一种或与当前选择不一致就提示去切换
 function buildCurrencyHint() {
   const current = getAccountingCurrency();
-  const codes = state.currencySet;
+  const codes = accountingCurrencySet();
   if (codes.length === 0) return null;
   const mixed = codes.length > 1 || codes[0] !== current;
   if (!mixed) return null;
@@ -719,12 +575,13 @@ function buildVerifyHint() {
 }
 
 function headerCell(field) {
-  if (field.key !== 'accounting_currency' || state.currencySet.length === 0) {
+  const codes = accountingCurrencySet();
+  if (field.key !== 'accounting_currency' || codes.length === 0) {
     return el('th', { class: 'text-nowrap', text: field.name });
   }
   return el('th', { class: 'text-nowrap' }, [
     field.name,
-    el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${state.currencySet.join('/')}）` }),
+    el('span', { class: 'text-secondary fw-normal small ms-1', text: `（${codes.join('/')}）` }),
   ]);
 }
 
@@ -790,8 +647,18 @@ function buildRow(row, marks) {
   return tr;
 }
 
+//当前页的切片。筛选拉的是全集，翻页只在这一份数据上切，不再回后端
+function pageRows() {
+  if (state.verify) return state.rows;
+  const size = state.paging.page_size;
+  const index = state.paging.page > 1 ? state.paging.page - 1 : 0;
+  return state.rows.slice(index * size, index * size + size);
+}
+
 function buildTable() {
+  //疑似重复在筛选全集上分组，不只在当前页里找——跨页的重复组原先标不出来
   const marks = groupDuplicate(state.rows);
+  const rows = pageRows();
   rowCheckboxes = [];
   const columnCount = state.columns.length + 2;
   const head = el('thead', {}, [
@@ -830,10 +697,10 @@ function buildTable() {
       }),
     ])]));
   }
-  if (state.rows.length === 0 && !state.adding) {
+  if (rows.length === 0 && !state.adding) {
     body.appendChild(emptyRow(columnCount));
   }
-  for (const row of state.rows) {
+  for (const row of rows) {
     body.appendChild(buildRow(row, marks));
     if (state.editingId === row.id) {
       //草稿存在 state 里，勾选、改列这类重绘不会把填到一半的内容冲掉
@@ -878,10 +745,9 @@ function renderTable(loading) {
   }
   tableHost.appendChild(buildTable());
   if (!state.verify) {
-    tableHost.appendChild(pager(state.inquiry, state.count, (change) => {
-      Object.assign(state.inquiry, change);
-      state.selected.clear();
-      reload();
+    tableHost.appendChild(pager(state.paging, state.count, (change) => {
+      Object.assign(state.paging, change);
+      renderTable(false);
     }));
   }
   tableHost.appendChild(el('p', { class: 'small text-secondary' }, [
@@ -903,6 +769,7 @@ export function render(container, query) {
     }
   }
   state.selected.clear();
+  state.paging.page = 1;
   state.editingId = 0;
   state.editDraft = null;
   state.adding = false;

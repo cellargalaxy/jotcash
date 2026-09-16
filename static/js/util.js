@@ -88,7 +88,7 @@ export function monthOf(date) {
   return date ? date.slice(0, 7) : '';
 }
 
-//摊分结束月 = 起始月 + 摊分月数 - 1
+//摊销结束月 = 起始月 + 摊销月数 - 1
 export function addMonth(month, count) {
   if (!month) return '';
   const year = Number(month.slice(0, 4));
@@ -110,11 +110,15 @@ export function currencyName(code) {
 }
 
 //金额字段在后端是 decimal，序列化出来是字符串。按金额精度补齐小数位，
-//只补不截：68 与 68.00 混排看不齐，而截位会把 JPY 这种真实小数位吃掉
+//只补不截：68 与 68.00 混排看不齐，而截位会把 JPY 这种真实小数位吃掉。
+//但「只补不截」碰上二进制浮点会放大噪声：0.01+0.14+0.15 在 number 里是 0.30000000000000004，
+//小数位数一数就是 17 位，照着补就把这串尾巴原样印到屏幕上。所以 number 先按 15 位有效数字
+//收一次再量小数位——number 本来也只有约 15~17 位有效数字，噪声全在这条线之外。
+//字符串不动：那是后端给的精确十进制，它有几位小数就是几位
 export function formatAmount(value) {
   if (value === null || value === undefined || value === '') return '';
   try {
-    const amount = new Decimal(value);
+    const amount = typeof value === 'number' ? new Decimal(value).toSignificantDigits(15) : new Decimal(value);
     return amount.toFixed(Math.max(AMOUNT_SCALE, amount.decimalPlaces()));
   } catch (err) {
     return String(value);

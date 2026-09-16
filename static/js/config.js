@@ -25,8 +25,7 @@ export const DELETED_NO = 0;
 export const DELETED_ALL = 1;
 export const DELETED_ONLY = 2;
 
-export const PAGE_SIZE_DEFAULT = 20;
-export const PAGE_SIZE_MAX = 200;
+//明细的分页在前端做，这里是每页条数的候选
 export const PAGE_SIZES = [10, 20, 50, 100, 200];
 
 //口令强度，与后端 tool.TokenMinLen 及 CheckToken 的判据一致
@@ -60,9 +59,9 @@ export const EXPENSE_FIELDS = [
   { key: 'accounting_currency', name: '记账币种', type: 'currency', editable: false },
   { key: 'accounting_amount', name: '记账金额', type: 'amount', editable: false },
   { key: 'expense_type', name: '支出类型', type: 'expense_type', editable: true },
-  { key: 'amortization_months', name: '摊分月数', type: 'int', editable: true },
-  { key: 'amortization_start_month', name: '摊分起始月', type: 'month', editable: false },
-  { key: 'amortization_end_month', name: '摊分结束月', type: 'month', editable: false },
+  { key: 'amortization_months', name: '摊销月数', type: 'int', editable: true },
+  { key: 'amortization_start_month', name: '摊销起始月', type: 'month', editable: false },
+  { key: 'amortization_end_month', name: '摊销结束月', type: 'month', editable: false },
   { key: 'id', name: '明细ID', type: 'id', editable: false },
   { key: 'operation_id', name: '审计ID', type: 'id', editable: false },
   { key: 'file_id', name: '文件ID', type: 'id', editable: false },
@@ -89,19 +88,20 @@ export const EXPENSE_COLUMN_DEFAULT = [
 //疑似重复的判定字段：三者相同即同组
 export const DUPLICATE_KEYS = ['expense_date', 'expense_amount', 'expense_currency'];
 
-//CSV 列契约：列名与顺序都必须与后端 base_csv.columns 完全相等，差一列解析器就不认领
+//CSV 列契约：列名与顺序都必须与后端 base_csv.columns 完全相等，差一列解析器就不认领。
+//column 与页面展示名分开声明：展示名是给人看的，改它不该动到落库契约
 export const CSV_FIELDS = [
-  'bank_name',
-  'card_last_4',
-  'expense_date',
-  'expense_currency',
-  'expense_amount',
-  'counterparty',
-  'remark',
-  'exchange_rate',
-  'accounting_currency',
-  'expense_type',
-  'amortization_months',
+  { key: 'bank_name', column: '银行名称' },
+  { key: 'card_last_4', column: '卡号后四位' },
+  { key: 'expense_date', column: '支出日期' },
+  { key: 'expense_currency', column: '支出币种' },
+  { key: 'expense_amount', column: '支出金额' },
+  { key: 'counterparty', column: '交易对手方' },
+  { key: 'remark', column: '交易备注' },
+  { key: 'exchange_rate', column: '折算汇率' },
+  { key: 'accounting_currency', column: '记账币种' },
+  { key: 'expense_type', column: '支出类型' },
+  { key: 'amortization_months', column: '摊销月数' },
 ];
 
 //排序白名单，越界后端直接报错，下拉框只能给这些

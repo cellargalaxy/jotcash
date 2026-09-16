@@ -56,7 +56,7 @@ function buildFilter() {
   const inquiry = state.inquiry;
   const controls = {};
   const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
-    filterItem('文件名', (controls.file_name_like = textInput({ value: inquiry.file_name_like })), 3),
+    filterItem('文件名', (controls.file_name_like = textInput({ value: inquiry.file_name_like })), 3, '模糊匹配，输入片段即可'),
     filterItem('文件ID（逗号分隔）', (controls.id = textInput({ value: inquiry.id.join(',') })), 2),
     filterItem('来源审计ID（逗号分隔）', (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
     filterItem('创建时间起', (controls.created_at_start = dateInput({})), 2),

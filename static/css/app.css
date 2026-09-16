@@ -98,3 +98,9 @@
   border: 0;
   opacity: 0;
 }
+
+/* 图表容器：Chart.js 关掉了固定宽高比，高度由容器定；relative 是 Chart.js 量尺寸的前提 */
+.chart-box {
+  position: relative;
+  height: 20rem;
+}
