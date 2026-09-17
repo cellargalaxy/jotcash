@@ -18,6 +18,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, error) {
+	objects, count, err := repo.SelectExpense(ctx, inquiry)
+	if err != nil {
+		return nil, err
+	}
+	return common_model.HttpData{Object: objects, Count: count}, nil
+}
+
 func SelectExpenseDistinct(ctx context.Context, inquiry model.ExpenseDistinctInquiry) (any, error) {
 	objects, count, err := repo.SelectExpenseDistinct(ctx, inquiry)
 	if err != nil {
