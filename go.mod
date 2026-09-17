@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/bojanz/currency v1.5.0
-	github.com/cellargalaxy/go_common v0.0.0-20260915073249-449772837e52
+	github.com/cellargalaxy/go_common v0.0.0-20260917062915-6e461ce8c7a8
 	github.com/gin-gonic/gin v1.12.0
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
 	github.com/ncruces/go-sqlite3 v0.34.0
