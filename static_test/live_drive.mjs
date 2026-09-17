@@ -86,6 +86,19 @@ const candidate = await api.selectExpense({
 check('金额区间用字符串小数也筛得动', candidate.count, 3);
 //明细表格、图表与导出都吃这一份：不带分页参数即全量
 check('不带分页即全量', (await api.selectExpense({ ...newInquiry(), deleted: 1 })).count, 3);
+//统计页摊销口径用的那对筛选字段：丙那笔 2026-08 起摊 6 个月，摊到 2027-01，支出日期落不进 11~12 月，摊销区间落得进
+check('区间内没有支出日期', (await api.selectExpense({
+  ...newInquiry(),
+  expense_date_start: dateToRfc3339('2026-11-01'),
+  expense_date_end: dateToRfc3339('2026-12-31', true),
+  deleted: 1,
+})).count, 0);
+check('摊销区间筛得到跨进区间的分期', (await api.selectExpense({
+  ...newInquiry(),
+  amortization_month_start: dateToRfc3339('2026-11-01'),
+  amortization_month_end: dateToRfc3339('2026-12-01'),
+  deleted: 1,
+})).count, 1);
 for (const sort of EXPENSE_SORTS) await api.selectExpense({ ...newInquiry(), sort: sort.value, deleted: 1 });
 show('排序下拉', `${EXPENSE_SORTS.length} 个取值后端全认`);
 
@@ -134,6 +147,11 @@ async function reason(name, call, part) {
 await reason('乐观锁挡住落后的版本', () => api.updateExpense({ ...row, version: 0 }), '数据已落后');
 await reason('候选字段白名单', () => api.selectDistinct('remark'), '不在白名单内');
 await reason('排序白名单', () => api.selectExpense({ ...newInquiry(), sort: 'remark desc' }), '不在白名单内');
+await reason('摊销区间倒挂', () => api.selectExpense({
+  ...newInquiry(),
+  amortization_month_start: dateToRfc3339('2026-12-01'),
+  amortization_month_end: dateToRfc3339('2026-11-01'),
+}), '时间区间倒挂');
 
 check('批量软删除', (await api.deleteExpense({ ...newInquiry(), id: [row.id] })).count, 1);
 await reason('已删除的明细改不动', () => api.updateExpense({ ...row, remark: '再改一次' }), '已删除明细不可编辑');

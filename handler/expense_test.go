@@ -49,6 +49,32 @@ func newTestExpense(counterparty string, date time.Time, amount string) *model.E
 	}
 }
 
+// 摊销起止月是入库时算好落库的，测试夹具直接铺进去，免得每条用例都去跑一遍派生
+func newTestAmortization(counterparty string, year int, month time.Month, months int) *model.Expense {
+	start := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+	object := newTestExpense(counterparty, start.AddDate(0, 0, 14), "100")
+	object.AmortizationMonths = months
+	object.AmortizationStartMonth = start
+	object.AmortizationEndMonth = start.AddDate(0, months-1, 0)
+	return object
+}
+
+func sameExpenseIds(resp expenseResp, want ...*model.Expense) bool {
+	if resp.Data.Count != int64(len(want)) || len(resp.Data.Object) != len(want) {
+		return false
+	}
+	got := make(map[int64]bool, len(resp.Data.Object))
+	for _, one := range resp.Data.Object {
+		got[one.Id] = true
+	}
+	for _, one := range want {
+		if !got[one.Id] {
+			return false
+		}
+	}
+	return true
+}
+
 // 铺三条：两条未删除（日期与金额都错开），一条已软删除
 func newTestExpenses(t *testing.T, clientToken string) (*model.Expense, *model.Expense, *model.Expense) {
 	t.Helper()
@@ -144,6 +170,72 @@ func TestSelectExpenseFilter(t *testing.T) {
 		if resp := selectExpense(t, engine, jwt, one.inquiry); resp.Data.Count != one.count {
 			t.Errorf("%s筛选不符: got=%d want=%d", name, resp.Data.Count, one.count)
 		}
+	}
+}
+
+// 摊销口径的统计要的是「摊销区间与筛选区间有交集」：跨期分期的支出日期在区间之前，
+// 它摊到区间内那几个月的钱同样得算进来，按支出日期筛会把这一整行漏掉
+func TestSelectExpenseAmortizationMonth(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	cross := newTestAmortization("跨进来的", 2024, time.July, 12)
+	inside := newTestAmortization("区间内的", 2025, time.March, 12)
+	before := newTestAmortization("够不着的", 2023, time.January, 12)
+	touchStart := newTestAmortization("正好摊到区间起月", 2024, time.February, 12)
+	touchEnd := newTestAmortization("正好从区间止月开摊", 2025, time.December, 1)
+	execTransaction(t, clientToken, rdb.NewExpenseInsertHandler(cross, inside, before, touchStart, touchEnd))
+
+	//按支出日期筛只捞得到支出日期落在区间内的那两笔，跨进来的被整个漏掉
+	resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		ExpenseDateStart: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		ExpenseDateEnd:   time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
+	})
+	if !sameExpenseIds(resp, inside, touchEnd) {
+		t.Fatalf("按支出日期筛应只命中支出日期落在区间内的: %+v", resp.Data)
+	}
+
+	//换成摊销区间筛：摊销止月正好等于区间起月、摊销起月正好等于区间止月，两头都算命中
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		AmortizationMonthStart: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		AmortizationMonthEnd:   time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if !sameExpenseIds(resp, cross, inside, touchStart, touchEnd) {
+		t.Fatalf("摊销区间筛应命中所有与区间有交集的: %+v", resp.Data)
+	}
+
+	//单边只卡一头：只给起月时，摊销止月早于它的才被筛掉
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		AmortizationMonthStart: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if !sameExpenseIds(resp, cross, inside, touchStart, touchEnd) {
+		t.Fatalf("只给摊销起月不符: %+v", resp.Data)
+	}
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		AmortizationMonthEnd: time.Date(2023, 12, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if !sameExpenseIds(resp, before) {
+		t.Fatalf("只给摊销止月不符: %+v", resp.Data)
+	}
+
+	//与支出日期区间叠加即两个条件都要满足，不是二选一
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		ExpenseDateStart:       time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		ExpenseDateEnd:         time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
+		AmortizationMonthStart: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		AmortizationMonthEnd:   time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if !sameExpenseIds(resp, inside, touchEnd) {
+		t.Fatalf("两个区间应当叠加: %+v", resp.Data)
+	}
+
+	//区间倒挂与支出日期区间同一个判据
+	resp = selectExpense(t, engine, jwt, model.ExpenseInquiry{
+		AmortizationMonthStart: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC),
+		AmortizationMonthEnd:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if resp.Code == http.StatusOK {
+		t.Errorf("摊销区间倒挂应报错: %+v", resp)
 	}
 }
 

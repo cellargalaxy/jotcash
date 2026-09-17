@@ -69,6 +69,10 @@ func checkExpenseRange(ctx context.Context, inquiry model.ExpenseInquiry) error 
 	if err != nil {
 		return err
 	}
+	err = checkTimeRange(ctx, inquiry.AmortizationMonthStart, inquiry.AmortizationMonthEnd)
+	if err != nil {
+		return err
+	}
 	return checkAmountRange(ctx, inquiry.ExpenseAmountMin, inquiry.ExpenseAmountMax)
 }
 

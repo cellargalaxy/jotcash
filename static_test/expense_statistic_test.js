@@ -149,6 +149,55 @@ test('聚合：月合计之和恒等于总额，逐月与 monthTotalOf 一致', 
   }
 });
 
+//摊销口径按「摊销区间与窗口有交集」拉数，跨进窗口的那几笔在窗口外还留着半截，
+//窗口外那部分既不能上月轴，也不能进概览与占比，否则整屏数字互相对不上
+test('聚合：给了月窗，只算摊进窗口的那几个月', () => {
+  const rows = [
+    //2026-07 起摊 6 个月，摊到 2026-12；窗口只取 2026-09~2026-11，算进来的是 3 个月
+    newRow({ expense_date: '2026-07-10', amount: '600.00', months: 6, type: '数码' }),
+    //整笔都落在窗口里
+    newRow({ expense_date: '2026-10-08', amount: '68.00', months: 1, type: '餐饮' }),
+    //摊销区间完全在窗口之后，一分钱都不该算
+    newRow({ expense_date: '2027-01-05', amount: '999.00', months: 1, type: '居住' }),
+  ];
+  const window = { start: '2026-09', end: '2026-11' };
+  const summary = aggregate(rows, MEASURE_AMORTIZATION, window);
+  same('月轴不越界', summary.months, ['2026-09', '2026-10', '2026-11']);
+  equal('只算摊进窗口的 3 个月', summary.monthTotal.get('2026-09').toString(), '100');
+  equal('合计等于窗口内份额之和', summary.total.toString(), '368');
+  equal('类型合计只算摊进来的部分', summary.typeTotal.get('数码').toString(), '300');
+  equal('窗口之外的类型整个不出现', summary.typeTotal.has('居住'), false);
+  equal('对手方合计同样只算窗口内', summary.counterpartyTotal.get('盒马鲜生').toString(), '368');
+  equal('最大单笔取窗口内份额', summary.largest.toString(), '300');
+
+  let sum = new Decimal(0);
+  for (const month of summary.months) sum = sum.plus(monthTotal(summary, month));
+  equal('月合计求和恒等于总额', sum.toString(), summary.total.toString());
+});
+
+test('聚合：不给月窗时与改动前逐字一致', () => {
+  const rows = [
+    newRow({ expense_date: '2026-07-10', amount: '600.00', months: 6, type: '数码' }),
+    newRow({ expense_date: '2026-10-08', amount: '68.00', months: 1, type: '餐饮' }),
+  ];
+  for (const measure of [MEASURE_ACCOUNTING, MEASURE_AMORTIZATION]) {
+    const summary = aggregate(rows, measure);
+    equal(`合计仍是整笔记账金额 ${measure}`, summary.total.toString(), '668');
+    equal(`类型合计仍是整笔 ${measure}`, summary.typeTotal.get('数码').toString(), '600');
+    equal(`对手方合计仍是整笔 ${measure}`, summary.counterpartyTotal.get('盒马鲜生').toString(), '668');
+  }
+});
+
+test('月度合计：月窗同样把窗口外的份额挡在外面', () => {
+  const rows = [newRow({ expense_date: '2026-07-10', amount: '600.00', months: 6 })];
+  const all = monthTotalOf(rows, MEASURE_AMORTIZATION);
+  equal('不给窗口铺满 6 个月', all.size, 6);
+  const clipped = monthTotalOf(rows, MEASURE_AMORTIZATION, { start: '2026-09', end: '2026-11' });
+  same('给了窗口只剩 3 个月', [...clipped.keys()].sort(), ['2026-09', '2026-10', '2026-11']);
+  const half = monthTotalOf(rows, MEASURE_AMORTIZATION, { start: '2026-10' });
+  same('只给起月就只卡一头', [...half.keys()].sort(), ['2026-10', '2026-11', '2026-12']);
+});
+
 test('聚合：空支出类型与空对手方归「未填写」，不丢数据', () => {
   const rows = [
     newRow({ amount: '10.00', type: '', counterparty: '' }),

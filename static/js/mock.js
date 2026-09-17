@@ -115,6 +115,13 @@ function timeIn(value, start, end) {
   return true;
 }
 
+//摊销区间与筛选区间有交集即命中，与后端 ExpenseInquiry.Where 同一判据
+function rangeOverlap(rowStart, rowEnd, start, end) {
+  if (start && (!rowEnd || new Date(rowEnd).getTime() < new Date(start).getTime())) return false;
+  if (end && (!rowStart || new Date(rowStart).getTime() > new Date(end).getTime())) return false;
+  return true;
+}
+
 function checkTimeRange(start, end) {
   if (!start || !end) return '';
   return new Date(start).getTime() > new Date(end).getTime() ? '查询，时间区间倒挂' : '';
@@ -191,6 +198,7 @@ function filterExpense(inquiry) {
     if (!inList(inquiry.file_id, row.file_id)) return false;
     if (!inList(inquiry.version, row.version)) return false;
     if (!timeIn(row.expense_date, inquiry.expense_date_start, inquiry.expense_date_end)) return false;
+    if (!rangeOverlap(row.amortization_start_month, row.amortization_end_month, inquiry.amortization_month_start, inquiry.amortization_month_end)) return false;
     if (inquiry.expense_amount_min !== undefined && inquiry.expense_amount_min !== null
       && new Decimal(row.expense_amount).lt(new Decimal(inquiry.expense_amount_min))) return false;
     if (inquiry.expense_amount_max !== undefined && inquiry.expense_amount_max !== null
@@ -204,7 +212,8 @@ function filterExpense(inquiry) {
 function checkExpenseInquiry(inquiry) {
   const deleted = inquiry.deleted || DELETED_NO;
   if (![DELETED_NO, DELETED_ALL, DELETED_ONLY].includes(deleted)) return `查询明细，删除筛选非法: ${deleted}`;
-  const message = checkTimeRange(inquiry.expense_date_start, inquiry.expense_date_end);
+  const message = checkTimeRange(inquiry.expense_date_start, inquiry.expense_date_end)
+    || checkTimeRange(inquiry.amortization_month_start, inquiry.amortization_month_end);
   if (message) return message;
   const min = inquiry.expense_amount_min;
   const max = inquiry.expense_amount_max;

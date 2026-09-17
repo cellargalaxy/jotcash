@@ -76,6 +76,13 @@ func (this ExpenseInquiry) Where(ctx context.Context, tx *gorm.DB) (*gorm.DB, er
 	if !this.ExpenseDateEnd.IsZero() {
 		tx = tx.Where("expense_date <= ?", this.ExpenseDateEnd)
 	}
+	//两个条件交叉比：摊销区间与筛选区间有交集就算命中，跨期分期的支出日期在区间之前也要捞回来
+	if !this.AmortizationMonthStart.IsZero() {
+		tx = tx.Where("amortization_end_month >= ?", this.AmortizationMonthStart)
+	}
+	if !this.AmortizationMonthEnd.IsZero() {
+		tx = tx.Where("amortization_start_month <= ?", this.AmortizationMonthEnd)
+	}
 	if this.ExpenseAmountMin != nil {
 		tx = tx.Where("cast(expense_amount as real) >= ?", this.ExpenseAmountMin.InexactFloat64())
 	}

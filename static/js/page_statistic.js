@@ -15,7 +15,7 @@ import {
   percentText,
 } from './expense_statistic.js';
 import { t } from './i18n.js';
-import { appendChildren, clear, el, formatAmount, toastErr } from './util.js';
+import { appendChildren, clear, el, dateToRfc3339, formatAmount, formatDate, monthOf, toastErr } from './util.js';
 
 const TOP_COUNT = 10;
 
@@ -32,6 +32,28 @@ let host = null;
 let bodyHost = null;
 
 // ===== 渲染 =====
+
+//统计只看落在这个月窗里的钱，窗口边界取筛选里那对支出日期所在的月
+function monthWindow() {
+  return {
+    start: monthOf(formatDate(state.inquiry.expense_date_start)),
+    end: monthOf(formatDate(state.inquiry.expense_date_end)),
+  };
+}
+
+//摊销口径下要的不是「支出日期落在窗口内」，而是「摊销区间与窗口有交集」：
+//跨期分期的支出日期在窗口之前，它摊到窗口内那几个月的钱同样得算进来
+function requestInquiry() {
+  const window = monthWindow();
+  if (state.measure !== MEASURE_AMORTIZATION || !window.start || !window.end) return state.inquiry;
+  return {
+    ...state.inquiry,
+    expense_date_start: '',
+    expense_date_end: '',
+    amortization_month_start: dateToRfc3339(`${window.start}-01`),
+    amortization_month_end: dateToRfc3339(`${window.end}-01`),
+  };
+}
 
 function measureName() {
   return t((MEASURES.find((measure) => measure.value === state.measure) || MEASURES[0]).name);
@@ -64,7 +86,7 @@ function buildOverview(summary) {
   const monthCount = summary.months.length;
   const tiles = [
     { name: t('明细笔数'), value: `${state.rows.length}` },
-    { name: t('合计记账金额'), value: formatAmount(summary.total) },
+    { name: t('合计金额'), value: formatAmount(summary.total) },
     { name: t('覆盖月份（{measure}口径）', { measure: measureName() }), value: `${monthCount}` },
     { name: t('月均'), value: monthCount === 0 ? '—' : formatAmount(summary.total.div(monthCount).toDecimalPlaces(AMOUNT_SCALE)) },
     { name: t('最大单笔'), value: formatAmount(summary.largest) },
@@ -83,7 +105,8 @@ function measureSelect() {
   const control = select(MEASURES, state.measure);
   control.addEventListener('change', () => {
     state.measure = control.value;
-    renderBody();
+    //两种口径拉的不是同一批明细，换口径得重新回后端取
+    reload();
   });
   return el('div', { class: 'd-flex align-items-center gap-2' }, [
     el('span', { class: 'small text-secondary text-nowrap', text: t('柱高口径') }),
@@ -163,7 +186,7 @@ function buildMonthTypeTable(summary) {
 function buildTypeShareChart(summary) {
   return chartCard({
     title: t('支出类型占比'),
-    description: t('筛选范围内按支出类型汇总的记账金额。与口径无关：一笔明细各月份额之和就是它的记账金额。'),
+    description: t('筛选范围内按支出类型汇总的金额，跟着柱高口径走：摊销口径下算的是摊进区间那几个月的份额，不是整笔记账金额。'),
     config: doughnut({
       labels: summary.types,
       values: summary.types.map((type) => summary.typeTotal.get(type).toNumber()),
@@ -174,13 +197,14 @@ function buildTypeShareChart(summary) {
 }
 
 function buildMeasureCompareChart() {
-  const accounting = monthTotalOf(state.rows, MEASURE_ACCOUNTING);
-  const amortization = monthTotalOf(state.rows, MEASURE_AMORTIZATION);
+  const window = monthWindow();
+  const accounting = monthTotalOf(state.rows, MEASURE_ACCOUNTING, window);
+  const amortization = monthTotalOf(state.rows, MEASURE_AMORTIZATION, window);
   const months = monthAxis([...accounting.keys(), ...amortization.keys()]);
   const pick = (totals, month) => (totals.get(month) || new Decimal(0)).toNumber();
   return chartCard({
     title: t('记账口径 vs 摊销口径'),
-    description: t('同一批明细两种口径的月度合计。记账口径把整笔算在支出当月，摊销口径把它摊到摊销起止月，两条线的差就是摊销削平的那部分。'),
+    description: t('同一批明细两种口径的月度合计，都只画筛选区间内的月份。记账口径把整笔算在支出当月，摊销口径把它摊到摊销起止月，两条线的差就是摊销削平的那部分。'),
     config: line({
       labels: months,
       datasets: [
@@ -198,7 +222,7 @@ function buildCounterpartyChart(summary) {
     .slice(0, TOP_COUNT);
   return chartCard({
     title: t('交易对手方 Top {count}', { count: TOP_COUNT }),
-    description: t('筛选范围内记账金额最高的交易对手方。与口径无关。'),
+    description: t('筛选范围内金额最高的交易对手方，口径与上面几张图一致。'),
     height: '24rem',
     config: horizontalBar({
       labels: ranked.map((item) => item[0]),
@@ -216,7 +240,7 @@ function renderBody() {
     mountChart();
     return;
   }
-  const summary = aggregate(state.rows, state.measure);
+  const summary = aggregate(state.rows, state.measure, monthWindow());
   appendChildren(bodyHost, [
     buildCurrencyHint(),
     buildOverview(summary),
@@ -228,7 +252,7 @@ function renderBody() {
     ]),
     buildCounterpartyChart(summary),
     el('p', { class: 'small text-secondary' }, [
-      t('统计全部在前端算，后端只按筛选条件返回原始明细。已删除的明细是否计入，跟着筛选里的「已删除」走。'),
+      t('统计全部在前端算，后端只按筛选条件返回原始明细。摊销口径会把支出日期早于区间、但摊销跨进区间的明细一并取回，只统计摊进区间那几个月的份额。已删除的明细是否计入，跟着筛选里的「已删除」走。'),
     ]),
   ]);
   //节点进了文档才量得到容器尺寸，图表实例统一在这一步建
@@ -242,7 +266,7 @@ async function reload() {
     t('加载中'),
   ]));
   try {
-    state.rows = await api.selectExpense(state.inquiry).then((result) => result.object || []);
+    state.rows = await api.selectExpense(requestInquiry()).then((result) => result.object || []);
     await loadCandidate();
   } catch (err) {
     state.rows = [];

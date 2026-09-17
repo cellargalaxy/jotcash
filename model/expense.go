@@ -61,27 +61,29 @@ func (this Expense) TableName() string {
 }
 
 type ExpenseInquiry struct {
-	Id                    []int64          `json:"id"`
-	BankName              []string         `json:"bank_name"`
-	CardLast4             []string         `json:"card_last_4"`
-	ExpenseCurrency       []string         `json:"expense_currency"`
-	AccountingCurrency    []string         `json:"accounting_currency"`
-	AccountingCurrencyNot []string         `json:"accounting_currency_not"`
-	ExpenseType           []string         `json:"expense_type"`
-	AmortizationMonths    []int            `json:"amortization_months"`
-	OperationId           []int64          `json:"operation_id"`
-	FileId                []int64          `json:"file_id"`
-	Version               []int            `json:"version"`
-	ExpenseDateStart      time.Time        `json:"expense_date_start"`
-	ExpenseDateEnd        time.Time        `json:"expense_date_end"`
-	ExpenseAmountMin      *decimal.Decimal `json:"expense_amount_min"` //金额允许0与负数，用指针区分“不限”与“限定为0”
-	ExpenseAmountMax      *decimal.Decimal `json:"expense_amount_max"`
-	CounterpartyLike      string           `json:"counterparty_like"`
-	RemarkLike            string           `json:"remark_like"`
-	Deleted               int              `json:"deleted"`
-	Sort                  string           `json:"sort"`
-	Page                  int              `json:"page"`
-	PageSize              int              `json:"page_size"`
+	Id                     []int64          `json:"id"`
+	BankName               []string         `json:"bank_name"`
+	CardLast4              []string         `json:"card_last_4"`
+	ExpenseCurrency        []string         `json:"expense_currency"`
+	AccountingCurrency     []string         `json:"accounting_currency"`
+	AccountingCurrencyNot  []string         `json:"accounting_currency_not"`
+	ExpenseType            []string         `json:"expense_type"`
+	AmortizationMonths     []int            `json:"amortization_months"`
+	OperationId            []int64          `json:"operation_id"`
+	FileId                 []int64          `json:"file_id"`
+	Version                []int            `json:"version"`
+	ExpenseDateStart       time.Time        `json:"expense_date_start"`
+	ExpenseDateEnd         time.Time        `json:"expense_date_end"`
+	AmortizationMonthStart time.Time        `json:"amortization_month_start"`
+	AmortizationMonthEnd   time.Time        `json:"amortization_month_end"`
+	ExpenseAmountMin       *decimal.Decimal `json:"expense_amount_min"` //金额允许0与负数，用指针区分“不限”与“限定为0”
+	ExpenseAmountMax       *decimal.Decimal `json:"expense_amount_max"`
+	CounterpartyLike       string           `json:"counterparty_like"`
+	RemarkLike             string           `json:"remark_like"`
+	Deleted                int              `json:"deleted"`
+	Sort                   string           `json:"sort"`
+	Page                   int              `json:"page"`
+	PageSize               int              `json:"page_size"`
 }
 
 func (this ExpenseInquiry) String() string {

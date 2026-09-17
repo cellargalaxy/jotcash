@@ -42,15 +42,24 @@ export function monthShares(row, measure) {
   return shares;
 }
 
+//窗口之外的份额不算也不画：摊销口径按「摊销区间与窗口有交集」拉数，跨进窗口的那几笔在窗口外还留着半截，
+//一起算进来的话月轴会长出一截只统计到一半的月份，概览与图表也会对不上
+function inWindow(month, window) {
+  if (!window) return true;
+  if (window.start && month < window.start) return false;
+  if (window.end && month > window.end) return false;
+  return true;
+}
+
 function addAmount(counter, key, amount) {
   counter.set(key, (counter.get(key) || new Decimal(0)).plus(amount));
 }
 
-export function monthTotalOf(rows, measure) {
+export function monthTotalOf(rows, measure, window) {
   const totals = new Map();
   for (const row of rows) {
     for (const share of monthShares(row, measure)) {
-      if (share.month) addAmount(totals, share.month, share.amount);
+      if (share.month && inWindow(share.month, window)) addAmount(totals, share.month, share.amount);
     }
   }
   return totals;
@@ -69,8 +78,9 @@ export function monthAxis(months) {
   return axis;
 }
 
-//支出类型与交易对手方的合计与口径无关：一笔明细各月份额之和恒等于它的记账金额
-export function aggregate(rows, measure) {
+//一笔明细计入多少，取的是它落在窗口内的各月份额之和：不给窗口时份额之和恒等于记账金额，
+//给了窗口，摊销口径下跨进窗口的那几笔就只算摊进来的那部分，概览、占比与逐月柱图因此始终对得上
+export function aggregate(rows, measure, window) {
   const monthType = new Map();
   const monthTotal = new Map();
   const typeTotal = new Map();
@@ -79,17 +89,24 @@ export function aggregate(rows, measure) {
   let largest = new Decimal(0);
   const unfilledName = unfilled();
   for (const row of rows) {
-    const amount = new Decimal(row.accounting_amount || 0);
-    total = total.plus(amount);
-    if (amount.abs().gt(largest.abs())) largest = amount;
-    addAmount(typeTotal, row.expense_type || unfilledName, amount);
-    addAmount(counterpartyTotal, row.counterparty || unfilledName, amount);
+    let amount = new Decimal(0);
+    let hit = false;
     for (const share of monthShares(row, measure)) {
+      //月份算不出来的行落不到任何月上，但钱还在，不能让它被窗口判据顺手丢掉
+      if (share.month && !inWindow(share.month, window)) continue;
+      hit = true;
+      amount = amount.plus(share.amount);
       if (!share.month) continue;
       if (!monthType.has(share.month)) monthType.set(share.month, new Map());
       addAmount(monthType.get(share.month), row.expense_type || unfilledName, share.amount);
       addAmount(monthTotal, share.month, share.amount);
     }
+    //整笔都摊在窗口之外的行不算数，它的支出类型与对手方也不该露面，免得图上多一条恒为 0 的分类
+    if (!hit) continue;
+    total = total.plus(amount);
+    if (amount.abs().gt(largest.abs())) largest = amount;
+    addAmount(typeTotal, row.expense_type || unfilledName, amount);
+    addAmount(counterpartyTotal, row.counterparty || unfilledName, amount);
   }
   //类型按合计从大到小排，堆叠柱里大头永远在同一层，几张图之间颜色也对得上
   const types = [...typeTotal.keys()].sort((left, right) => typeTotal.get(right).cmp(typeTotal.get(left)));

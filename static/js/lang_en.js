@@ -251,7 +251,7 @@ export const TEXT = {
   // ===== 统计页 =====
   '金额统计': 'Amount statistics',
   '明细笔数': 'Records',
-  '合计记账金额': 'Total accounting amount',
+  '合计金额': 'Total amount',
   '覆盖月份（{measure}口径）': 'Months covered ({measure} basis)',
   '月均': 'Monthly average',
   '最大单笔': 'Largest single record',
@@ -263,19 +263,19 @@ export const TEXT = {
     'One bar per month, split by expense type. Each segment is labelled with its amount and its share of that month; the figure on top is the month total. Labels that do not fit are hidden automatically — the table below has every value.',
   '逐月逐类型明细（{measure}）': 'Month by type breakdown ({measure})',
   '支出类型占比': 'Share by expense type',
-  '筛选范围内按支出类型汇总的记账金额。与口径无关：一笔明细各月份额之和就是它的记账金额。':
-    'Accounting amount by expense type within the filter. Independent of basis: a record’s monthly shares always add up to its accounting amount.',
+  '筛选范围内按支出类型汇总的金额，跟着柱高口径走：摊销口径下算的是摊进区间那几个月的份额，不是整笔记账金额。':
+    'Amount by expense type within the filter, following the bar basis: on the amortized basis it counts only the shares that fall inside the range, not the whole accounting amount.',
   '记账口径 vs 摊销口径': 'Accounting basis vs amortized basis',
-  '同一批明细两种口径的月度合计。记账口径把整笔算在支出当月，摊销口径把它摊到摊销起止月，两条线的差就是摊销削平的那部分。':
-    'Monthly totals of the same records under both bases. The accounting basis books the whole amount in the expense month; the amortized basis spreads it across the amortization window. The gap between the lines is what amortization flattens out.',
+  '同一批明细两种口径的月度合计，都只画筛选区间内的月份。记账口径把整笔算在支出当月，摊销口径把它摊到摊销起止月，两条线的差就是摊销削平的那部分。':
+    'Monthly totals of the same records under both bases, charted only for months inside the filter range. The accounting basis books the whole amount in the expense month; the amortized basis spreads it across the amortization window. The gap between the lines is what amortization flattens out.',
   '交易对手方 Top {count}': 'Top {count} counterparties',
-  '筛选范围内记账金额最高的交易对手方。与口径无关。':
-    'Counterparties with the highest accounting amount within the filter. Independent of basis.',
+  '筛选范围内金额最高的交易对手方，口径与上面几张图一致。':
+    'Counterparties with the highest amount within the filter, on the same basis as the charts above.',
   '当前筛选没有可统计的数据': 'Nothing to chart under the current filter',
   '当前统计范围内有 {count} 种记账币种：{codes}。图表把它们直接相加，金额已经失真。请在筛选里限定记账币种，或先去明细页做一次记账币种切换。':
     'The current range mixes {count} accounting currencies: {codes}. The charts add them up as-is, so the amounts are already wrong. Restrict the accounting currency in the filter, or run an accounting currency switch from the records page first.',
-  '统计全部在前端算，后端只按筛选条件返回原始明细。已删除的明细是否计入，跟着筛选里的「已删除」走。':
-    'Every figure here is computed in the browser; the server only returns the raw records for the filter. Whether deleted records count follows the “Deleted” filter.',
+  '统计全部在前端算，后端只按筛选条件返回原始明细。摊销口径会把支出日期早于区间、但摊销跨进区间的明细一并取回，只统计摊进区间那几个月的份额。已删除的明细是否计入，跟着筛选里的「已删除」走。':
+    'Every figure here is computed in the browser; the server only returns the raw records for the filter. On the amortized basis it also pulls back records whose expense date precedes the range but whose amortization reaches into it, counting only the shares that fall inside. Whether deleted records count follows the “Deleted” filter.',
 
   // ===== 设置页 =====
   '记账口径': 'Accounting basis',

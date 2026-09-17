@@ -142,6 +142,39 @@ test('筛选：集合、模糊、金额区间、时间区间各自生效', async
   await rejects('删除筛选非法', mock.selectExpense({ ...base, deleted: 9 }), '删除筛选非法');
 });
 
+//摊销区间筛与后端 ExpenseInquiry.Where 同一判据：摊销区间与筛选区间有交集即命中，不看支出日期落在哪
+test('筛选：摊销区间按交集命中', async () => {
+  const inserted = await insertAndSelect([
+    //2024-07 起摊 12 个月，摊到 2025-06：支出日期在 2025 之外，但摊进了 2025
+    { expense_date: '2024-07-15', expense_currency: 'CNY', expense_amount: '120', counterparty: '跨进来的', amortization_months: '12' },
+    { expense_date: '2025-03-15', expense_currency: 'CNY', expense_amount: '120', counterparty: '区间内的', amortization_months: '12' },
+    //2023 整年摊完，与 2025 没有交集
+    { expense_date: '2023-01-15', expense_currency: 'CNY', expense_amount: '120', counterparty: '够不着的', amortization_months: '12' },
+  ]);
+  const base = { operation_id: [inserted.operationId], sort: 'id asc' };
+  const names = async (extra) => (await mock.selectExpense({ ...base, ...extra })).object.map((row) => row.counterparty).sort();
+
+  same('按支出日期筛只捞得到支出日期落在区间内的', await names({
+    expense_date_start: '2025-01-01T00:00:00+08:00',
+    expense_date_end: '2025-12-31T23:59:59+08:00',
+  }), ['区间内的']);
+  same('按摊销区间筛把跨进来的一并捞回', await names({
+    amortization_month_start: '2025-01-01T00:00:00+08:00',
+    amortization_month_end: '2025-12-01T00:00:00+08:00',
+  }), ['区间内的', '跨进来的']);
+  same('两个区间叠加即两个条件都要满足', await names({
+    expense_date_start: '2025-01-01T00:00:00+08:00',
+    expense_date_end: '2025-12-31T23:59:59+08:00',
+    amortization_month_start: '2025-01-01T00:00:00+08:00',
+    amortization_month_end: '2025-12-01T00:00:00+08:00',
+  }), ['区间内的']);
+  await rejects('摊销区间倒挂', mock.selectExpense({
+    ...base,
+    amortization_month_start: '2025-12-01T00:00:00+08:00',
+    amortization_month_end: '2025-01-01T00:00:00+08:00',
+  }), '时间区间倒挂');
+});
+
 test('编辑：乐观锁挡住落后的版本，审计记下前后值', async () => {
   const inserted = await insertAndSelect([
     { expense_date: '2026-04-01', expense_currency: 'CNY', expense_amount: '50', counterparty: '编辑用例', expense_type: '日用' },
