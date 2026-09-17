@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -704,5 +705,29 @@ func TestCheckTokenUnlockOnFail(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatalf("口令探针失败没还回读锁，换口令被永久挡住")
+	}
+}
+
+// 每开一条连接都要为PRAGMA textkey跑一遍Argon2id（64MiB内存硬化KDF），
+// 而jotcash每个请求都现开现关一条连接，刷一次页面就是几百MB的瞬时分配，堆被撑大后RSS降不回来
+func TestOpenMemory(t *testing.T) {
+	ctx := newTestCtx(t)
+
+	const count = 5
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	for i := 0; i < count; i++ {
+		transaction, err := NewTransaction(ctx)
+		if err != nil {
+			t.Fatalf("开事务异常: %+v", err)
+		}
+		transaction.Close(ctx)
+	}
+	runtime.ReadMemStats(&after)
+
+	alloc := (after.TotalAlloc - before.TotalAlloc) / count
+	if alloc > 8<<20 {
+		t.Errorf("单条连接开销过大，每开一条连接就分配一次Argon2的64MiB: got=%dMB want<8MB", alloc>>20)
 	}
 }

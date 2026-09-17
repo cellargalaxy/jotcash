@@ -2,8 +2,10 @@ package handler_test
 
 import (
 	"net/http"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,6 +190,66 @@ func TestSelectExpenseWithoutPage(t *testing.T) {
 	resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
 	if resp.Data.Count != int64(count) || len(resp.Data.Object) != count {
 		t.Errorf("不传分页应拉全量: count=%d len=%d want=%d", resp.Data.Count, len(resp.Data.Object), count)
+	}
+}
+
+// 不分页拉全集走的是分批流式查询，批与批之间靠主键游标接力，
+// 而排序键是支出日期：主键序跟排序序对不上时，后一批会把前一批已经吐过的行再吐一遍，剩下的行再也轮不到
+func TestSelectExpenseWithoutPageSort(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	count := 205
+	expenses := make([]*model.Expense, 0, count)
+	for index := 0; index < count; index++ {
+		//日期两两不同，主键序与支出日期倒序正好相反，前端默认排序就是这一种
+		expenses = append(expenses, newTestExpense("亚马逊", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC).Add(time.Duration(index)*time.Hour), "1"))
+	}
+	execTransaction(t, clientToken, rdb.NewExpenseInsertHandler(expenses...))
+
+	resp := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
+	ids := make(map[int64]int, count)
+	for _, one := range resp.Data.Object {
+		ids[one.Id]++
+	}
+	repeat := len(resp.Data.Object) - len(ids)
+	if repeat > 0 {
+		t.Errorf("不分页拉全集吐了重复行: 返回%d行 去重后%d行 重复%d行", len(resp.Data.Object), len(ids), repeat)
+	}
+	if len(ids) != count {
+		t.Errorf("不分页拉全集漏行: 去重后%d行 want=%d count=%d", len(ids), count, resp.Data.Count)
+	}
+}
+
+// 刷新一次首页 = 1条明细查询 + 5条候选取值并发，6个请求各开一条连接、各跑一遍Argon2，
+// 库里只有3行也一样涨几百MB：内存跟数据量无关，跟这一刷打了几个请求有关
+func TestSelectExpenseRefreshMemory(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	newTestExpenses(t, clientToken)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	var wait sync.WaitGroup
+	wait.Add(1)
+	go func() {
+		defer wait.Done()
+		selectExpense(t, engine, jwt, model.ExpenseInquiry{})
+	}()
+	for _, field := range []string{"accounting_currency", "expense_type", "bank_name", "card_last_4", "expense_currency"} {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			selectExpenseDistinct(t, engine, jwt, model.ExpenseDistinctInquiry{Field: field})
+		}()
+	}
+	wait.Wait()
+	runtime.ReadMemStats(&after)
+
+	alloc := after.TotalAlloc - before.TotalAlloc
+	if alloc > 64<<20 {
+		t.Errorf("刷新一次首页的内存开销过大，6个请求各跑一遍Argon2的64MiB: got=%dMB want<64MB", alloc>>20)
 	}
 }
 
