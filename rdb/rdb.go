@@ -13,18 +13,16 @@ import (
 	"github.com/ncruces/go-sqlite3"
 	"github.com/ncruces/go-sqlite3/driver"
 	"github.com/ncruces/go-sqlite3/gormlite"
-	_ "github.com/ncruces/go-sqlite3/vfs/adiantum"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
 
-const vfsName = "adiantum"
-
 var dbLock sync.RWMutex
 
 func init() {
+	registerVfs()
 	ctx := util.GenCtx()
 	err := Create(ctx)
 	if err != nil {
@@ -144,6 +142,7 @@ func open(ctx context.Context, dbPath, token string) (*gorm.DB, error) {
 	err = sqlDb.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version)
 	if err != nil {
 		util.CloseIo(ctx, sqlDb)
+		keyCreator.drop(token)
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"dbPath": dbPath, "err": err}).Error("连接数据库，口令错误或数据库文件损坏")
 		return nil, errors.Errorf("连接数据库，口令错误或数据库文件损坏")
 	}
