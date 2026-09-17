@@ -2,7 +2,9 @@ package rdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
@@ -159,6 +161,92 @@ func NewExpenseDeleteHandler(inquiry model.ExpenseInquiry) *util.DeleteHandler[m
 func NewExpenseSelectHandler(inquiry model.ExpenseInquiry) *util.SelectHandler[model.Expense] {
 	handler := util.NewSelectHandler[model.Expense](model.Expense{}.TableName(), ExpenseInquiry(inquiry))
 	return handler
+}
+
+func NewExpenseSelectStreamHandler(inquiry model.ExpenseInquiry, writer io.Writer) *ExpenseSelectStreamHandler {
+	handler := new(ExpenseSelectStreamHandler)
+	handler.Inquiry = inquiry
+	handler.Writer = writer
+	return handler
+}
+
+type ExpenseSelectStreamHandler struct {
+	Inquiry model.ExpenseInquiry
+	Writer  io.Writer
+	Count   int64
+}
+
+func (this *ExpenseSelectStreamHandler) Exec(ctx context.Context, tx *gorm.DB) error {
+	inquiry := ExpenseInquiry(this.Inquiry)
+	tx, err := inquiry.Where(ctx, tx.Model(&model.Expense{}))
+	if err != nil {
+		return err
+	}
+
+	err = tx.Session(&gorm.Session{}).Count(&this.Count).Error
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("查询expense，统计异常")
+		return errors.Errorf("查询expense，统计异常: %+v", err)
+	}
+
+	tx, err = inquiry.Order(ctx, tx)
+	if err != nil {
+		return err
+	}
+	tx, err = inquiry.Limit(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	if _, err = this.Writer.Write([]byte(`{"code":200,"msg":"","data":{"object":[`)); err != nil {
+		return err
+	}
+
+	first := true
+	writeRow := func(row *model.Expense) error {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return err
+		}
+		if !first {
+			if _, err := this.Writer.Write([]byte(",")); err != nil {
+				return err
+			}
+		}
+		first = false
+		_, err = this.Writer.Write(data)
+		return err
+	}
+
+	//带分页的查询本身条数就有限，直接查；不带分页才是"拉全集"，分批查、查一批写一批
+	if this.Inquiry.PageSize > 0 {
+		var rows []*model.Expense
+		err = tx.Find(&rows).Error
+		if err == nil {
+			for _, row := range rows {
+				if err = writeRow(row); err != nil {
+					break
+				}
+			}
+		}
+	} else {
+		var rows []*model.Expense
+		err = tx.FindInBatches(&rows, util.DbBatchSize, func(tx *gorm.DB, batch int) error {
+			for _, row := range rows {
+				if err := writeRow(row); err != nil {
+					return err
+				}
+			}
+			return nil
+		}).Error
+	}
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Error("查询expense，流式查询异常")
+		return errors.Errorf("查询expense，流式查询异常: %+v", err)
+	}
+
+	_, err = this.Writer.Write([]byte(fmt.Sprintf(`],"count":%d}}`, this.Count)))
+	return err
 }
 
 func NewExpenseDistinctHandler(inquiry model.ExpenseDistinctInquiry) *ExpenseDistinctHandler {
