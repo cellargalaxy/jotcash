@@ -44,15 +44,9 @@ func NewEngine(ctx context.Context) *gin.Engine {
 	engine.POST(config.PathExportDb, validate, Export)
 	engine.POST(config.PathImportDb, validate, Import)
 
-	engine.Use(staticCache)
+	engine.Use(util.StaticCache)
 	engine.StaticFS(util.PathStatic, http.FS(static.StaticFile))
 	return engine
-}
-
-func staticCache(c *gin.Context) {
-	if strings.HasPrefix(c.Request.RequestURI, util.PathStatic) {
-		c.Header("Cache-Control", "max-age=86400")
-	}
 }
 
 func validate(ctx *gin.Context) {
