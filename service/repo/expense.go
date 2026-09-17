@@ -3,7 +3,6 @@ package repo
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
@@ -63,22 +62,6 @@ func SelectExpense(ctx context.Context, inquiry model.ExpenseInquiry) ([]*model.
 		return nil, 0, err
 	}
 	return expenseHandler.Object, expenseHandler.Count, nil
-}
-
-func SelectExpenseStream(ctx context.Context, inquiry model.ExpenseInquiry, writer io.Writer) error {
-	inquiry, err := checkExpenseInquiry(ctx, inquiry)
-	if err != nil {
-		return err
-	}
-
-	transaction, err := rdb.NewTransaction(ctx)
-	if err != nil {
-		return err
-	}
-	defer transaction.Close(ctx)
-
-	expenseHandler := rdb.NewExpenseSelectStreamHandler(inquiry, writer)
-	return transaction.AddCommit(expenseHandler).Exec(ctx)
 }
 
 func checkExpenseRange(ctx context.Context, inquiry model.ExpenseInquiry) error {
