@@ -1,0 +1,182 @@
+/* 表格是这个系统的主界面，密度调高一点，一屏能多看几行 */
+.expense-table {
+  font-size: 0.86rem;
+}
+
+.expense-table td,
+.expense-table th {
+  vertical-align: middle;
+  padding: 0.45rem 0.75rem;
+}
+
+/* 列之间加轻量分割线，消除右对齐数字与左对齐文本视觉粘连，表头与内容结构清晰 */
+.expense-table th:not(:last-child),
+.expense-table td:not(:last-child) {
+  border-right: 1px solid var(--bs-border-color-translucent);
+}
+
+/* 数字列采用等宽数字对齐 */
+.expense-table td.text-end,
+.expense-table th.text-end {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 可双击编辑的单元格：光标提示与悬停高亮 */
+.expense-table td.cell-editable {
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.expense-table td.cell-editable:hover {
+  background-color: var(--bs-tertiary-bg);
+}
+
+/* 行内编辑单元格控件紧凑展示，定宽防抖动 */
+.expense-table td.cell-editing {
+  padding: 0.2rem 0.35rem;
+}
+
+.expense-table td.cell-editing .form-control {
+  font-size: 0.86rem;
+  padding: 0.2rem 0.4rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.expense-table td.cell-editing .input-group {
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.expense-table td.cell-editing .input-group > .btn {
+  padding: 0.2rem 0.35rem;
+}
+
+/* 操作列表头与单元格：固定宽度，单元格紧凑排列，防止切换保存/取消按钮时列宽跳动 */
+.expense-table th.cell-actions,
+.expense-table td.cell-actions {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+/* 疑似重复：同组同色、相邻组换色，加框是为了在长表里一眼看出边界。
+   底色走半透明而不是实色，明暗两种主题下都是在各自的表格底色上加一层，不会盖死行的原有状态 */
+.duplicate-a > td {
+  background-color: rgba(255, 193, 7, 0.16);
+  border-top: 1px solid rgba(255, 193, 7, 0.75);
+  border-bottom: 1px solid rgba(255, 193, 7, 0.75);
+}
+
+.duplicate-b > td {
+  background-color: rgba(13, 110, 253, 0.12);
+  border-top: 1px solid rgba(13, 110, 253, 0.6);
+  border-bottom: 1px solid rgba(13, 110, 253, 0.6);
+}
+
+/* 深色底下同样的透明度会糊成一团看不出分组，往上抬一档 */
+[data-bs-theme="dark"] .duplicate-a > td {
+  background-color: rgba(255, 193, 7, 0.24);
+}
+
+[data-bs-theme="dark"] .duplicate-b > td {
+  background-color: rgba(13, 110, 253, 0.26);
+}
+
+.duplicate-a > td:first-child,
+.duplicate-b > td:first-child {
+  border-left: 1px solid currentColor;
+}
+
+.duplicate-a > td:last-child,
+.duplicate-b > td:last-child {
+  border-right: 1px solid currentColor;
+}
+
+/* 已删除是终态，灰掉并划线，避免和在用的行混在一起 */
+.row-deleted > td {
+  color: var(--bs-secondary-color);
+  text-decoration: line-through;
+}
+
+/* 新增与编辑共用的编辑器，嵌在表格行里，视觉上要和普通行区分开 */
+.expense-editor {
+  background-color: var(--bs-tertiary-bg);
+  border-left: 3px solid var(--bs-primary);
+}
+
+.unlock-wrap {
+  display: flex;
+  justify-content: center;
+  padding-top: 4vh;
+}
+
+.unlock-card {
+  width: 100%;
+  max-width: 30rem;
+}
+
+/* 币种输入框统一大写展示，避免 cny/CNY 看起来像两种币种 */
+.text-uppercase::placeholder {
+  text-transform: none;
+}
+
+/* 组合框的候选菜单：候选可能很多，给个高度上限让它自己滚，别把页面顶长 */
+.combo-menu {
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+/* 组合框在栅格里要占满一格，输入框才不会被下拉按钮挤窄 */
+.input-group > .form-control {
+  min-width: 0;
+}
+
+/* 筛选格按顶部对齐，带小字说明的那几格才不会把标签顶得比邻居高。
+   只认 filter-item，别波及同样是 col-12 的查询按钮行 */
+.filter-item {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 小字说明贴住控件底部，多行说明也不会把这一格撑得忽高忽低 */
+.filter-item .form-text {
+  margin-top: 0.25rem;
+}
+
+/* 顶部公告：紧贴导航栏，通栏不留圆角，长地址在窄屏上换行而不是撑出横向滚动 */
+.notice-bar .notice-url {
+  word-break: break-all;
+}
+
+/* 复制兜底用的临时文本域：必须在视口内且可选中，execCommand 才认，所以不能 display:none */
+.notice-copy-area {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
+
+/* 图表容器：Chart.js 关掉了固定宽高比，高度由容器定；relative 是 Chart.js 量尺寸的前提 */
+.chart-box {
+  position: relative;
+  height: 20rem;
+}
+
+/* PDF 预览：iframe 没有内容高度可言，给个视口比例的固定高度，弹窗里才铺得开 */
+.preview-frame {
+  width: 100%;
+  height: 70vh;
+  border: 0;
+}
+
+/* 文本预览：长行换行而不是撑出横向滚动；高度封顶，弹窗自己滚 */
+.preview-text {
+  max-height: 70vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

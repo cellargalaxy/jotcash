@@ -1,0 +1,173 @@
+import * as api from './api.js';
+import { DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_SORTS } from './config.js';
+import {
+  comboFilterInput,
+  currencyOptions,
+  dateInput,
+  filterCard,
+  filterItem,
+  select,
+  textInput,
+} from './component.js';
+import { t } from './i18n.js';
+import { addYear, compact, dateToRfc3339, el, formatDate, toastErr, today } from './util.js';
+
+//明细的筛选条件骨架。没有 page/page_size：条件只描述「筛什么」，后端不带分页参数即返回全集，
+//明细表格的分页、图表统计、导出都从这一份全量上再加工。
+//这里**不带**支出日期区间：批量删除、核实视图、按审计ID/文件ID 跳转都复用它，
+//它们本来就被 ID 圈死了，再叠一个日期窗口只会把该删的没删掉、该看的看不见
+export function newInquiry() {
+  return {
+    id: [],
+    bank_name: [],
+    card_last_4: [],
+    expense_currency: [],
+    accounting_currency: [],
+    expense_type: [],
+    operation_id: [],
+    file_id: [],
+    expense_date_start: '',
+    expense_date_end: '',
+    expense_amount_min: null,
+    expense_amount_max: null,
+    counterparty_like: '',
+    remark_like: '',
+    deleted: DELETED_NO,
+    sort: 'expense_date desc',
+  };
+}
+
+//页面初值与重置值。全量拉取之后，条件全空就等于把整个库拖到浏览器里，
+//所以支出日期区间必填，默认给最近一年
+export function defaultInquiry() {
+  const end = today();
+  return { ...newInquiry(), expense_date_start: dateToRfc3339(addYear(end, -1)), expense_date_end: dateToRfc3339(end, true) };
+}
+
+// ===== 候选取值 =====
+
+export const CANDIDATE_FIELDS = ['expense_type', 'bank_name', 'card_last_4', 'expense_currency'];
+
+//候选下拉的取值：接口的 distinct 结果与用户现场录入的新值都往这里合并
+const candidates = { expense_type: [], bank_name: [], card_last_4: [], expense_currency: [] };
+
+let currencySet = [];
+
+//用户录入的新值立刻进候选，不必等它入库后 distinct 才认
+export function addCandidate(field, value) {
+  const text = String(value || '').trim();
+  if (!text || !CANDIDATE_FIELDS.includes(field)) return;
+  const list = candidates[field];
+  if (!list.includes(text)) {
+    list.push(text);
+    list.sort();
+  }
+}
+
+export function candidateOf(field) {
+  return candidates[field] || [];
+}
+
+//候选是累积的，换语言之后上一门语言的取值还留在里面，下拉里就会中英文各挂一份。
+//清空即可，下一次 loadCandidate 会按新语言重新取
+export function resetCandidate() {
+  for (const field of CANDIDATE_FIELDS) candidates[field] = [];
+}
+
+//全库真实存在的记账币种，与候选分开取：候选会合并用户现场录入的新值，混进来这个集合就不准了
+export function accountingCurrencySet() {
+  return currencySet;
+}
+
+export async function loadCandidate() {
+  try {
+    const [currencies, ...distincts] = await Promise.all([
+      api.selectDistinct('accounting_currency'),
+      ...CANDIDATE_FIELDS.map((field) => api.selectDistinct(field)),
+    ]);
+    currencySet = currencies.object || [];
+    CANDIDATE_FIELDS.forEach((field, index) => {
+      for (const value of distincts[index].object || []) addCandidate(field, value);
+    });
+  } catch (err) {
+    //候选与币种提示是锦上添花，取不到不该拦住列表与图表
+    currencySet = [];
+  }
+}
+
+// ===== 筛选卡片：明细页与统计页共用同一套条件、同一套控件 =====
+
+export function expenseFilter(inquiry, onApply, onReset) {
+  const controls = {};
+  //组合框返回的是 {node,input}，控件登记的得是里面那个 input，栅格里放的是外层 node
+  const comboField = (key, getOptions, value, attrs) => {
+    const combo = comboFilterInput(getOptions, value, attrs);
+    controls[key] = combo.input;
+    return combo.node;
+  };
+  //支出类型：可多选已有类型，另加「未填写」勾选框圈出支出类型为空的明细
+  const expenseTypeControl = el('div', {}, [
+    comboField('expense_type', () => candidateOf('expense_type'), inquiry.expense_type.filter((item) => item !== '').join(','), {}),
+    el('label', { class: 'form-check mt-1' }, [
+      (controls.expense_type_empty = el('input', { class: 'form-check-input', type: 'checkbox', checked: inquiry.expense_type.includes('') ? true : null })),
+      el('span', { class: 'form-check-label small ms-1', text: t('未填写') }),
+    ]),
+  ]);
+  const items = [
+    filterItem(t('支出日期起'), (controls.expense_date_start = dateInput({ value: inquiry.expense_date_start ? formatDate(inquiry.expense_date_start) : '' })), 2, t('必填，默认最近一年')),
+    filterItem(t('支出日期止'), (controls.expense_date_end = dateInput({ value: inquiry.expense_date_end ? formatDate(inquiry.expense_date_end) : '' })), 2, t('必填，默认最近一年')),
+    filterItem(t('支出金额下限'), (controls.expense_amount_min = textInput({ value: inquiry.expense_amount_min || '' })), 2),
+    filterItem(t('支出金额上限'), (controls.expense_amount_max = textInput({ value: inquiry.expense_amount_max || '' })), 2),
+    filterItem(t('支出币种'), comboField('expense_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.expense_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
+    filterItem(t('记账币种'), comboField('accounting_currency', () => currencyOptions(candidateOf('expense_currency')), inquiry.accounting_currency.join(','), { class: 'form-control form-control-sm text-uppercase' }), 2, t('可多选，逗号分隔')),
+    filterItem(t('交易对手方'), (controls.counterparty_like = textInput({ value: inquiry.counterparty_like })), 3, t('模糊匹配，输入片段即可')),
+    filterItem(t('交易备注'), (controls.remark_like = textInput({ value: inquiry.remark_like })), 3, t('模糊匹配，输入片段即可')),
+    filterItem(t('支出类型'), expenseTypeControl, 2, t('可多选，逗号分隔')),
+    filterItem(t('银行名称'), comboField('bank_name', () => candidateOf('bank_name'), inquiry.bank_name.join(','), {}), 2, t('可多选，逗号分隔')),
+    filterItem(t('卡号后四位'), comboField('card_last_4', () => candidateOf('card_last_4'), inquiry.card_last_4.join(','), {}), 2, t('可多选，逗号分隔')),
+    filterItem(t('来源审计ID'), (controls.operation_id = textInput({ value: inquiry.operation_id.join(',') })), 2),
+    filterItem(t('文件ID'), (controls.file_id = textInput({ value: inquiry.file_id.join(',') })), 2),
+    filterItem(t('已删除'), (controls.deleted = select([
+      { value: DELETED_NO, name: '不显示已删除' },
+      { value: DELETED_ALL, name: '全部' },
+      { value: DELETED_ONLY, name: '只看已删除' },
+    ], inquiry.deleted)), 2),
+    filterItem(t('排序'), (controls.sort = select(EXPENSE_SORTS, inquiry.sort)), 3),
+  ];
+
+  const form = el('form', { class: 'row g-2 align-items-start filter-form' }, [
+    ...items,
+    el('div', { class: 'col-12 d-flex gap-2 pt-2' }, [
+      el('button', { class: 'btn btn-sm btn-primary', type: 'submit', text: t('查询') }),
+      el('button', { class: 'btn btn-sm btn-outline-secondary', type: 'button', text: t('重置'), onclick: onReset }),
+    ]),
+  ]);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    //不用 required 交给浏览器拦：原生提示是浏览器语言的，跟页面语言对不上
+    if (!controls.expense_date_start.value || !controls.expense_date_end.value) {
+      toastErr(new Error(t('支出日期起与支出日期止必填')));
+      return;
+    }
+    onApply({
+      ...newInquiry(),
+      expense_date_start: dateToRfc3339(controls.expense_date_start.value),
+      expense_date_end: dateToRfc3339(controls.expense_date_end.value, true),
+      expense_amount_min: controls.expense_amount_min.value.trim() || null,
+      expense_amount_max: controls.expense_amount_max.value.trim() || null,
+      expense_currency: compact(controls.expense_currency.value.toUpperCase().split(',')),
+      accounting_currency: compact(controls.accounting_currency.value.toUpperCase().split(',')),
+      counterparty_like: controls.counterparty_like.value.trim(),
+      remark_like: controls.remark_like.value.trim(),
+      expense_type: [...compact(controls.expense_type.value.split(',')), ...(controls.expense_type_empty.checked ? [''] : [])],
+      bank_name: compact(controls.bank_name.value.split(',')),
+      card_last_4: compact(controls.card_last_4.value.split(',')),
+      operation_id: compact(controls.operation_id.value.split(',')).map(Number),
+      file_id: compact(controls.file_id.value.split(',')).map(Number),
+      deleted: Number(controls.deleted.value),
+      sort: controls.sort.value,
+    });
+  });
+
+  return filterCard(form);
+}
