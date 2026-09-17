@@ -31,7 +31,7 @@ func NewEngine(ctx context.Context) *gin.Engine {
 	engine.GET(util.PathPing, util.GinPing)
 	engine.POST(util.PathPing, validate, GinPing)
 	engine.POST(config.PathExpenseInsert, validate, InsertExpense)
-	engine.POST(config.PathExpenseSelect, validate, SelectExpense)
+	engine.POST(config.PathExpenseSelect, validate, util.NewGinPost("明细查询", service.SelectExpense))
 	engine.POST(config.PathExpenseUpdate, validate, util.NewGinPost("明细编辑", service.UpdateExpense))
 	engine.POST(config.PathExpenseDelete, validate, util.NewGinPost("明细删除", service.DeleteExpense))
 	engine.POST(config.PathExpenseSwitch, validate, util.NewGinPost("记账币种切换", service.SwitchAccountingCurrency))
