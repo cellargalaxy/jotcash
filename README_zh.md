@@ -4,6 +4,7 @@
 
 > 一款极简、私密、单用户的个人支出记账系统。采用 SQLite 整库加密与零持久化会话设计，内置浏览器端免后端 mock 试用体验。
 
+[![在线体验](https://img.shields.io/badge/在线演示-GitHub%20Pages-blue?logo=github&logoColor=white)](https://cellargalaxy.github.io/jotcash/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cellargalaxy/jotcash)](https://goreportcard.com/report/github.com/cellargalaxy/jotcash)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -36,7 +37,12 @@
 
 ### 如何打开 `index.html` 体验
 
-- **途径一：本地静态 Web 服务器（无需 Go / Docker 依赖）**
+- **途径一：GitHub Pages 在线直达（推荐，点击即开）**
+  直接访问本项目托管在 GitHub Pages 的在线静态演示页面：
+  👉 **[https://cellargalaxy.github.io/jotcash/](https://cellargalaxy.github.io/jotcash/)**
+  在解锁界面中勾选「**mock 试用**」，口令任意填写（如 `mock` / `123456`），点击「**解锁**」即可体验！
+
+- **途径二：本地静态 Web 服务器（无需 Go / Docker 依赖）**
   克隆代码后，使用本机任意静态 HTTP 服务器托管 `static/` 目录即可：
   ```bash
   # 克隆仓库
@@ -50,11 +56,8 @@
   ```
   浏览器访问 `http://localhost:8080`，选择「mock 试用」并解锁即可。
 
-- **途径二：在已部署的服务中切至 Mock 模式**
+- **途径三：在已部署的服务中切至 Mock 模式**
   在正式运行的 Jotcash 实例中，浏览器访问 `http://localhost:7678/static/index.html`，在解锁卡片中勾选 **mock 试用**，即可在不触碰正式数据库的前提下安全演练。
-
-- **途径三：静态网页托管 / GitHub Pages**
-  若将仓库的 `static/` 目录发布至 GitHub Pages 或任何静态托管平台，直接在浏览器中打开托管 URL，选择「mock 试用」即可零安装体验。
 
 ---
 

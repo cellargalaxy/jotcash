@@ -4,6 +4,7 @@
 
 > A private, single-user expense tracker with full-database encryption, zero-session persistence, and an interactive in-browser mock trial mode.
 
+[![Online Demo](https://img.shields.io/badge/Demo-GitHub%20Pages-blue?logo=github&logoColor=white)](https://cellargalaxy.github.io/jotcash/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cellargalaxy/jotcash)](https://goreportcard.com/report/github.com/cellargalaxy/jotcash)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -36,7 +37,12 @@ The frontend contains a complete in-browser database engine (`static/js/mock.js`
 
 ### How to Access `index.html`
 
-- **Option 1: Local Static Server (Zero Go / Docker dependencies)**
+- **Option 1: Live Demo on GitHub Pages (Instant Click & Try)**
+  Visit the live hosted static demo:
+  👉 **[https://cellargalaxy.github.io/jotcash/](https://cellargalaxy.github.io/jotcash/)**
+  On the unlock screen, select **mock 试用 (Mock Trial)**, type any password, and click **Unlock**!
+
+- **Option 2: Local Static Server (Zero Go / Docker dependencies)**
   Clone the repository and serve the `static/` directory using any local HTTP server:
   ```bash
   # Clone the repository
@@ -50,11 +56,8 @@ The frontend contains a complete in-browser database engine (`static/js/mock.js`
   ```
   Open `http://localhost:8080` in your browser, switch to **mock 试用**, and unlock.
 
-- **Option 2: In a Running Jotcash Instance**
+- **Option 3: In a Running Jotcash Instance**
   When running a real Jotcash backend, navigate to `http://localhost:7678/static/index.html`. On the unlock card, select **mock 试用 (Mock Trial)** to test features safely in memory without touching your production database.
-
-- **Option 3: GitHub Pages (Static Hosting)**
-  If you host the `static/` directory on GitHub Pages or any static web host, open the hosted URL, select **mock 试用**, and explore directly in your browser.
 
 ---
 
