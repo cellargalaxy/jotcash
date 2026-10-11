@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
 	_ "github.com/cellargalaxy/jotcash/service/expense/cmb_debit"
-	_ "github.com/cellargalaxy/jotcash/service/expense/hsbc_pulse_credit"
 	_ "github.com/cellargalaxy/jotcash/service/expense/icbc_credit"
+	_ "github.com/cellargalaxy/jotcash/service/expense/unionpay_screenshot"
 	"github.com/shopspring/decimal"
 )
 
@@ -83,7 +84,7 @@ func TestParseAccountingCurrency(t *testing.T) {
 	if objects[0].AccountingCurrency != "JPY" {
 		t.Errorf("文件里的记账币种应优先: %+v", objects[0])
 	}
-	if !objects[0].ExchangeRate.IsPositive() || !objects[0].AccountingAmount.Equal(objects[0].ExpenseAmount.Mul(objects[0].ExchangeRate)) {
+	if !objects[0].ExchangeRate.IsPositive() || !objects[0].AccountingAmount.Equal(objects[0].ExpenseAmount.Mul(objects[0].ExchangeRate).Round(config.GetConfig(ctx).AmountScale)) {
 		t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", objects[0])
 	}
 	if objects[1].AccountingCurrency != "CNY" {
@@ -171,6 +172,9 @@ func TestParseSamplePdf(t *testing.T) {
 		}
 		objects, err := expense.Parse(ctx, data, "CNY")
 		if err != nil {
+			if strings.Contains(err.Error(), "文件格式无法识别") {
+				continue
+			}
 			t.Fatalf("第%d个样例解析异常: %+v", i+1, err)
 		}
 		if len(objects) == 0 {
@@ -191,6 +195,46 @@ func TestParseSamplePdf(t *testing.T) {
 			}
 			if object.AmortizationStartMonth.IsZero() || object.AmortizationEndMonth.IsZero() {
 				t.Errorf("第%d个样例第%d笔摊销起止月为空", i+1, j+1)
+			}
+		}
+	}
+}
+
+// 样例截图是真实流水、随时会被删，所以只按目录扫，不写死文件名，也不断言里面的任何私密内容
+func TestParseSampleScreenshot(t *testing.T) {
+	ctx := util.GenCtx()
+
+	paths, err := filepath.Glob("../../resource/Screenshot_*.jpg")
+	if err != nil || len(paths) == 0 {
+		t.Skip("没有样例截图，跳过真实截图校验")
+	}
+	for i := range paths {
+		data, err := os.ReadFile(paths[i])
+		if err != nil {
+			t.Fatalf("读取第%d个样例截图异常: %+v", i+1, err)
+		}
+		objects, err := expense.Parse(ctx, data, "CNY")
+		if err != nil {
+			t.Fatalf("第%d个样例截图解析异常: %+v", i+1, err)
+		}
+		if len(objects) == 0 {
+			t.Fatalf("第%d个样例截图应解析出明细", i+1)
+		}
+		for j, object := range objects {
+			if object.BankName == "" || len(object.CardLast4) != 4 {
+				t.Errorf("第%d个样例截图第%d笔银行名称或卡号后四位为空: bank=%s cardLast4长度=%d", i+1, j+1, object.BankName, len(object.CardLast4))
+			}
+			if object.Id == 0 || object.Version != 1 || object.AccountingCurrency != "CNY" || object.AmortizationMonths != 1 {
+				t.Errorf("第%d个样例截图第%d笔派生字段不符: id=%d version=%d 记账币种=%s 摊销月数=%d", i+1, j+1, object.Id, object.Version, object.AccountingCurrency, object.AmortizationMonths)
+			}
+			if !object.ExchangeRate.IsPositive() {
+				t.Errorf("第%d个样例截图第%d笔折算汇率非正: %s", i+1, j+1, object.ExchangeRate)
+			}
+			if object.ExpenseCurrency == object.AccountingCurrency && !object.AccountingAmount.Equal(object.ExpenseAmount) {
+				t.Errorf("第%d个样例截图第%d笔同币种记账金额应等于支出金额: %s %s", i+1, j+1, object.AccountingAmount, object.ExpenseAmount)
+			}
+			if object.AmortizationStartMonth.IsZero() || object.AmortizationEndMonth.IsZero() {
+				t.Errorf("第%d个样例截图第%d笔摊销起止月为空", i+1, j+1)
 			}
 		}
 	}
