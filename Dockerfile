@@ -50,5 +50,5 @@ VOLUME /log
 VOLUME /resource
 WORKDIR /
 USER ${UID}:${GID}
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget --spider -q http://127.0.0.1:7678/api/ping || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:7678/api/ping || exit 1
 CMD ["/jotcash"]
