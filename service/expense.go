@@ -11,6 +11,7 @@ import (
 	"github.com/cellargalaxy/jotcash/service/expense"
 	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
 	_ "github.com/cellargalaxy/jotcash/service/expense/cmb_debit"
+	_ "github.com/cellargalaxy/jotcash/service/expense/hsbc_pulse_credit"
 	_ "github.com/cellargalaxy/jotcash/service/expense/icbc_credit"
 	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/pkg/errors"

@@ -243,7 +243,7 @@ token_ban_minute: 5                  # 触发锁定后的封禁时长（分钟�
 
 ```bash
 # 运行后端单元测试与集成测试
-go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/repo ./tool -count=1
+go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/expense/hsbc_pulse_credit ./service/repo ./tool -count=1
 
 # 运行前端无头自动化测试套件（195 条全量用例）
 sh static_test/run.sh
