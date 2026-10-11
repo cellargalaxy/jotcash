@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/expense"
 	"github.com/ledongthuc/pdf"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
