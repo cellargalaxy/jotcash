@@ -77,9 +77,10 @@ var (
 	}
 )
 
-func init() {
-	expense.Register(new(Parser))
-}
+// 去除汇丰pulse解析器的注册
+// func init() {
+// 	expense.Register(new(Parser))
+// }
 
 type Parser struct {
 }
