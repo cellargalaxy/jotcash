@@ -97,7 +97,11 @@ func (this *Parser) Support(ctx context.Context, data []byte) bool {
 		return false
 	}
 	blocks, err := runOcr(ctx, data)
-	if err != nil || len(blocks) == 0 {
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("识别云闪付截图，OCR识别异常")
+		return false
+	}
+	if len(blocks) == 0 {
 		return false
 	}
 	return checkContract(blocks)

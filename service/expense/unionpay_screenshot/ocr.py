@@ -7,8 +7,8 @@ import sys
 def main():
     try:
         from rapidocr_onnxruntime import RapidOCR
-    except ImportError:
-        sys.stderr.write("rapidocr_onnxruntime not installed\n")
+    except ImportError as e:
+        sys.stderr.write(f"rapidocr_onnxruntime import failed: {e}\n")
         sys.exit(1)
 
     image_bytes = sys.stdin.buffer.read()
