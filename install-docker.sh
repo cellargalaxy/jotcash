@@ -74,13 +74,17 @@ fi
 
 # 探测宿主机时区作为缺省推荐值
 default_timezone="Asia/Shanghai"
-if [ -f /etc/timezone ]; then
-  host_tz=$(cat /etc/timezone | tr -d ' \n\r')
-  [ -n "$host_tz" ] && default_timezone="$host_tz"
-elif [ -h /etc/localtime ]; then
-  host_tz=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')
-  [ -n "$host_tz" ] && default_timezone="$host_tz"
+host_tz=""
+if command -v timedatectl >/dev/null 2>&1; then
+  host_tz=$(timedatectl show --property=Timezone --value 2>/dev/null)
 fi
+if [ -z "$host_tz" ] && [ -e /etc/localtime ]; then
+  host_tz=$(readlink -f /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##')
+fi
+if [ -z "$host_tz" ] && [ -f /etc/timezone ]; then
+  host_tz=$(cat /etc/timezone 2>/dev/null | tr -d ' \n\r')
+fi
+[ -n "$host_tz" ] && default_timezone="$host_tz"
 
 if [ -z "$timezone" ]; then
   read -p "please enter timezone(default:'$default_timezone'):" timezone
