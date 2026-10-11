@@ -1,8 +1,11 @@
 package unionpay_screenshot
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,6 +169,71 @@ func TestParseBlocksSynthetic(t *testing.T) {
 	}
 	if second.Remark != "退款" {
 		t.Errorf("第2笔备注应为退款: %s", second.Remark)
+	}
+}
+
+// 合成长截图全是虚构数据、随仓库提交，真实样例删掉后仍由它兜住「OCR版本或参数一变，长图就识别崩」这类问题，
+// 所以缺 python 或 rapidocr 时直接失败，不跳过；版面改了用 testdata/gen_synthetic.py 重新生成
+func TestParseSyntheticScreenshot(t *testing.T) {
+	ctx := util.GenCtx()
+	data, err := os.ReadFile("testdata/synthetic.png")
+	if err != nil {
+		t.Fatalf("读取合成截图异常: %+v", err)
+	}
+
+	parser := new(Parser)
+	if !parser.Support(ctx, data) {
+		t.Fatalf("合成截图应当被Support认领")
+	}
+	expenses, err := parser.Parse(ctx, data)
+	if err != nil {
+		t.Fatalf("合成截图解析异常: %+v", err)
+	}
+
+	expected := []struct {
+		bank, card, date, amount, counterparty, remark string
+	}{
+		{"招商银行", "1111", "2026-10-09 21:05", "12.50", "(特约)虚构便利店", "消费"},
+		{"汇丰银行", "2222", "2026-10-09 18:40", "28.00", "虚构咖啡馆", "消费"},
+		{"工商银行", "3333", "2026-10-08 12:10", "36.80", "(美团)虚构面馆", "消费"},
+		{"建设银行", "4444", "2026-10-08 10:30", "-9.90", "虚构书店", "退款"},
+		{"建设银行", "4444", "2026-10-05 20:15", "158.20", "虚构超市", "消费"},
+		{"工商银行", "3333", "2026-10-05 07:45", "200.00", "(特约)虚构加油站", "消费"},
+		{"招商银行", "1111", "2026-10-01 19:30", "75.00", "虚构电影院", "消费"},
+		{"汇丰银行", "2222", "2026-10-01 17:20", "23.60", "虚构水果店", "消费"},
+		{"工商银行", "3333", "2026-09-30 16:05", "45.30", "虚构药店", "消费"},
+		{"建设银行", "4444", "2026-09-30 12:00", "19.90", "(美团)虚构快餐店", "消费"},
+		{"招商银行", "1111", "2026-09-28 11:11", "30.00", "虚构洗衣店", "消费"},
+		{"汇丰银行", "2222", "2026-09-28 09:30", "88.00", "虚构花店", "消费"},
+		{"工商银行", "3333", "2026-09-28 08:20", "10.00", "虚构停车场", "消费"},
+	}
+	if len(expenses) != len(expected) {
+		t.Fatalf("合成截图应识别出%d笔有效交易: got %d", len(expected), len(expenses))
+	}
+	for i, want := range expected {
+		got := expenses[i]
+		date, _ := time.ParseInLocation("2006-01-02 15:04", want.date, time.Local)
+		if got.BankName != want.bank || got.CardLast4 != want.card || !got.ExpenseDate.Equal(date) ||
+			!got.ExpenseAmount.Equal(decimal.RequireFromString(want.amount)) || got.Counterparty != want.counterparty || got.Remark != want.remark {
+			t.Errorf("第%d笔不符: got %s|%s|%s|%s|%s|%s, want %+v", i+1, got.BankName, got.CardLast4,
+				got.ExpenseDate.Format("2006-01-02 15:04"), got.ExpenseAmount, got.Counterparty, got.Remark, want)
+		}
+	}
+}
+
+func TestOcrVersionGuard(t *testing.T) {
+	pythonPath, err := getPythonPath()
+	if err != nil {
+		t.Fatalf("%+v", err)
+	}
+	cmd := exec.Command(pythonPath, "ocr.py", "0.0.0")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("rapidocr版本跟锁定版本不一致时ocr.py应当失败")
+	}
+	if !strings.Contains(stderr.String(), "version mismatch") {
+		t.Errorf("ocr.py应当报出版本不一致: %s", stderr.String())
 	}
 }
 

@@ -28,6 +28,9 @@ import (
 //go:embed ocr.py
 var ocrPyScript []byte
 
+//go:embed requirements.txt
+var ocrRequirements string
+
 const (
 	currencyCNY     = "CNY"
 	summaryPurchase = "消费"
@@ -424,7 +427,8 @@ func runOcr(ctx context.Context, data []byte) ([]OcrBlock, error) {
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, pythonPath, scriptPath)
+	_, version, _ := strings.Cut(strings.TrimSpace(ocrRequirements), "==")
+	cmd := exec.CommandContext(ctx, pythonPath, scriptPath, version)
 	cmd.Stdin = bytes.NewReader(data)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

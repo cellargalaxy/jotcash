@@ -242,6 +242,9 @@ token_ban_minute: 5                  # 触发锁定后的封禁时长（分钟�
 ## 🧪 测试与质量验证
 
 ```bash
+# 云闪付截图识别依赖本地离线 OCR，版本以 requirements.txt 为准（Dockerfile 与 Go 运行时都读它，版本不一致会直接报错）
+pip install -r service/expense/unionpay_screenshot/requirements.txt
+
 # 运行后端单元测试与集成测试
 go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/expense/hsbc_pulse_credit ./service/expense/unionpay_screenshot ./service/repo ./tool -count=1
 
