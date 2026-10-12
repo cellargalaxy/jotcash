@@ -28,7 +28,7 @@ var columns = []string{
 }
 
 func init() {
-	expense.Register(new(Parser))
+	expense.Register("base_csv", new(Parser))
 }
 
 type Parser struct {
