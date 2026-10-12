@@ -105,7 +105,7 @@ var (
 )
 
 func init() {
-	expense.Register(new(Parser))
+	expense.Register("icbc_credit", new(Parser))
 }
 
 type Parser struct {
