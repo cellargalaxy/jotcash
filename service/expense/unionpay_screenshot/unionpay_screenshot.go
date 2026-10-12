@@ -1,35 +1,21 @@
 package unionpay_screenshot
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"math"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
-
-//go:embed ocr.py
-var ocrPyScript []byte
-
-//go:embed requirements.txt
-var ocrRequirements string
 
 const (
 	currencyCNY     = "CNY"
@@ -75,14 +61,10 @@ var (
 	amountFallbackRegex = regexp.MustCompile(`^([+\-]?)\s*([\d,]+\.\d{2})$`)
 
 	repaymentKeywords = []string{"还款", "信用卡还款", "转账", "划转"}
-
-	ocrCache      sync.Map
-	ocrScriptPath string
-	ocrScriptOnce sync.Once
 )
 
 func init() {
-	expense.Register(new(Parser))
+	expense.Register("unionpay_screenshot", new(Parser))
 }
 
 type Parser struct {
@@ -95,31 +77,20 @@ type OcrBlock struct {
 	Score float64 `json:"score"`
 }
 
+// 截图在前端本地 OCR，这里收到的是文字块 JSON（坐标是原图像素），不是图片本身
 func (this *Parser) Support(ctx context.Context, data []byte) bool {
-	if !isImage(data) {
-		return false
-	}
-	blocks, err := runOcr(ctx, data)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("识别云闪付截图，OCR识别异常")
-		return false
-	}
-	if len(blocks) == 0 {
+	var blocks []OcrBlock
+	if err := json.Unmarshal(data, &blocks); err != nil || len(blocks) == 0 {
 		return false
 	}
 	return checkContract(blocks)
 }
 
 func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
-	if !isImage(data) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("解析云闪付截图明细，非图片格式")
-		return nil, errors.Errorf("解析云闪付截图明细，非图片格式")
-	}
-
-	blocks, err := runOcr(ctx, data)
-	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析云闪付截图明细，OCR识别异常")
-		return nil, errors.Errorf("解析云闪付截图明细，OCR识别异常: %+v", err)
+	var blocks []OcrBlock
+	if err := json.Unmarshal(data, &blocks); err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析云闪付截图明细，文字块JSON异常")
+		return nil, errors.Errorf("解析云闪付截图明细，文字块JSON异常: %+v", err)
 	}
 
 	if !checkContract(blocks) {
@@ -136,19 +107,6 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 		return nil, errors.Errorf("解析云闪付截图明细，未识别到有效交易")
 	}
 	return expenses, nil
-}
-
-func isImage(data []byte) bool {
-	if len(data) < 8 {
-		return false
-	}
-	if bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}) {
-		return true
-	}
-	if bytes.HasPrefix(data, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}) {
-		return true
-	}
-	return false
 }
 
 func checkContract(blocks []OcrBlock) bool {
@@ -410,89 +368,4 @@ func normalizeBank(raw string) string {
 		return raw
 	}
 	return raw + "银行"
-}
-
-func runOcr(ctx context.Context, data []byte) ([]OcrBlock, error) {
-	hash := util.EnSha256Hex(string(data))
-	if val, ok := ocrCache.Load(hash); ok {
-		return val.([]OcrBlock), nil
-	}
-
-	pythonPath, err := getPythonPath()
-	if err != nil {
-		return nil, err
-	}
-	scriptPath, err := getOcrScriptPath()
-	if err != nil {
-		return nil, err
-	}
-
-	_, version, _ := strings.Cut(strings.TrimSpace(ocrRequirements), "==")
-	cmd := exec.CommandContext(ctx, pythonPath, scriptPath, version)
-	cmd.Stdin = bytes.NewReader(data)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, errors.Errorf("执行本地OCR异常: %v, %s", err, stderr.String())
-	}
-
-	var blocks []OcrBlock
-	if err := json.Unmarshal(stdout.Bytes(), &blocks); err != nil {
-		return nil, errors.Errorf("解析OCR输出JSON异常: %v", err)
-	}
-
-	ocrCache.Store(hash, blocks)
-	return blocks, nil
-}
-
-func getPythonPath() (string, error) {
-	if env := os.Getenv("JOTCASH_PYTHON"); env != "" {
-		if fi, err := os.Stat(env); err == nil && !fi.IsDir() {
-			return env, nil
-		}
-	}
-	if p, err := exec.LookPath("python3"); err == nil {
-		return p, nil
-	}
-	if p, err := exec.LookPath("python"); err == nil {
-		return p, nil
-	}
-	return "", errors.Errorf("未找到本地 python3 解释器")
-}
-
-func getOcrScriptPath() (string, error) {
-	var err error
-	ocrScriptOnce.Do(func() {
-		_, callerFile, _, ok := runtime.Caller(0)
-		if ok {
-			candidate := filepath.Join(filepath.Dir(callerFile), "ocr.py")
-			if fi, e := os.Stat(candidate); e == nil && !fi.IsDir() {
-				ocrScriptPath = candidate
-				return
-			}
-		}
-		workingCandidate := "service/expense/unionpay_screenshot/ocr.py"
-		if fi, e := os.Stat(workingCandidate); e == nil && !fi.IsDir() {
-			abs, e := filepath.Abs(workingCandidate)
-			if e == nil {
-				ocrScriptPath = abs
-				return
-			}
-		}
-		tmpFile := filepath.Join(os.TempDir(), "jotcash_unionpay_ocr.py")
-		if writeErr := os.WriteFile(tmpFile, ocrPyScript, 0755); writeErr != nil {
-			err = errors.Errorf("释放临时OCR脚本异常: %v", writeErr)
-			return
-		}
-		ocrScriptPath = tmpFile
-	})
-	if err != nil {
-		return "", err
-	}
-	if ocrScriptPath == "" {
-		return "", errors.Errorf("未找到有效OCR脚本路径")
-	}
-	return ocrScriptPath, nil
 }
