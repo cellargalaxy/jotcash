@@ -19,28 +19,27 @@ type Parser interface {
 	Parse(ctx context.Context, data []byte) ([]*model.Expense, error)
 }
 
-var parsers []Parser
+var parsers = map[string]Parser{}
 
-func Register(parser Parser) {
-	parsers = append(parsers, parser)
+func Register(name string, parser Parser) {
+	parsers[name] = parser
 }
 
-func Parse(ctx context.Context, data []byte, accountingCurrency string) ([]*model.Expense, error) {
+// 识别器由用户手选，但手选代替不了内容契约：选错了宁可不认领，也不能按错的格式硬解
+func Parse(ctx context.Context, parserName string, data []byte, accountingCurrency string) ([]*model.Expense, error) {
 	err := CheckCurrency(ctx, model.CsvAccountingCurrency, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}
 
-	var parser Parser
-	for i := range parsers {
-		if parsers[i].Support(ctx, data) {
-			parser = parsers[i]
-			break
-		}
+	parser, ok := parsers[parserName]
+	if !ok {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"parser": parserName}).Warn("解析明细，识别器不存在")
+		return nil, errors.Errorf("解析明细，识别器不存在: %s", parserName)
 	}
-	if parser == nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"len": len(data)}).Warn("解析明细，没有解析器认领")
-		return nil, errors.Errorf("解析明细，文件格式无法识别")
+	if !parser.Support(ctx, data) {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"parser": parserName, "len": len(data)}).Warn("解析明细，文件内容与所选识别器不符")
+		return nil, errors.Errorf("解析明细，文件内容与所选识别器不符")
 	}
 
 	objects, err := parser.Parse(ctx, data)
