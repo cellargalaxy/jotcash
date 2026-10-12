@@ -1,11 +1,7 @@
 package unionpay_screenshot
 
 import (
-	"bytes"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,11 +21,12 @@ func TestSupportInvalid(t *testing.T) {
 	parser := new(Parser)
 
 	rejects := map[string][]byte{
-		"空文件":   []byte(""),
-		"非图片文本": []byte("交易记录\n银联交易\n全部 支出 收入\n"),
-		"CSV":   []byte("银行名称,卡号后四位,支出日期,支出币种,支出金额\n"),
-		"PDF":   []byte("%PDF-1.7 假的PDF内容"),
-		"坏图片头":  []byte{0xFF, 0xD8, 0xFF, 0x00, 0x00, 0x00},
+		"空内容":     []byte(""),
+		"空数组":     []byte("[]"),
+		"非JSON文本": []byte("交易记录\n银联交易\n全部 支出 收入\n"),
+		"CSV":     []byte("银行名称,卡号后四位,支出日期,支出币种,支出金额\n"),
+		"图片原文件":   {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46},
+		"别的页面":    []byte(`[{"text":"微信支付明细","x":400,"y":100},{"text":"全部","x":100,"y":300}]`),
 	}
 	for name, data := range rejects {
 		if parser.Support(ctx, data) {
@@ -172,13 +169,14 @@ func TestParseBlocksSynthetic(t *testing.T) {
 	}
 }
 
-// 合成长截图全是虚构数据、随仓库提交，真实样例删掉后仍由它兜住「OCR版本或参数一变，长图就识别崩」这类问题，
-// 所以缺 python 或 rapidocr 时直接失败，不跳过；版面改了用 testdata/gen_synthetic.py 重新生成
+// 合成长截图全是虚构数据、随仓库提交。synthetic.json 是前端 OCR（static/js/ocr.js）识别 synthetic.png 的输出，
+// 前端测试盯「图片 → 文字块」与它一致，这里盯「文字块 → 明细」，两段拼起来才是整条链路；
+// 版面改了用 testdata/gen_synthetic.py 重新生成图片，再用前端 OCR 重新生成 synthetic.json
 func TestParseSyntheticScreenshot(t *testing.T) {
 	ctx := util.GenCtx()
-	data, err := os.ReadFile("testdata/synthetic.png")
+	data, err := os.ReadFile("testdata/synthetic.json")
 	if err != nil {
-		t.Fatalf("读取合成截图异常: %+v", err)
+		t.Fatalf("读取合成截图文字块异常: %+v", err)
 	}
 
 	parser := new(Parser)
@@ -217,70 +215,6 @@ func TestParseSyntheticScreenshot(t *testing.T) {
 			!got.ExpenseAmount.Equal(decimal.RequireFromString(want.amount)) || got.Counterparty != want.counterparty || got.Remark != want.remark {
 			t.Errorf("第%d笔不符: got %s|%s|%s|%s|%s|%s, want %+v", i+1, got.BankName, got.CardLast4,
 				got.ExpenseDate.Format("2006-01-02 15:04"), got.ExpenseAmount, got.Counterparty, got.Remark, want)
-		}
-	}
-}
-
-func TestOcrVersionGuard(t *testing.T) {
-	pythonPath, err := getPythonPath()
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	cmd := exec.Command(pythonPath, "ocr.py", "0.0.0")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err == nil {
-		t.Fatalf("rapidocr版本跟锁定版本不一致时ocr.py应当失败")
-	}
-	if !strings.Contains(stderr.String(), "version mismatch") {
-		t.Errorf("ocr.py应当报出版本不一致: %s", stderr.String())
-	}
-}
-
-// 样例截图是真实流水、随时会被删，所以只按目录扫，不写死文件名，也不断言里面的任何私密内容
-func TestParseSampleScreenshot(t *testing.T) {
-	ctx := util.GenCtx()
-
-	paths, err := filepath.Glob("../../../resource/Screenshot_*.jpg")
-	if err != nil || len(paths) == 0 {
-		t.Skip("没有样例截图，跳过真实截图解析校验")
-	}
-
-	parser := new(Parser)
-	for i := range paths {
-		data, err := os.ReadFile(paths[i])
-		if err != nil {
-			t.Fatalf("读取第%d个样例截图异常: %+v", i+1, err)
-		}
-		if !parser.Support(ctx, data) {
-			t.Fatalf("第%d个样例截图应当被Support认领", i+1)
-		}
-		expenses, err := parser.Parse(ctx, data)
-		if err != nil {
-			t.Fatalf("第%d个样例截图解析异常: %+v", i+1, err)
-		}
-		if len(expenses) != 30 {
-			t.Fatalf("第%d个样例截图应识别出30笔有效交易: got %d", i+1, len(expenses))
-		}
-		for j, exp := range expenses {
-			if exp.BankName != "汇丰银行" {
-				t.Errorf("第%d笔银行名称不符: %s", j+1, exp.BankName)
-			}
-			if len(exp.CardLast4) != 4 {
-				t.Errorf("第%d笔卡号后四位长度不为4: %s", j+1, exp.CardLast4)
-			}
-			if exp.ExpenseDate.IsZero() {
-				t.Errorf("第%d笔交易时间为空", j+1)
-			}
-			if exp.ExpenseCurrency != "CNY" {
-				t.Errorf("第%d笔币种不为CNY: %s", j+1, exp.ExpenseCurrency)
-			}
-			if exp.ExpenseAmount.IsZero() {
-				t.Errorf("第%d笔交易金额为0", j+1)
-			}
-			if exp.Remark != "消费" && exp.Remark != "退款" {
-				t.Errorf("第%d笔备注非法: %s", j+1, exp.Remark)
-			}
 		}
 	}
 }
