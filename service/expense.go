@@ -152,7 +152,12 @@ func InsertExpense(ctx context.Context, filename string, reader io.Reader) (any,
 		return nil, errors.Errorf("明细入库，读取上传文件异常: %+v", err)
 	}
 
-	expenses, err := expense.Parse(ctx, data, accountingCurrency)
+	// OCR 这类阻塞的识别在前端做完，后端只解析前端提取出的内容；原文件照样留档，文件页还能看原件
+	parseData := data
+	if content != "" {
+		parseData = []byte(content)
+	}
+	expenses, err := expense.Parse(ctx, parserName, parseData, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}
