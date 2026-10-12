@@ -1,4 +1,4 @@
-import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS } from './config.js';
+import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS, EXPENSE_PARSERS, PARSER_CSV } from './config.js';
 import { LANGS, t, textOf } from './i18n.js';
 import { addMonth, dateToRfc3339, formatDate, monthOf, parseCsv, toCsv } from './util.js';
 
@@ -232,12 +232,15 @@ export function selectExpense(inquiry) {
   return ok(pageRows(rows, inquiry.page, inquiry.page_size).map((row) => ({ ...row })), rows.length);
 }
 
-export function insertExpense(filename, csvText, accountingCurrency) {
+export function insertExpense(filename, csvText, accountingCurrency, parser) {
+  if (!EXPENSE_PARSERS.some((item) => item.value === parser)) return fail(`解析明细，识别器不存在: ${parser || ''}`);
+  //PDF 与截图的解析器只在后端有，演示数据全在浏览器里，这里只认本系统 CSV
+  if (parser !== PARSER_CSV) return fail('演示模式只能解析本系统标准 CSV');
   const lines = parseCsv(csvText);
   const header = (lines[0] || []).map((cell) => cell.trim());
   const expect = CSV_FIELDS.map((field) => field.column);
   if (header.length !== expect.length || header.some((cell, index) => cell !== expect[index])) {
-    return fail('解析明细，文件格式无法识别');
+    return fail('解析明细，文件内容与所选识别器不符');
   }
   if (lines.length < 2) return fail('明细入库，入库内容为空');
 

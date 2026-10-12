@@ -19,7 +19,7 @@ import {
 } from './helper/fixture.js';
 import { equal, excludes, includes, not, ok, rejects, same } from './helper/check.js';
 import * as api from '../static/js/api.js';
-import { CSV_FIELDS, EXPENSE_COLUMN_DEFAULT } from '../static/js/config.js';
+import { CSV_FIELDS, EXPENSE_COLUMN_DEFAULT, EXPENSE_PARSERS, PARSER_CSV } from '../static/js/config.js';
 import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import * as mock from '../static/js/mock.js';
 import { render as renderExpense } from '../static/js/page_expense.js';
@@ -146,6 +146,19 @@ test('明细页：术语只说摊销，导入说明给的是契约列名', async
   answerModal(false);
   await flush();
   excludes('整页不出现摊分', host.textContent, '摊分');
+});
+
+test('明细页：上传弹窗的识别器必选，没选就不上传', async () => {
+  const host = await renderAll();
+  click(findByText(host, 'button', '上传账单文件'));
+  const modal = answerModalKeepOpen();
+  const options = findAll(find(modal, 'select'), 'option');
+  same('识别器下拉：先是占位项，再是全部识别器', options.map((option) => option.textContent), ['请选择识别器', ...EXPENSE_PARSERS.map((parser) => parser.name)]);
+  equal('默认停在占位项', find(modal, 'select').value, '');
+  takeToast();
+  answerModal(true);
+  await flush();
+  includes('没选识别器要报出来', takeToast(), '没有选择识别器');
 });
 
 //全量拉取之后条件全空就等于把整个库拖到浏览器里，所以支出日期区间必填，默认给最近一年
@@ -456,7 +469,7 @@ test('明细页：导出全量，且导出的 CSV 能被入库链路吃回去', 
   same('表头就是契约列名', lines[0], COLUMNS);
   equal('导出的是全量不是当前页', lines.length - 1, total);
 
-  const back = await mock.insertExpense('回灌.csv', text, 'CNY');
+  const back = await mock.insertExpense('回灌.csv', text, 'CNY', PARSER_CSV);
   equal('原样传回去能全部入库', back.count, total);
 });
 

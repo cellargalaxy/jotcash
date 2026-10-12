@@ -14,7 +14,10 @@ import {
   PATH_IMPORT_DB,
   PATH_OPERATION_LOG_SELECT,
   PATH_PING,
+  PARSER_CSV,
+  UPLOAD_CONTENT_KEY,
   UPLOAD_FILE_KEY,
+  UPLOAD_PARSER_KEY,
 } from './config.js';
 import { t } from './i18n.js';
 import * as mock from './mock.js';
@@ -96,9 +99,10 @@ async function postJson(path, body) {
   return unwrap(await readJson(response));
 }
 
-async function postFile(path, file, filename) {
+async function postFile(path, file, filename, fields) {
   const form = new FormData();
   form.append(UPLOAD_FILE_KEY, file, filename);
+  for (const [key, value] of Object.entries(fields || {})) form.append(key, value);
   const response = await send(path, { method: 'POST', headers: await authHeader(), body: form });
   return unwrap(await readJson(response));
 }
@@ -163,13 +167,16 @@ export function selectExpense(inquiry) {
 }
 
 export function insertExpense(filename, csvText) {
-  if (isMock()) return mock.insertExpense(filename, csvText, getAccountingCurrency());
-  return postFile(PATH_EXPENSE_INSERT, new Blob([csvText], { type: 'text/csv' }), filename);
+  if (isMock()) return mock.insertExpense(filename, csvText, getAccountingCurrency(), PARSER_CSV);
+  return postFile(PATH_EXPENSE_INSERT, new Blob([csvText], { type: 'text/csv' }), filename, { [UPLOAD_PARSER_KEY]: PARSER_CSV });
 }
 
-export function insertExpenseFile(file) {
-  if (isMock()) return file.text().then((text) => mock.insertExpense(file.name, text, getAccountingCurrency()));
-  return postFile(PATH_EXPENSE_INSERT, file, file.name);
+//content 是前端已提取好的内容，有它后端就解析它，原文件只留档
+export function insertExpenseFile(file, parser, content) {
+  if (isMock()) return file.text().then((text) => mock.insertExpense(file.name, text, getAccountingCurrency(), parser));
+  const fields = { [UPLOAD_PARSER_KEY]: parser };
+  if (content) fields[UPLOAD_CONTENT_KEY] = content;
+  return postFile(PATH_EXPENSE_INSERT, file, file.name, fields);
 }
 
 export function deleteExpense(inquiry) {

@@ -11,6 +11,7 @@ import {
   CURRENCY_DEFAULT_OTHER,
   DELETED_ALL,
   EXPENSE_FIELDS,
+  EXPENSE_PARSERS,
   EXPENSE_SORTS,
   FILE_META_SORTS,
   MODE_MOCK,
@@ -113,12 +114,12 @@ test('词条：命中、缺失、占位符替换', () => {
 //后端不改，报错原样是中文，转译只能在前端做
 test('后端文案：整句命中', () => {
   setLang(LANG_EN);
-  equal('报错', serverText('解析明细，文件格式无法识别'), 'Parse records: unrecognized file format');
+  equal('报错', serverText('解析明细，文件内容与所选识别器不符'), 'Parse records: the file content does not match the chosen parser');
   equal('审计操作类型', serverText('数据入库'), 'Data ingest');
   equal('审计结果', serverText('成功'), 'Success');
   equal('审计对象类型', serverText('支出明细'), 'Expense records');
   setLang(LANG_ZH);
-  equal('中文下原样返回', serverText('解析明细，文件格式无法识别'), '解析明细，文件格式无法识别');
+  equal('中文下原样返回', serverText('解析明细，文件内容与所选识别器不符'), '解析明细，文件内容与所选识别器不符');
 });
 
 test('后端文案：带变量的按模板匹配，变量原样留下', () => {
@@ -169,6 +170,7 @@ test('词表：配置枚举的展示名也都在词表里', () => {
     ...FILE_META_SORTS.map((sort) => sort.name),
     ...MEASURES.map((measure) => measure.name),
     ...THEMES.map((theme) => theme.name),
+    ...EXPENSE_PARSERS.map((parser) => parser.name),
   ];
   same('漏译的枚举展示名', names.filter((name) => !(name in TEXT)), []);
 });

@@ -11,6 +11,7 @@ import {
   DELETED_ALL,
   DELETED_NO,
   DELETED_ONLY,
+  EXPENSE_PARSERS,
   EXPENSE_SORTS,
   FILE_META_SORTS,
   OPERATION_LOG_SORTS,
@@ -28,10 +29,14 @@ import {
   PATH_FILE_META_SELECT,
   PATH_IMPORT_DB,
   PATH_OPERATION_LOG_SELECT,
+  PARSER_CSV,
   PATH_PING,
   TOKEN_MIN_LEN,
+  UPLOAD_CONTENT_KEY,
   UPLOAD_FILE_KEY,
+  UPLOAD_PARSER_KEY,
 } from '../static/js/config.js';
+import { EXTRACTORS } from '../static/js/expense_extract.js';
 import { CANDIDATE_FIELDS } from '../static/js/expense_inquiry.js';
 import { LANG_EN, LANG_ZH, serverText, setLang } from '../static/js/i18n.js';
 import * as mock from '../static/js/mock.js';
@@ -122,6 +127,24 @@ test('接口路径：拼出来的地址与后端注册的路由相等', () => {
   const fileKeys = goConsts('config/handler.go', '');
   equal('明细上传字段名', UPLOAD_FILE_KEY, fileKeys.get('ExpenseFileKey'));
   equal('整库导入字段名', UPLOAD_FILE_KEY, fileKeys.get('ImportFileKey'));
+  equal('明细识别器字段名', UPLOAD_PARSER_KEY, fileKeys.get('ExpenseParserKey'));
+  equal('明细提取内容字段名', UPLOAD_CONTENT_KEY, fileKeys.get('ExpenseContentKey'));
+});
+
+//下拉里少一个是用不了，多一个是选了必报错；注册了却没被 service 引入的，等于没注册
+test('识别器：下拉取值与后端生效的注册名逐字相等，前端提取器只挂在其中', () => {
+  const registered = [];
+  for (const entry of readdirSync(join(ROOT, 'service', 'expense'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    for (const matched of goSource(join('service', 'expense', entry.name, `${entry.name}.go`)).matchAll(/^\texpense\.Register\("(\w+)"/gm)) {
+      registered.push(matched[1]);
+    }
+  }
+  const imports = goSource('service/expense.go');
+  const active = registered.filter((name) => imports.includes(`service/expense/${name}"`));
+  same('识别器取值', EXPENSE_PARSERS.map((parser) => parser.value).sort(), active.sort());
+  ok('本系统 CSV 在其中', active.includes(PARSER_CSV));
+  for (const parser of Object.keys(EXTRACTORS)) ok(`前端提取器 ${parser} 对应一个识别器`, active.includes(parser));
 });
 
 test('排序下拉：取值全部落在后端白名单内', () => {

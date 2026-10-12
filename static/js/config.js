@@ -17,6 +17,18 @@ export const PATH_IMPORT_DB = 'db/import';
 
 //上传字段名，与后端 config.ExpenseFileKey / config.ImportFileKey 一致
 export const UPLOAD_FILE_KEY = 'file';
+//明细入库所选的识别器、前端提取出的内容，与后端 config.ExpenseParserKey / config.ExpenseContentKey 一致
+export const UPLOAD_PARSER_KEY = 'parser';
+export const UPLOAD_CONTENT_KEY = 'content';
+
+//识别器的取值与后端 expense.Register 注册的名字逐字一致。用户手选，后端照样核对内容，选错了不入库
+export const PARSER_CSV = 'base_csv';
+export const EXPENSE_PARSERS = [
+  { value: PARSER_CSV, name: '本系统标准 CSV' },
+  { value: 'cmb_debit', name: '招商银行借记卡流水（PDF）' },
+  { value: 'icbc_credit', name: '工商银行信用卡明细（PDF）' },
+  { value: 'unionpay_screenshot', name: '云闪付交易记录截图' },
+];
 
 //解锁模式：数据来源逐会话选定，存在会话里，锁定即失效。
 //页面是 embed 进后端二进制、由后端托出来的，能打开它就说明后端在跑，所以默认打真实接口

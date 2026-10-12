@@ -65,7 +65,8 @@ The frontend contains a complete in-browser database engine (`static/js/mock.js`
 
 - **Batch CSV Import**:
   - Built-in standard 11-column CSV format with BOM detection.
-  - Automatic format detection for **China Merchants Bank (CMB) debit** and **ICBC credit** card statements.
+  - Parses **China Merchants Bank (CMB) debit** and **ICBC credit** card PDF statements and **UnionPay app transaction screenshots**; the parser is chosen on upload, and the server still checks the content against it.
+  - Screenshots are OCR-ed offline in the browser (RapidOCR models + onnxruntime-web); no online service is called and the server only parses the recognized text.
   - Batch verification view highlighting newly inserted rows and matching database entries.
 - **Inline Table Editing & Optimistic Locking**:
   - Double-click any editable cell to modify directly in the table.

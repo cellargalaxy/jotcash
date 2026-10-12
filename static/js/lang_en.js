@@ -181,8 +181,17 @@ export const TEXT = {
   '点这里保存': 'save it here',
   '。': '.',
   '上传账单文件批量新增': 'Upload a statement file to add records in bulk',
-  '后端按文件内容认领解析器，不看扩展名。当前只有本系统标准 CSV 一种格式，表头必须与下面的契约完全一致，列名与顺序都不能差，否则没有解析器认领这个文件。':
-    'The server picks a parser by file content, not by extension. Only this system’s standard CSV is supported: the header must match the contract below exactly, in both names and order, or no parser will claim the file.',
+  '识别器必须手选。选了也照样核对文件内容，内容对不上不会入库。截图类识别在浏览器本地完成，不调用任何在线服务。':
+    'Pick a parser. The file content is still checked against it, and nothing is ingested if it does not match. Screenshot recognition runs locally in the browser and calls no online service.',
+  '选本系统标准 CSV 时，表头必须与下面的契约完全一致，列名与顺序都不能差。':
+    'For this system’s standard CSV, the header must match the contract below exactly, in both names and order.',
+  '请选择识别器': 'Choose a parser',
+  '本系统标准 CSV': 'Standard CSV of this system',
+  '招商银行借记卡流水（PDF）': 'China Merchants Bank debit card statement (PDF)',
+  '工商银行信用卡明细（PDF）': 'ICBC credit card statement (PDF)',
+  '云闪付交易记录截图': 'UnionPay app transaction screenshot',
+  '没有选择识别器': 'No parser selected',
+  '正在浏览器本地识别，长截图可能要几十秒，请勿关闭页面': 'Recognizing locally in the browser. A long screenshot may take tens of seconds, keep this page open',
   '支出日期格式 2006-01-02；支出金额允许 0 与负数': 'Expense date format is 2006-01-02; expense amount may be 0 or negative',
   '折算汇率可留空，留空按支出日期自动获取；填了折算汇率就必须填记账币种':
     'Exchange rate may be left blank and is then fetched for the expense date; if you fill it in, accounting currency becomes required',
@@ -440,7 +449,8 @@ export const TEXT = {
   '部分成功': 'Partial success',
 
   // ===== 后端原文：整句报错与摘要 =====
-  '解析明细，文件格式无法识别': 'Parse records: unrecognized file format',
+  '解析明细，文件内容与所选识别器不符': 'Parse records: the file content does not match the chosen parser',
+  '演示模式只能解析本系统标准 CSV': 'Demo mode can only parse this system’s standard CSV',
   '明细入库，入库内容为空': 'Ingest records: nothing to ingest',
   '明细入库，记账币种为空': 'Ingest records: accounting currency is empty',
   '明细编辑，已删除明细不可编辑': 'Record edit: a deleted record cannot be edited',
@@ -475,6 +485,7 @@ export const TEXT = {
 //行号、ID、币种代码这类不是文案的片段在词表里命中不了，原样留下。
 //每条的捕获组都严格短于原串，递归必然收敛
 export const SERVER = [
+  { pattern: /^解析明细，识别器不存在: (.*)$/, text: 'Parse records: no such parser: $1' },
   { pattern: /^解析明细，第(\d+)笔，(.+)$/, text: 'Parse records: record #$1, $2' },
   { pattern: /^解析CSV，第(\d+)行，(.+)$/, text: 'Parse CSV: line $1, $2' },
   { pattern: /^解析CSV，表头与契约不一致: (.*)$/, text: 'Parse CSV: header does not match the contract: $1' },

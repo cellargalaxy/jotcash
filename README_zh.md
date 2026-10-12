@@ -65,7 +65,8 @@
 
 - **CSV 批量入库与原生账单识别**：
   - 系统内置 11 列标准 CSV 契约，支持 UTF-8 与 BOM。
-  - 原生支持**招商银行借记卡**、**工商银行信用卡**账单格式的自动检测与解析。
+  - 原生支持**招商银行借记卡**、**工商银行信用卡** PDF 账单与**云闪付交易记录截图**；上传时手选识别器，后端仍按内容核对，选错不入库。
+  - 截图在浏览器本地离线 OCR（RapidOCR 模型 + onnxruntime-web），不调用任何在线服务，服务端只解析识别结果。
   - 入库后直通「批量核实视图」，按支出三要素（日期 + 金额 + 币种）高亮呈现本批次与库内存量明细。
 - **表格行内即时编辑与乐观锁并发保护**：
   - 列表页双击任意单元格即可原地编辑，支持多列同时编辑。
@@ -242,9 +243,6 @@ token_ban_minute: 5                  # 触发锁定后的封禁时长（分钟�
 ## 🧪 测试与质量验证
 
 ```bash
-# 云闪付截图识别依赖本地离线 OCR，版本以 requirements.txt 为准（Dockerfile 与 Go 运行时都读它，版本不一致会直接报错）
-pip install -r service/expense/unionpay_screenshot/requirements.txt
-
 # 运行后端单元测试与集成测试
 go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/expense/hsbc_pulse_credit ./service/expense/unionpay_screenshot ./service/repo ./tool -count=1
 
