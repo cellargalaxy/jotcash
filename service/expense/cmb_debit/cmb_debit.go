@@ -58,7 +58,7 @@ var (
 )
 
 func init() {
-	expense.Register(new(Parser))
+	expense.Register("cmb_debit", new(Parser))
 }
 
 type Parser struct {
