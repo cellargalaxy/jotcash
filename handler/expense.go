@@ -28,5 +28,5 @@ func InsertExpense(c *gin.Context) {
 		return
 	}
 	defer util.CloseIo(ctx, file)
-	c.JSON(http.StatusOK, util.NewHttpRespByErr(service.InsertExpense(ctx, fileHeader.Filename, file)))
+	c.JSON(http.StatusOK, util.NewHttpRespByErr(service.InsertExpense(ctx, fileHeader.Filename, file, c.PostForm(config.ExpenseParserKey), c.PostForm(config.ExpenseContentKey))))
 }
