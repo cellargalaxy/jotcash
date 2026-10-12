@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 按云闪付交易记录页的版面画一张全虚构数据的长截图，供 unionpay_screenshot 单测与镜像构建自检使用
+# 按云闪付交易记录页的版面画一张全虚构数据的长截图，供前端 OCR 与 unionpay_screenshot 解析器的单测使用
 # 用法：python3 gen_synthetic.py <中文常规字体路径> <中文粗体字体路径> <输出路径>
 
 import sys
