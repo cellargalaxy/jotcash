@@ -133,7 +133,7 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, erro
 	return common_model.HttpData{Count: count}, nil
 }
 
-func InsertExpense(ctx context.Context, filename string, reader io.Reader) (any, error) {
+func InsertExpense(ctx context.Context, filename string, reader io.Reader, parserName, content string) (any, error) {
 	var accountingCurrency string
 	claims := util.GetClaims[*model.Claims](ctx)
 	if claims != nil {
