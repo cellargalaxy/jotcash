@@ -6,6 +6,7 @@ import {
   DUPLICATE_KEYS,
   EXPENSE_COLUMN_DEFAULT,
   EXPENSE_FIELDS,
+  EXPENSE_PARSERS,
 } from './config.js';
 import {
   comboInput,
@@ -17,6 +18,7 @@ import {
   loadingRow,
   numberInput,
   pager,
+  select,
   textInput,
 } from './component.js';
 import {
@@ -28,6 +30,7 @@ import {
   loadCandidate,
   newInquiry,
 } from './expense_inquiry.js';
+import { EXTRACTORS } from './expense_extract.js';
 import { getLang, t } from './i18n.js';
 import { getAccountingCurrency, getColumns, setColumns } from './store.js';
 import {
@@ -424,26 +427,37 @@ async function deleteFiltered() {
 }
 
 function openUpload() {
+  const parserSelect = select([{ value: '', name: '请选择识别器' }, ...EXPENSE_PARSERS], '', { class: 'form-select mb-2' });
   const input = el('input', { class: 'form-control', type: 'file' });
   const body = el('div', {}, [
-    el('p', { class: 'small text-secondary', text: t('后端按文件内容认领解析器，不看扩展名。当前只有本系统标准 CSV 一种格式，表头必须与下面的契约完全一致，列名与顺序都不能差，否则没有解析器认领这个文件。') }),
+    el('p', { class: 'small text-secondary', text: t('识别器必须手选。选了也照样核对文件内容，内容对不上不会入库。截图类识别在浏览器本地完成，不调用任何在线服务。') }),
+    el('p', { class: 'small text-secondary', text: t('选本系统标准 CSV 时，表头必须与下面的契约完全一致，列名与顺序都不能差。') }),
     el('pre', { class: 'small bg-body-secondary p-2 rounded', text: csvHeader().join(',') }),
     el('ul', { class: 'small text-secondary ps-3' }, [
       el('li', { text: t('支出日期格式 2006-01-02；支出金额允许 0 与负数') }),
       el('li', { text: t('折算汇率可留空，留空按支出日期自动获取；填了折算汇率就必须填记账币种') }),
       el('li', { text: t('记账币种留空则取本次请求携带的记账币种；摊销月数留空按 1 处理') }),
     ]),
+    parserSelect,
     input,
   ]);
   confirmModal(t('上传账单文件批量新增'), body).then(async (confirmed) => {
     if (!confirmed) return;
+    const parser = parserSelect.value;
     const file = input.files && input.files[0];
+    if (!parser) {
+      toastErr(new Error(t('没有选择识别器')));
+      return;
+    }
     if (!file) {
       toastErr(new Error(t('没有选择文件')));
       return;
     }
     try {
-      const result = await api.insertExpenseFile(file);
+      const extract = EXTRACTORS[parser];
+      if (extract) toast(t('正在浏览器本地识别，长截图可能要几十秒，请勿关闭页面'));
+      const content = extract ? await extract(file) : '';
+      const result = await api.insertExpenseFile(file, parser, content);
       toastOk(t('入库 {count} 笔，进入核实视图', { count: result.count }));
       location.hash = `#/expense?operation_id=${result.object}&verify=1`;
     } catch (err) {
