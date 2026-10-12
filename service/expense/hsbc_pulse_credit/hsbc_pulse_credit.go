@@ -79,7 +79,7 @@ var (
 
 // 去除汇丰pulse解析器的注册
 // func init() {
-// 	expense.Register(new(Parser))
+// 	expense.Register("hsbc_pulse_credit", new(Parser))
 // }
 
 type Parser struct {
