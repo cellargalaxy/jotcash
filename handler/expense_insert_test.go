@@ -5,6 +5,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +24,11 @@ const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,�
 
 func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) common_model.HttpResp {
 	t.Helper()
+	return postExpenseForm(t, engine, jwt, filename, csv, map[string]string{config.ExpenseParserKey: "base_csv"})
+}
+
+func postExpenseForm(t *testing.T, engine *gin.Engine, jwt, filename, data string, fields map[string]string) common_model.HttpResp {
+	t.Helper()
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 	if filename != "" {
@@ -28,8 +36,13 @@ func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) 
 		if err != nil {
 			t.Fatalf("构造上传表单异常: %+v", err)
 		}
-		if _, err = part.Write([]byte(csv)); err != nil {
+		if _, err = part.Write([]byte(data)); err != nil {
 			t.Fatalf("写上传表单异常: %+v", err)
+		}
+	}
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("写上传表单字段异常: %+v", err)
 		}
 	}
 	if err := writer.Close(); err != nil {
@@ -282,6 +295,50 @@ func TestInsertExpenseMissingField(t *testing.T) {
 	}
 	if resp := insertExpense(t, engine, newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour), "", csv); resp.Code == http.StatusOK {
 		t.Errorf("没带文件应报错: %+v", resp)
+	}
+}
+
+// 识别器必须手选；手选了也要过内容契约；前端提取好的内容走 content，原文件只留档
+func TestInsertExpenseParser(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
+
+	if resp := postExpenseForm(t, engine, jwt, "2609.csv", csv, nil); resp.Code == http.StatusOK || !strings.Contains(resp.Msg, "识别器不存在") {
+		t.Errorf("没选识别器应报识别器不存在: %+v", resp)
+	}
+	if resp := postExpenseForm(t, engine, jwt, "2609.csv", csv, map[string]string{config.ExpenseParserKey: "unionpay_screenshot"}); resp.Code == http.StatusOK || !strings.Contains(resp.Msg, "文件内容与所选识别器不符") {
+		t.Errorf("选错识别器应报内容不符: %+v", resp)
+	}
+
+	_, self, _, _ := runtime.Caller(0)
+	content, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(self)), "service", "expense", "unionpay_screenshot", "testdata", "synthetic.json"))
+	if err != nil {
+		t.Fatalf("读取合成截图文字块异常: %+v", err)
+	}
+	screenshot := "假装是截图原文件的字节"
+	if resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, nil); resp.Code == http.StatusOK {
+		t.Errorf("截图原文件不带识别器不应入库: %+v", resp)
+	}
+	if resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{config.ExpenseParserKey: "unionpay_screenshot"}); resp.Code == http.StatusOK {
+		t.Errorf("截图没带前端识别结果，原文件不是文字块，不应被认领: %+v", resp)
+	}
+	resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{config.ExpenseParserKey: "unionpay_screenshot", config.ExpenseContentKey: string(content)})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("带前端识别结果的截图应入库: %+v", resp)
+	}
+	if list := selectExpense(t, engine, jwt, model.ExpenseInquiry{}); list.Data.Count != 13 {
+		t.Errorf("合成截图应入库13笔: %+v", list.Data)
+	}
+
+	files := selectFileMeta(t, engine, jwt, model.FileMetaInquiry{})
+	if files.Data.Count != 1 || files.Data.Object[0].FileName != "合成截图.png" || files.Data.Object[0].FileSize != int64(len(screenshot)) {
+		t.Fatalf("留档的应是截图原文件: %+v", files.Data)
+	}
+	fileBlobHandler := rdb.NewFileBlobSelectHandler(model.FileBlobInquiry{FileHash: []string{files.Data.Object[0].FileHash}})
+	execTransaction(t, clientToken, fileBlobHandler)
+	if len(fileBlobHandler.Object) != 1 || string(fileBlobHandler.Object[0].FileData) != screenshot {
+		t.Errorf("留档内容应是截图原文件而不是识别结果: %+v", fileBlobHandler.Object)
 	}
 }
 
