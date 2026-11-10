@@ -257,7 +257,7 @@ go test ./... -count=1
 sh static_test/run.sh
 ```
 
-> The parser wasm is embedded into the binary via `go:embed`: `build-docker.sh` generates it in the Dockerfile builder stage before compiling, so the resulting binary can be uploaded to the server as-is with no compilation there.
+> The parser wasm is embedded into the binary via `go:embed` by explicit file name, so if `go generate` was skipped `go build` fails with `pattern wasm/parser.wasm: no matching files found` instead of producing a binary without parsers; `build-docker.sh` generates it in the Dockerfile builder stage before compiling, so the resulting binary can be uploaded to the server as-is with no compilation there.
 
 ---
 

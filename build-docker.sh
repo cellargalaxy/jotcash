@@ -69,6 +69,10 @@ cleanup() {
     rm -f "$tmp_binary"
   else
     mv "$tmp_binary" "$repo_root/jotcash" 2>/dev/null
+    # 放回去的是上一次的产物，不是这次的编译结果：不喊出来的话，接着运行 ./jotcash 跑的就是旧代码
+    if [ -z "$build_ok" ]; then
+      echo "build failed: restored the previous $repo_root/jotcash, it is NOT a fresh build" >&2
+    fi
   fi
 }
 trap cleanup EXIT

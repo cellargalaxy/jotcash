@@ -253,7 +253,7 @@ go test ./... -count=1
 sh static_test/run.sh
 ```
 
-> 识别器的 wasm 经 `go:embed` 内嵌进二进制：`build-docker.sh` 在 Dockerfile 的 builder 阶段生成 wasm 再编译，产出的二进制直接上传服务器即可，服务器上无需再编译。
+> 识别器的 wasm 经 `go:embed` 按文件名内嵌进二进制，漏了 `go generate` 时 `go build` 会直接报 `pattern wasm/parser.wasm: no matching files found`，不会编出缺识别器的二进制；`build-docker.sh` 在 Dockerfile 的 builder 阶段生成 wasm 再编译，产出的二进制直接上传服务器即可，服务器上无需再编译。
 
 ---
 
