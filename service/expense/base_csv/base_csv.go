@@ -1,34 +1,53 @@
 package base_csv
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
-	"github.com/cellargalaxy/go_common/util"
-	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/expense"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
 
+// 列名与 model.Csv* 逐字一致（单测对账）。识别器跑在 wasm 里引用不了 model，只能在这里再写一份
+const (
+	colBankName           = "银行名称"
+	colCardLast4          = "卡号后四位"
+	colExpenseDate        = "支出日期"
+	colExpenseCurrency    = "支出币种"
+	colExpenseAmount      = "支出金额"
+	colCounterparty       = "交易对手方"
+	colRemark             = "交易备注"
+	colExchangeRate       = "折算汇率"
+	colAccountingCurrency = "记账币种"
+	colExpenseType        = "支出类型"
+	colAmortizationMonths = "摊销月数"
+
+	dateLayout = "2006-01-02"
+)
+
 var columns = []string{
-	model.CsvBankName,           //银行名称
-	model.CsvCardLast4,          //卡号后四位
-	model.CsvExpenseDate,        //支出日期
-	model.CsvExpenseCurrency,    //支出币种
-	model.CsvExpenseAmount,      //支出金额
-	model.CsvCounterparty,       //交易对手方
-	model.CsvRemark,             //交易备注
-	model.CsvExchangeRate,       //折算汇率
-	model.CsvAccountingCurrency, //记账币种
-	model.CsvExpenseType,        //支出类型
-	model.CsvAmortizationMonths, //摊销月数
+	colBankName,
+	colCardLast4,
+	colExpenseDate,
+	colExpenseCurrency,
+	colExpenseAmount,
+	colCounterparty,
+	colRemark,
+	colExchangeRate,
+	colAccountingCurrency,
+	colExpenseType,
+	colAmortizationMonths,
 }
 
 func init() {
-	expense.Register("base_csv", new(Parser))
+	parser.Register("base_csv", new(Parser))
 }
 
 type Parser struct {
@@ -45,16 +64,31 @@ func (this *Parser) checkColumns(lines [][]string) bool {
 	return slices.Equal(header, columns)
 }
 
+// 与 go_common/util.CsvData2Strs 同一口径：标准库 encoding/csv、不限每行列数，裸引号这类格式错误直接报错
+func readCsv(ctx context.Context, data []byte) ([][]string, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	lines, err := reader.ReadAll()
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析CSV异常")
+		return nil, errors.Errorf("解析CSV异常: %+v", err)
+	}
+	return lines, nil
+}
+
 func (this *Parser) Support(ctx context.Context, data []byte) bool {
-	lines, err := util.CsvData2Strs(ctx, data)
+	lines, err := readCsv(ctx, data)
 	if err != nil {
 		return false
 	}
 	return this.checkColumns(lines)
 }
 
-func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
-	lines, err := util.CsvData2Strs(ctx, data)
+func (this *Parser) Parse(ctx context.Context, data []byte) ([]*parser.Expense, error) {
+	lines, err := readCsv(ctx, data)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +97,11 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 		return nil, errors.Errorf("解析CSV，表头与契约不一致: %s", strings.Join(columns, ","))
 	}
 
-	objects := make([]*model.Expense, 0, len(lines)-1)
+	objects := make([]*parser.Expense, 0, len(lines)-1)
 	for i := 1; i < len(lines); i++ {
 		object, err := parseExpense(ctx, lines[i])
 		if err != nil {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"i": i, "line": util.JsonStruct2Str(lines[i])}).Warn("解析CSV，行非法")
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"i": i, "line": fmt.Sprintf("%q", lines[i])}).Warn("解析CSV，行非法")
 			return nil, errors.Errorf("解析CSV，第%d行，%s", i+1, err)
 		}
 		objects = append(objects, object)
@@ -75,21 +109,21 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 	return objects, nil
 }
 
-func parseExpense(ctx context.Context, line []string) (*model.Expense, error) {
-	expenseDate, err := util.ParseStr2Time(ctx, util.DateLayout_2006_01_02, csvValue(line, model.CsvExpenseDate), nil)
+func parseExpense(ctx context.Context, line []string) (*parser.Expense, error) {
+	expenseDate, err := parser.ParseTime(dateLayout, csvValue(line, colExpenseDate))
 	if err != nil {
 		return nil, errors.Errorf("支出日期非法: %+v", err)
 	}
 	//金额允许0与负数，退款与冲正都要能录进来
-	expenseAmount, err := decimal.NewFromString(csvValue(line, model.CsvExpenseAmount))
+	expenseAmount, err := decimal.NewFromString(csvValue(line, colExpenseAmount))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析CSV，支出金额非法")
 		return nil, errors.Errorf("支出金额非法: %+v", err)
 	}
 	//汇率列留空是允许的，留个0让上层按记账币种去查
 	exchangeRate := decimal.Zero
-	accountingCurrency := csvValue(line, model.CsvAccountingCurrency)
-	value := csvValue(line, model.CsvExchangeRate)
+	accountingCurrency := csvValue(line, colAccountingCurrency)
+	value := csvValue(line, colExchangeRate)
 	if value != "" {
 		if accountingCurrency == "" {
 			logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("解析CSV，填了折算汇率却没填记账币种")
@@ -107,26 +141,26 @@ func parseExpense(ctx context.Context, line []string) (*model.Expense, error) {
 	}
 	//摊销月数留空由上层取默认值，填了就得是不小于1的整数
 	amortizationMonths := 0
-	value = csvValue(line, model.CsvAmortizationMonths)
+	value = csvValue(line, colAmortizationMonths)
 	if value != "" {
-		amortizationMonths = util.Str2Int[int](value)
-		if amortizationMonths < 1 {
+		amortizationMonths, err = strconv.Atoi(value)
+		if err != nil || amortizationMonths < 1 {
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"months": value}).Warn("解析CSV，摊销月数非法")
 			return nil, errors.Errorf("摊销月数非法: %s", value)
 		}
 	}
 
-	object := model.Expense{
-		BankName:           csvValue(line, model.CsvBankName),
-		CardLast4:          csvValue(line, model.CsvCardLast4),
+	object := parser.Expense{
+		BankName:           csvValue(line, colBankName),
+		CardLast4:          csvValue(line, colCardLast4),
 		ExpenseDate:        expenseDate,
-		ExpenseCurrency:    csvValue(line, model.CsvExpenseCurrency),
+		ExpenseCurrency:    csvValue(line, colExpenseCurrency),
 		ExpenseAmount:      expenseAmount,
-		Counterparty:       csvValue(line, model.CsvCounterparty),
-		Remark:             csvValue(line, model.CsvRemark),
+		Counterparty:       csvValue(line, colCounterparty),
+		Remark:             csvValue(line, colRemark),
 		ExchangeRate:       exchangeRate,
 		AccountingCurrency: accountingCurrency,
-		ExpenseType:        csvValue(line, model.CsvExpenseType),
+		ExpenseType:        csvValue(line, colExpenseType),
 		AmortizationMonths: amortizationMonths,
 	}
 	return &object, nil

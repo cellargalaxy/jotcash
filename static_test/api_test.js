@@ -230,26 +230,20 @@ test('分发：换语言重写种子只在 mock 模式下发生', async () => {
   lock();
 });
 
-//单笔补录走的也是入库接口，识别器固定是本系统 CSV；截图这类前端提取过的，提取结果走 content，原文件照传
-test('上传：明细入库带上所选识别器，前端提取了内容才带 content', async () => {
-  const single = await recording(() => ok200(2609161112130001, 1), () => api.insertExpense('2609.csv', '银行名称\n招商'));
-  equal('补录走本系统 CSV', single.calls[0].init.body.get('parser'), 'base_csv');
-  equal('补录不带 content', single.calls[0].init.body.has('content'), false);
-
-  const pdf = await recording(() => ok200(2609161112130001, 1), () => api.insertExpenseFile(new File(['%PDF-'], '流水.pdf'), 'cmb_debit', ''));
-  equal('PDF 带所选识别器', pdf.calls[0].init.body.get('parser'), 'cmb_debit');
-  equal('没提取内容就不带 content', pdf.calls[0].init.body.has('content'), false);
-
-  const content = '[{"text":"交易记录","x":1,"y":2,"score":0.9}]';
-  const shot = await recording(() => ok200(2609161112130001, 1), () => api.insertExpenseFile(new File(['png'], '截图.png'), 'unionpay_screenshot', content));
-  equal('截图带所选识别器', shot.calls[0].init.body.get('parser'), 'unionpay_screenshot');
-  equal('截图带提取结果', shot.calls[0].init.body.get('content'), content);
-  equal('原文件照传', shot.calls[0].init.body.get('file').name, '截图.png');
+//识别器在浏览器里跑，接口只收解析好的明细数组：原文件照传留档，明细放 expense，不再带识别器与 content
+test('上传：明细入库带原文件与明细数组，不带识别器与 content', async () => {
+  const expenses = [{ expense_date: '2026-09-15 21:05:00', expense_currency: 'CNY', expense_amount: '12.5' }];
+  const shot = await recording(() => ok200(2609161112130001, 1), () => api.insertExpense(new File(['png'], '截图.png'), '截图.png', expenses));
+  const body = shot.calls[0].init.body;
+  equal('原文件照传', body.get('file').name, '截图.png');
+  same('明细数组按 JSON 送', JSON.parse(body.get('expense')), expenses);
+  equal('不带识别器', body.has('parser'), false);
+  equal('不带 content', body.has('content'), false);
 });
 
 test('上传：明细入库与整库导入走同一个字段名，且不自己设 Content-Type', async () => {
   const cases = [
-    ['明细入库', '../api/expense/insert', () => api.insertExpense('2609.csv', '银行名称\n招商')],
+    ['明细入库', '../api/expense/insert', () => api.insertExpense(new Blob(['银行名称\n招商']), '2609.csv', [])],
     ['整库导入', '../api/db/import', () => api.importDb(new File(['db'], 'jotcash.db'))],
   ];
   for (const [name, path, call] of cases) {

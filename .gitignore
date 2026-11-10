@@ -40,3 +40,5 @@ go.work.sum
 jotcash
 resource
 *.pdf
+# 识别器的 wasm 是构建产物（go generate ./static 生成），不进仓库
+/static/wasm/

@@ -128,10 +128,6 @@ func TestParseSamplePdf(t *testing.T) {
 			if object.ExpenseCurrency == "" || object.ExpenseAmount.IsZero() || object.Remark == "" {
 				t.Errorf("第%d笔支出币种、支出金额或交易备注为空", i+1)
 			}
-			//派生字段留给上层
-			if object.Id != 0 || object.Version != 0 || !object.AccountingAmount.IsZero() || !object.AmortizationStartMonth.IsZero() {
-				t.Errorf("第%d笔派生字段不该由解析器填: id=%d version=%d", i+1, object.Id, object.Version)
-			}
 		}
 	})
 }
@@ -270,7 +266,7 @@ func TestParseRow(t *testing.T) {
 		object.ExpenseAmount.String() != "1234.56" || object.Remark != "快捷支付" || object.Counterparty != "虚拟商户" {
 		t.Errorf("扣款字段不符: %+v", object)
 	}
-	if object.ExpenseDate.Format(util.DateLayout_2006_01_02) != "2099-01-01" {
+	if object.ExpenseDate.Format(dateLayout) != "2099-01-01" {
 		t.Errorf("支出日期不符: %s", object.ExpenseDate)
 	}
 

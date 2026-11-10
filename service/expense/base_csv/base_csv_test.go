@@ -65,15 +65,11 @@ func TestParse(t *testing.T) {
 	if object.BankName != "招商银行" || object.CardLast4 != "6789" || object.Counterparty != "亚马逊" || object.Remark != "买书" || object.ExpenseType != "购物" {
 		t.Errorf("字段没解析到: %+v", object)
 	}
-	if util.Time2Str(ctx, util.DateLayout_2006_01_02, object.ExpenseDate, nil) != "2026-01-02" {
+	if object.ExpenseDate.Format(dateLayout) != "2026-01-02" {
 		t.Errorf("支出日期不符: %v", object.ExpenseDate)
 	}
 	if object.ExpenseAmount.String() != "-20.25" || object.ExchangeRate.String() != "7.1234" || object.AccountingCurrency != "CNY" {
 		t.Errorf("金额、汇率或记账币种不符: %+v", object)
-	}
-	//记账金额是系统算的，不在CSV里
-	if object.Id != 0 || !object.AccountingAmount.IsZero() || object.Version != 0 || !object.AmortizationStartMonth.IsZero() {
-		t.Errorf("派生字段不该由解析器填: %+v", object)
 	}
 
 	//摊销月数填了就照填的来，留空留0让上层取默认

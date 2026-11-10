@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -9,10 +10,7 @@ import (
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
-	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
-	_ "github.com/cellargalaxy/jotcash/service/expense/cmb_debit"
-	_ "github.com/cellargalaxy/jotcash/service/expense/icbc_credit"
-	_ "github.com/cellargalaxy/jotcash/service/expense/unionpay_screenshot"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/cellargalaxy/jotcash/service/repo"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
@@ -133,7 +131,7 @@ func DeleteExpense(ctx context.Context, inquiry model.ExpenseInquiry) (any, erro
 	return common_model.HttpData{Count: count}, nil
 }
 
-func InsertExpense(ctx context.Context, filename string, reader io.Reader, parserName, content string) (any, error) {
+func InsertExpense(ctx context.Context, filename string, reader io.Reader, objectsJson string) (any, error) {
 	var accountingCurrency string
 	claims := util.GetClaims[*model.Claims](ctx)
 	if claims != nil {
@@ -152,12 +150,14 @@ func InsertExpense(ctx context.Context, filename string, reader io.Reader, parse
 		return nil, errors.Errorf("明细入库，读取上传文件异常: %+v", err)
 	}
 
-	// OCR 这类阻塞的识别在前端做完，后端只解析前端提取出的内容；原文件照样留档，文件页还能看原件
-	parseData := data
-	if content != "" {
-		parseData = []byte(content)
+	// 识别器全部在浏览器里跑，这里只收解析好的明细，填充汇率、摊销这些附加数据；原文件照样留档，文件页还能看原件
+	var objects []*parser.Expense
+	err = json.Unmarshal([]byte(objectsJson), &objects)
+	if err != nil {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("明细入库，明细JSON非法")
+		return nil, errors.Errorf("明细入库，明细JSON非法: %+v", err)
 	}
-	expenses, err := expense.Parse(ctx, parserName, parseData, accountingCurrency)
+	expenses, err := expense.Fill(ctx, objects, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}

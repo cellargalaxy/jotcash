@@ -3,15 +3,14 @@ package icbc_credit
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/bojanz/currency"
-	"github.com/cellargalaxy/go_common/util"
-	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/expense"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/ledongthuc/pdf"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
@@ -38,6 +37,7 @@ const (
 	directionOut = "借"
 	directionIn  = "贷"
 
+	dateLayout = "2006-01-02"
 	//入账日期与交易时间之间没有分隔符
 	dateTimeLayout = "2006-01-0215:04:05"
 )
@@ -105,7 +105,7 @@ var (
 )
 
 func init() {
-	expense.Register("icbc_credit", new(Parser))
+	parser.Register("icbc_credit", new(Parser))
 }
 
 type Parser struct {
@@ -165,7 +165,7 @@ func matchColumns(text string) []string {
 	return nil
 }
 
-func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
+func (this *Parser) Parse(ctx context.Context, data []byte) ([]*parser.Expense, error) {
 	if !this.Support(ctx, data) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("解析工商银行信用卡明细，表格与契约不一致")
 		return nil, errors.Errorf("解析工商银行信用卡明细，表格与契约不一致")
@@ -176,7 +176,7 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 		return nil, errors.Errorf("解析工商银行信用卡明细，打开PDF异常: %+v", err)
 	}
 
-	var objects []*model.Expense
+	var objects []*parser.Expense
 	for pageIndex := 1; pageIndex <= reader.NumPage(); pageIndex++ {
 		page := reader.Page(pageIndex)
 		if page.V.IsNull() {
@@ -291,10 +291,10 @@ func normalizeChunk(cols []string, chunk []string) ([]string, error) {
 	}, nil
 }
 
-func parseChunk(ctx context.Context, cols []string, pageIndex, chunkIndex int, chunk []string) (*model.Expense, error) {
+func parseChunk(ctx context.Context, cols []string, pageIndex, chunkIndex int, chunk []string) (*parser.Expense, error) {
 	chunk, err := normalizeChunk(cols, chunk)
 	if err != nil {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": util.JsonStruct2Str(chunk)}).Warn("解析工商银行信用卡明细，明细列缺失")
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"page": pageIndex, "chunk": fmt.Sprintf("%q", chunk)}).Warn("解析工商银行信用卡明细，明细列缺失")
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，明细列缺失", pageIndex, chunkIndex)
 	}
 
@@ -334,7 +334,7 @@ func parseChunk(ctx context.Context, cols []string, pageIndex, chunkIndex int, c
 		return nil, errors.Errorf("解析工商银行信用卡明细，第%d页第%d笔，交易卡号非法", pageIndex, chunkIndex)
 	}
 
-	object := model.Expense{
+	object := parser.Expense{
 		BankName:        bankName,
 		CardLast4:       cardLast4,
 		ExpenseDate:     expenseDate,
@@ -357,12 +357,12 @@ func chunkValue(cols []string, chunk []string, name string) string {
 
 func parseDate(ctx context.Context, value string) (time.Time, error) {
 	if len(value) == len(dateTimeLayout) {
-		return util.ParseStr2Time(ctx, dateTimeLayout, value, nil)
+		return parser.ParseTime(dateTimeLayout, value)
 	}
-	if len(value) == len(util.DateLayout_2006_01_02_15_04_05) {
-		return util.ParseStr2Time(ctx, util.DateLayout_2006_01_02_15_04_05, value, nil)
+	if len(value) == len(parser.DateLayout) {
+		return parser.ParseTime(parser.DateLayout, value)
 	}
-	return util.ParseStr2Time(ctx, util.DateLayout_2006_01_02, value, nil)
+	return parser.ParseTime(dateLayout, value)
 }
 
 func parseCurrency(value string) (string, error) {

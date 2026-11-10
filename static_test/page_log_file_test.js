@@ -19,6 +19,7 @@ import * as api from '../static/js/api.js';
 import { CSV_FIELDS } from '../static/js/config.js';
 import { render as renderFileMeta } from '../static/js/page_file_meta.js';
 import { render as renderOperationLog } from '../static/js/page_operation_log.js';
+import { insertCsv } from './helper/parse.js';
 
 mockSession();
 
@@ -113,7 +114,7 @@ test('文件页：按文件名模糊筛选，大小按单位进位展示', async
 });
 
 test('文件页：下载走的是入库时那份内容，失败只提示不崩页', async () => {
-  const uploaded = await api.insertExpense('下载用例.csv', [
+  const uploaded = await insertCsv(api, '下载用例.csv', [
     '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
     ',,2026-09-15,CNY,1,下载用例,,,,,',
   ].join('\r\n'));
@@ -149,7 +150,7 @@ test('文件页：预览种子文件，铺出来的是入库那份 CSV', async (
 
 //预览与下载取的是同一份内容，走的也是同一个接口；这里盯的是「铺出来的确实是上传那一份」
 test('文件页：预览上传上来的文件，铺的是上传那份内容', async () => {
-  await api.insertExpense('预览用例.csv', [
+  await insertCsv(api, '预览用例.csv', [
     '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
     ',,2026-09-15,CNY,1,预览用例,,,,,',
   ].join('\r\n'));

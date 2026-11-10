@@ -181,8 +181,10 @@ export const TEXT = {
   '点这里保存': 'save it here',
   '。': '.',
   '上传账单文件批量新增': 'Upload a statement file to add records in bulk',
-  '识别器必须手选。选了也照样核对文件内容，内容对不上不会入库。截图类识别在浏览器本地完成，不调用任何在线服务。':
-    'Pick a parser. The file content is still checked against it, and nothing is ingested if it does not match. Screenshot recognition runs locally in the browser and calls no online service.',
+  '识别器必须手选，并按严格口径解析：文件跟所选识别器的格式差一点都不入库。解析全部在浏览器本地完成，不调用任何在线服务。':
+    'Pick a parser. It parses strictly: if the file differs from the chosen parser’s format in any way, nothing is ingested. Parsing runs entirely in the browser and calls no online service.',
+  '{reason}。请检查是否选错了识别器': '{reason}. Check whether you chose the wrong parser',
+  '识别器加载失败': 'Failed to load the parsers',
   '选本系统标准 CSV 时，表头必须与下面的契约完全一致，列名与顺序都不能差。':
     'For this system’s standard CSV, the header must match the contract below exactly, in both names and order.',
   '请选择识别器': 'Choose a parser',
@@ -248,7 +250,12 @@ export const TEXT = {
   '预览': 'Preview',
   '预览 {name}': 'Preview {name}',
   '这个文件没有内容。': 'This file has no content.',
-  '这种格式没有内置预览，目前只认 PDF、CSV 与 JSON。': 'No built-in preview for this format; only PDF, CSV and JSON are recognized.',
+  '这种格式没有内置预览，目前只认 PDF、图片、CSV 与 JSON。': 'No built-in preview for this format; only PDF, images, CSV and JSON are recognized.',
+  '向左旋转': 'Rotate left',
+  '向右旋转': 'Rotate right',
+  '缩小': 'Zoom out',
+  '放大': 'Zoom in',
+  '适应宽度': 'Fit to width',
   '文件超过 {limit}，不在页面里铺开。': 'The file is larger than {limit} and will not be laid out in the page.',
   '请下载之后用本机程序打开。': 'Download it and open it with a local application.',
   '共 {total} 行，这里只铺了前 {shown} 行，完整内容请下载。': '{total} rows in total; only the first {shown} are shown here. Download for the full content.',
@@ -450,8 +457,10 @@ export const TEXT = {
 
   // ===== 后端原文：整句报错与摘要 =====
   '解析明细，文件内容与所选识别器不符': 'Parse records: the file content does not match the chosen parser',
-  '演示模式只能解析本系统标准 CSV': 'Demo mode can only parse this system’s standard CSV',
-  '明细入库，入库内容为空': 'Ingest records: nothing to ingest',
+  '解析明细，没有解析到明细': 'Parse records: no records were found in the file',
+  '填充明细，明细为空': 'Fill records: there are no records',
+  '明细为空': 'the record is empty',
+  '支出日期为空': 'expense date is empty',
   '明细入库，记账币种为空': 'Ingest records: accounting currency is empty',
   '明细编辑，已删除明细不可编辑': 'Record edit: a deleted record cannot be edited',
   '明细编辑，数据已落后，请刷新页面重新加载': 'Record edit: your data is stale, reload the page',
@@ -487,6 +496,9 @@ export const TEXT = {
 export const SERVER = [
   { pattern: /^解析明细，识别器不存在: (.*)$/, text: 'Parse records: no such parser: $1' },
   { pattern: /^解析明细，第(\d+)笔，(.+)$/, text: 'Parse records: record #$1, $2' },
+  { pattern: /^填充明细，第(\d+)笔，(.+)$/, text: 'Fill records: record #$1, $2' },
+  { pattern: /^明细入库，明细JSON非法: (.*)$/, text: 'Ingest records: invalid records JSON: $1' },
+  { pattern: /^解析CSV异常: (.*)$/, text: 'Parse CSV: $1' },
   { pattern: /^解析CSV，第(\d+)行，(.+)$/, text: 'Parse CSV: line $1, $2' },
   { pattern: /^解析CSV，表头与契约不一致: (.*)$/, text: 'Parse CSV: header does not match the contract: $1' },
   { pattern: /^明细编辑，明细不存在: (\d+)$/, text: 'Record edit: record does not exist: $1' },

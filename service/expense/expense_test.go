@@ -1,21 +1,15 @@
 package expense_test
 
 import (
-	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/cellargalaxy/go_common/util"
 	"github.com/cellargalaxy/jotcash/config"
-	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/service/expense"
-	_ "github.com/cellargalaxy/jotcash/service/expense/base_csv"
-	_ "github.com/cellargalaxy/jotcash/service/expense/cmb_debit"
-	_ "github.com/cellargalaxy/jotcash/service/expense/icbc_credit"
-	_ "github.com/cellargalaxy/jotcash/service/expense/unionpay_screenshot"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/shopspring/decimal"
 )
 
@@ -27,68 +21,82 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数\n"
+func testExpense(currency, amount string) *parser.Expense {
+	return &parser.Expense{
+		BankName:        "招商银行",
+		CardLast4:       "6789",
+		ExpenseDate:     time.Date(2026, 1, 2, 0, 0, 0, 0, parser.Loc),
+		ExpenseCurrency: currency,
+		ExpenseAmount:   decimal.RequireFromString(amount),
+	}
+}
 
-func TestParse(t *testing.T) {
+func TestFill(t *testing.T) {
 	ctx := util.GenCtx()
 
-	objects, err := expense.Parse(ctx, "base_csv", []byte(testCsvHeader+
-		"招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"+
-		"中国银行,4321,2026-03-04,USD,-20.25,苹果,退款,7.1234,CNY,数码,\n"), "CNY")
+	first := testExpense("CNY", "100.50")
+	second := testExpense("USD", "-20.25")
+	second.ExpenseDate = time.Date(2026, 3, 4, 0, 0, 0, 0, parser.Loc)
+	second.ExchangeRate, second.AccountingCurrency = decimal.RequireFromString("7.1234"), "CNY"
+	objects, err := expense.Fill(ctx, []*parser.Expense{first, second}, "CNY")
 	if err != nil {
-		t.Fatalf("解析异常: %+v", err)
+		t.Fatalf("填充异常: %+v", err)
 	}
 	if len(objects) != 2 {
-		t.Fatalf("应解析出2笔: %d", len(objects))
+		t.Fatalf("应填充出2笔: %d", len(objects))
 	}
-	first, second := objects[0], objects[1]
+	one, two := objects[0], objects[1]
 
 	//同币种的汇率恒为1
-	if first.ExchangeRate.String() != "1" || !first.AccountingAmount.Equal(first.ExpenseAmount) {
-		t.Errorf("同币种的折算不符: %+v", first)
+	if one.ExchangeRate.String() != "1" || !one.AccountingAmount.Equal(one.ExpenseAmount) {
+		t.Errorf("同币种的折算不符: %+v", one)
 	}
-	//文件里给了汇率就用文件的，记账金额=支出金额×折算汇率，乘出来的-144.24885按分四舍五入
-	if second.ExchangeRate.String() != "7.1234" || second.AccountingAmount.String() != "-144.25" {
-		t.Errorf("跨币种的折算不符: %+v", second)
+	//明细里给了汇率就用明细的，记账金额=支出金额×折算汇率，乘出来的-144.24885按分四舍五入
+	if two.ExchangeRate.String() != "7.1234" || two.AccountingAmount.String() != "-144.25" {
+		t.Errorf("跨币种的折算不符: %+v", two)
 	}
-	if first.AccountingCurrency != "CNY" || second.AccountingCurrency != "CNY" {
-		t.Errorf("记账币种应取传入值: %+v %+v", first, second)
+	if one.AccountingCurrency != "CNY" || two.AccountingCurrency != "CNY" {
+		t.Errorf("记账币种应取传入值: %+v %+v", one, two)
 	}
-	if first.Id == 0 || second.Id == 0 || first.Id == second.Id {
-		t.Errorf("每笔都该有自己的ID: %d %d", first.Id, second.Id)
+	if one.Id == 0 || two.Id == 0 || one.Id == two.Id {
+		t.Errorf("每笔都该有自己的ID: %d %d", one.Id, two.Id)
 	}
-	if first.Version != 1 {
-		t.Errorf("版本号应从1开始: %d", first.Version)
+	if one.Version != 1 {
+		t.Errorf("版本号应从1开始: %d", one.Version)
+	}
+	if one.BankName != "招商银行" || one.CardLast4 != "6789" || !one.ExpenseAmount.Equal(decimal.RequireFromString("100.50")) {
+		t.Errorf("文件里读到的字段应原样保留: %+v", one)
 	}
 	//摊销月数默认1，起始月=支出日期所属月，结束月=起始月+月数-1
-	if first.AmortizationMonths != 1 {
-		t.Errorf("摊销月数应默认1: %d", first.AmortizationMonths)
+	if one.AmortizationMonths != 1 {
+		t.Errorf("摊销月数应默认1: %d", one.AmortizationMonths)
 	}
-	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationStartMonth, nil)
-	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, first.AmortizationEndMonth, nil)
+	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, one.AmortizationStartMonth, nil)
+	endMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, one.AmortizationEndMonth, nil)
 	if startMonth != "2026-01-01" || endMonth != "2026-01-01" {
 		t.Errorf("摊销起止月不符: %s %s", startMonth, endMonth)
 	}
 }
 
-func TestParseAccountingCurrency(t *testing.T) {
+func TestFillAccountingCurrency(t *testing.T) {
 	ctx := util.GenCtx()
 
-	//文件里逐笔给了记账币种就盖过请求带的，汇率留空由系统按支出日期查
-	objects, err := expense.Parse(ctx, "base_csv", []byte(testCsvHeader+
-		"招商银行,6789,2026-01-02,USD,100,亚马逊,买书,,JPY,购物,3\n"+
-		"招商银行,6789,2026-01-02,USD,100,亚马逊,买书,,,购物,\n"), "CNY")
+	//明细逐笔给了记账币种就盖过请求带的，汇率留空由系统按支出日期查
+	first := testExpense("USD", "100")
+	first.AccountingCurrency, first.AmortizationMonths = "JPY", 3
+	second := testExpense("USD", "100")
+	objects, err := expense.Fill(ctx, []*parser.Expense{first, second}, "CNY")
 	if err != nil {
-		t.Fatalf("解析异常: %+v", err)
+		t.Fatalf("填充异常: %+v", err)
 	}
 	if objects[0].AccountingCurrency != "JPY" {
-		t.Errorf("文件里的记账币种应优先: %+v", objects[0])
+		t.Errorf("明细里的记账币种应优先: %+v", objects[0])
 	}
 	if !objects[0].ExchangeRate.IsPositive() || !objects[0].AccountingAmount.Equal(objects[0].ExpenseAmount.Mul(objects[0].ExchangeRate).Round(config.GetConfig(ctx).AmountScale)) {
 		t.Errorf("汇率留空应由系统查出来再算记账金额: %+v", objects[0])
 	}
 	if objects[1].AccountingCurrency != "CNY" {
-		t.Errorf("文件里没给记账币种应用请求带的: %+v", objects[1])
+		t.Errorf("明细里没给记账币种应用请求带的: %+v", objects[1])
 	}
 	//摊销月数填了3，结束月=起始月+2
 	startMonth := util.Time2Str(ctx, util.DateLayout_2006_01_02, objects[0].AmortizationStartMonth, nil)
@@ -98,148 +106,50 @@ func TestParseAccountingCurrency(t *testing.T) {
 	}
 }
 
-func TestParseInvalid(t *testing.T) {
+// 浏览器的结果不可全信：识别器该挡的，服务端一律再挡一次
+func TestFillInvalid(t *testing.T) {
 	ctx := util.GenCtx()
-	csv := []byte(testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n")
+	valid := func() *parser.Expense { return testExpense("CNY", "1") }
 
-	if _, err := expense.Parse(ctx, "base_csv", csv, ""); err == nil {
+	if _, err := expense.Fill(ctx, []*parser.Expense{valid()}, ""); err == nil {
 		t.Errorf("记账币种为空应报错")
 	}
-	if _, err := expense.Parse(ctx, "base_csv", csv, "XYZ"); err == nil {
+	if _, err := expense.Fill(ctx, []*parser.Expense{valid()}, "XYZ"); err == nil {
 		t.Errorf("记账币种不在枚举内应报错")
 	}
-	if _, err := expense.Parse(ctx, "base_csv", []byte(testCsvHeader+",,2026-01-02,XYZ,1,,,1,CNY,,\n"), "CNY"); err == nil {
-		t.Errorf("支出币种不在枚举内应报错")
+	if _, err := expense.Fill(ctx, nil, "CNY"); err == nil {
+		t.Errorf("明细为空应报错，不能入库一个空批次")
 	}
-	if _, err := expense.Parse(ctx, "base_csv", []byte(testCsvHeader+",,2026-01-02,USD,1,,,1,XYZ,,\n"), "CNY"); err == nil {
-		t.Errorf("文件里的记账币种不在枚举内应报错")
+	if _, err := expense.Fill(ctx, []*parser.Expense{nil}, "CNY"); err == nil {
+		t.Errorf("数组里有 null 应报错")
 	}
-	//月数大到让结束月绕回起始月之前，宁可报错也不能把脏数据写进去
-	if _, err := expense.Parse(ctx, "base_csv", []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,99999999999999999999\n"), "CNY"); err == nil {
-		t.Errorf("摊销月数过大应报错")
-	}
-	//别家的CSV就算用户手选了本系统格式，内容对不上也不能硬解
-	if _, err := expense.Parse(ctx, "base_csv", []byte("交易日期,摘要,发生额\n2026-01-02,消费,100.50\n"), "CNY"); err == nil || !strings.Contains(err.Error(), "文件内容与所选识别器不符") {
-		t.Errorf("内容与所选识别器不符应报错: %+v", err)
-	}
-	if _, err := expense.Parse(ctx, "no_such_parser", []byte(testCsvHeader+",,2026-01-02,CNY,1,,,,,,\n"), "CNY"); err == nil || !strings.Contains(err.Error(), "识别器不存在") {
-		t.Errorf("识别器不存在应报错: %+v", err)
-	}
-}
 
-const testBadRateData = "只有测试用的解析器认领这份内容"
-
-// 解析器是注册进来的，上层不能假定每个解析器都替它把汇率校验过：非正的汇率到了这一层还得再挡一次
-type badRateParser struct {
-}
-
-func (this *badRateParser) Support(ctx context.Context, data []byte) bool {
-	return string(data) == testBadRateData
-}
-func (this *badRateParser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
-	object := model.Expense{
-		ExpenseDate:     time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
-		ExpenseCurrency: "USD",
-		ExpenseAmount:   decimal.RequireFromString("100"),
-		ExchangeRate:    decimal.RequireFromString("-7.1234"),
+	cases := map[string]func(object *parser.Expense){
+		"支出日期为空":        func(object *parser.Expense) { object.ExpenseDate = time.Time{} },
+		"支出币种不在枚举内":     func(object *parser.Expense) { object.ExpenseCurrency = "XYZ" },
+		"支出币种为空":        func(object *parser.Expense) { object.ExpenseCurrency = "" },
+		"明细里的记账币种不在枚举内": func(object *parser.Expense) { object.ExpenseCurrency, object.AccountingCurrency = "USD", "XYZ" },
+		"填了汇率没填记账币种": func(object *parser.Expense) {
+			object.ExpenseCurrency, object.ExchangeRate = "USD", decimal.RequireFromString("7")
+		},
+		"汇率非正": func(object *parser.Expense) {
+			object.ExpenseCurrency, object.AccountingCurrency, object.ExchangeRate = "USD", "CNY", decimal.RequireFromString("-7")
+		},
+		"摊销月数为负": func(object *parser.Expense) { object.AmortizationMonths = -1 },
+		//月数大到让结束月绕回起始月之前，宁可报错也不能把脏数据写进去
+		"摊销月数过大": func(object *parser.Expense) { object.AmortizationMonths = 1 << 62 },
 	}
-	return []*model.Expense{&object}, nil
-}
-
-func TestParseBadRate(t *testing.T) {
-	ctx := util.GenCtx()
-	expense.Register("bad_rate", new(badRateParser))
-
-	objects, err := expense.Parse(ctx, "bad_rate", []byte(testBadRateData), "CNY")
-	if err == nil {
-		t.Fatalf("解析器放过来的非正汇率应被挡下: %+v", objects)
-	}
-	//报错要带笔数，几十笔的文件里才定位得到是哪一笔
-	if !strings.Contains(err.Error(), "第1笔") {
-		t.Errorf("报错应带笔数: %+v", err)
-	}
-}
-
-// 样例账单是真实流水、随时会被删，所以只按目录扫，不写死文件名，也不断言里面的任何内容
-func TestParseSamplePdf(t *testing.T) {
-	ctx := util.GenCtx()
-
-	paths, err := filepath.Glob("../../resource/*.pdf")
-	if err != nil || len(paths) == 0 {
-		t.Skip("没有样例PDF，跳过真实账单校验")
-	}
-	for i := range paths {
-		data, err := os.ReadFile(paths[i])
-		if err != nil {
-			t.Fatalf("读取第%d个样例PDF异常: %+v", i+1, err)
+	for name, mutate := range cases {
+		object := valid()
+		mutate(object)
+		_, err := expense.Fill(ctx, []*parser.Expense{valid(), object}, "CNY")
+		if err == nil {
+			t.Errorf("%s应报错", name)
+			continue
 		}
-		//样例不写死是哪家的账单，逐个 PDF 识别器去试，内容对不上的跳过
-		var objects []*model.Expense
-		for _, parserName := range []string{"cmb_debit", "icbc_credit"} {
-			objects, err = expense.Parse(ctx, parserName, data, "CNY")
-			if err == nil || !strings.Contains(err.Error(), "文件内容与所选识别器不符") {
-				break
-			}
-		}
-		if err != nil {
-			if strings.Contains(err.Error(), "文件内容与所选识别器不符") {
-				continue
-			}
-			t.Fatalf("第%d个样例解析异常: %+v", i+1, err)
-		}
-		if len(objects) == 0 {
-			t.Fatalf("第%d个样例应解析出明细", i+1)
-		}
-		for j, object := range objects {
-			if object.BankName == "" || len(object.CardLast4) != 4 {
-				t.Errorf("第%d个样例第%d笔银行名称或卡号后四位为空: bank=%s cardLast4长度=%d", i+1, j+1, object.BankName, len(object.CardLast4))
-			}
-			if object.Id == 0 || object.Version != 1 || object.AccountingCurrency != "CNY" || object.AmortizationMonths != 1 {
-				t.Errorf("第%d个样例第%d笔派生字段不符: id=%d version=%d 记账币种=%s 摊销月数=%d", i+1, j+1, object.Id, object.Version, object.AccountingCurrency, object.AmortizationMonths)
-			}
-			if !object.ExchangeRate.IsPositive() {
-				t.Errorf("第%d个样例第%d笔折算汇率非正: %s", i+1, j+1, object.ExchangeRate)
-			}
-			if object.ExpenseCurrency == object.AccountingCurrency && !object.AccountingAmount.Equal(object.ExpenseAmount) {
-				t.Errorf("第%d个样例第%d笔同币种记账金额应等于支出金额: %s %s", i+1, j+1, object.AccountingAmount, object.ExpenseAmount)
-			}
-			if object.AmortizationStartMonth.IsZero() || object.AmortizationEndMonth.IsZero() {
-				t.Errorf("第%d个样例第%d笔摊销起止月为空", i+1, j+1)
-			}
-		}
-	}
-}
-
-// 截图在前端 OCR，后端收到的是文字块；用随仓库提交的全虚构合成截图的文字块，走一遍按名分发与派生字段
-func TestParseSyntheticScreenshot(t *testing.T) {
-	ctx := util.GenCtx()
-
-	data, err := os.ReadFile("unionpay_screenshot/testdata/synthetic.json")
-	if err != nil {
-		t.Fatalf("读取合成截图文字块异常: %+v", err)
-	}
-	objects, err := expense.Parse(ctx, "unionpay_screenshot", data, "CNY")
-	if err != nil {
-		t.Fatalf("合成截图解析异常: %+v", err)
-	}
-	if len(objects) != 13 {
-		t.Fatalf("合成截图应解析出13笔明细: got %d", len(objects))
-	}
-	for j, object := range objects {
-		if object.BankName == "" || len(object.CardLast4) != 4 {
-			t.Errorf("第%d笔银行名称或卡号后四位为空: bank=%s cardLast4长度=%d", j+1, object.BankName, len(object.CardLast4))
-		}
-		if object.Id == 0 || object.Version != 1 || object.AccountingCurrency != "CNY" || object.AmortizationMonths != 1 {
-			t.Errorf("第%d笔派生字段不符: id=%d version=%d 记账币种=%s 摊销月数=%d", j+1, object.Id, object.Version, object.AccountingCurrency, object.AmortizationMonths)
-		}
-		if !object.ExchangeRate.IsPositive() {
-			t.Errorf("第%d笔折算汇率非正: %s", j+1, object.ExchangeRate)
-		}
-		if object.ExpenseCurrency == object.AccountingCurrency && !object.AccountingAmount.Equal(object.ExpenseAmount) {
-			t.Errorf("第%d笔同币种记账金额应等于支出金额: %s %s", j+1, object.AccountingAmount, object.ExpenseAmount)
-		}
-		if object.AmortizationStartMonth.IsZero() || object.AmortizationEndMonth.IsZero() {
-			t.Errorf("第%d笔摊销起止月为空", j+1)
+		//报错要带笔数，几十笔的明细里才定位得到是哪一笔
+		if !strings.Contains(err.Error(), "第2笔") {
+			t.Errorf("%s的报错应带笔数: %+v", name, err)
 		}
 	}
 }

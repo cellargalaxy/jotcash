@@ -1,6 +1,6 @@
-import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS, EXPENSE_PARSERS, PARSER_CSV } from './config.js';
+import { AMOUNT_SCALE, CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, EXPENSE_FIELDS } from './config.js';
 import { LANGS, t, textOf } from './i18n.js';
-import { addMonth, dateToRfc3339, formatDate, monthOf, parseCsv, toCsv } from './util.js';
+import { addMonth, dateToRfc3339, formatDate, monthOf, toCsv } from './util.js';
 
 //内存库：与后端三张表同名同字段，筛选、排序、分页、乐观锁都按后端语义复刻，
 //切到真实接口时 api.js 不必改调用方一行
@@ -232,66 +232,63 @@ export function selectExpense(inquiry) {
   return ok(pageRows(rows, inquiry.page, inquiry.page_size).map((row) => ({ ...row })), rows.length);
 }
 
-export function insertExpense(filename, csvText, accountingCurrency, parser) {
-  if (!EXPENSE_PARSERS.some((item) => item.value === parser)) return fail(`解析明细，识别器不存在: ${parser || ''}`);
-  //PDF 与截图的解析器只在后端有，演示数据全在浏览器里，这里只认本系统 CSV
-  if (parser !== PARSER_CSV) return fail('演示模式只能解析本系统标准 CSV');
-  const lines = parseCsv(csvText);
-  const header = (lines[0] || []).map((cell) => cell.trim());
-  const expect = CSV_FIELDS.map((field) => field.column);
-  if (header.length !== expect.length || header.some((cell, index) => cell !== expect[index])) {
-    return fail('解析明细，文件内容与所选识别器不符');
+//与后端 expense.Fill 同一口径：识别器在浏览器里跑，这里收到的是解析好的明细数组，只做校验与填充。
+//演示模式也就能用全部识别器了，解析走的是同一个 wasm
+function toExpense(item) {
+  if (!item) return '明细为空';
+  const matched = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(item.expense_date || '');
+  if (!matched) return `支出日期非法: ${item.expense_date || ''}`;
+  try {
+    new Decimal(item.expense_amount);
+  } catch (err) {
+    return `支出金额非法: ${item.expense_amount}`;
   }
-  if (lines.length < 2) return fail('明细入库，入库内容为空');
+  let rate = '';
+  try {
+    if (item.exchange_rate && !new Decimal(item.exchange_rate).isZero()) rate = String(item.exchange_rate);
+  } catch (err) {
+    return `折算汇率非法: ${item.exchange_rate}`;
+  }
+  if (rate && !item.accounting_currency) return '填了折算汇率就必须填记账币种';
+  if (item.amortization_months < 0) return `摊销月数非法: ${item.amortization_months}`;
+  return {
+    bank_name: item.bank_name || '',
+    card_last_4: item.card_last_4 || '',
+    expense_date: dateToRfc3339(matched[1]).replace('T00:00:00', `T${matched[2]}`),
+    expense_currency: item.expense_currency || '',
+    expense_amount: String(item.expense_amount),
+    counterparty: item.counterparty || '',
+    remark: item.remark || '',
+    exchange_rate: rate,
+    accounting_currency: item.accounting_currency || '',
+    expense_type: item.expense_type || '',
+    amortization_months: Number(item.amortization_months) || 0,
+  };
+}
+
+export function insertExpense(filename, file, expenses, accountingCurrency) {
+  const message = checkCurrency('记账币种', accountingCurrency);
+  if (message) return fail(message);
+  if (!Array.isArray(expenses) || expenses.length === 0) return fail('填充明细，明细为空');
 
   const operationId = genId();
   const fileId = genId();
   const at = now();
   const objects = [];
-  for (let index = 1; index < lines.length; index += 1) {
-    const cells = lines[index];
-    const value = (key) => (cells[CSV_FIELDS.findIndex((field) => field.key === key)] || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value('expense_date'))) {
-      return fail(`解析CSV，第${index + 1}行，支出日期非法: ${value('expense_date')}`);
-    }
-    if (!value('expense_amount') || isNaN(Number(value('expense_amount')))) {
-      return fail(`解析CSV，第${index + 1}行，支出金额非法: ${value('expense_amount')}`);
-    }
-    //填了折算汇率就必须填记账币种，与后端 base_csv.parseExpense 的判据一致
-    if (value('exchange_rate') && !value('accounting_currency')) {
-      return fail(`解析CSV，第${index + 1}行，填了折算汇率就必须填记账币种`);
-    }
-    //后端走的是 Str2Int，小数串解不出整数就是 0，一并落进「小于 1」这条判据里被拒
-    const months = value('amortization_months');
-    if (months && !(Number.isInteger(Number(months)) && Number(months) >= 1)) {
-      return fail(`解析CSV，第${index + 1}行，摊销月数非法: ${months}`);
-    }
-    const object = {
+  for (let index = 0; index < expenses.length; index += 1) {
+    const object = toExpense(expenses[index]);
+    const reason = typeof object === 'string' ? object : fillExpense(object, accountingCurrency);
+    if (reason) return fail(`填充明细，第${index + 1}笔，${reason}`);
+    objects.push({
       id: genId(),
-      bank_name: value('bank_name'),
-      card_last_4: value('card_last_4'),
-      expense_date: dateToRfc3339(value('expense_date')),
-      expense_currency: value('expense_currency').toUpperCase(),
-      expense_amount: value('expense_amount'),
-      counterparty: value('counterparty'),
-      remark: value('remark'),
-      exchange_rate: value('exchange_rate'),
-      accounting_currency: value('accounting_currency').toUpperCase(),
-      accounting_amount: '',
-      expense_type: value('expense_type'),
-      amortization_months: months ? Number(months) : 0,
-      amortization_start_month: '',
-      amortization_end_month: '',
+      ...object,
       operation_id: operationId,
       file_id: fileId,
       version: 1,
       created_at: at,
       updated_at: at,
       deleted_at: null,
-    };
-    const message = fillExpense(object, accountingCurrency);
-    if (message) return fail(`解析明细，第${index}笔，${message}`);
-    objects.push(object);
+    });
   }
 
   db.expense.push(...objects);
@@ -299,11 +296,12 @@ export function insertExpense(filename, csvText, accountingCurrency, parser) {
     id: fileId,
     file_hash: `mock${String(fileId).slice(-12)}`,
     file_name: filename,
-    file_size: new Blob([csvText]).size,
+    file_size: file.size,
     operation_id: operationId,
     created_at: at,
   });
-  db.fileBlob[fileId] = csvText;
+  //原文件原样留档，截图、PDF 这类二进制也照存，预览与下载拿到的就是上传的那份
+  db.fileBlob[fileId] = file;
   db.operationLog.push({
     id: operationId,
     operation_type: '数据入库',

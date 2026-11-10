@@ -24,6 +24,7 @@ import { LANGS, LANG_EN, LANG_ZH, detectLang, getLang, serverText, setLang, t } 
 import { SERVER, TEXT } from '../static/js/lang_en.js';
 import { THEMES } from '../static/js/theme.js';
 import { LANG_KEY } from '../static/js/store.js';
+import { insertCsv } from './helper/parse.js';
 
 //辅助函数：把页面源码里的行注释剥掉，免得注释里的中文被当成词条
 function sourceOf(file) {
@@ -299,7 +300,7 @@ test('mock 数据：种子跟着语言走，用户自己录的原样不动', asy
   const { mockSession } = await import('./helper/fixture.js');
   mockSession();
   const api = await import('../static/js/api.js');
-  await api.insertExpense('我自己的账单.csv', [
+  await insertCsv(api, '我自己的账单.csv', [
     '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
     ',,2026-09-15,CNY,1,我录的对手方,我录的备注,,,我录的类型,',
   ].join('\r\n'));

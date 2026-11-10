@@ -24,6 +24,8 @@ import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import * as mock from '../static/js/mock.js';
 import { render as renderExpense } from '../static/js/page_expense.js';
 import { formatDate, parseCsv } from '../static/js/util.js';
+import { mockInsertCsv } from './helper/parse.js';
+import { loadParser } from '../static/js/expense_parse.js';
 
 mockSession();
 
@@ -159,6 +161,45 @@ test('明细页：上传弹窗的识别器必选，没选就不上传', async ()
   answerModal(true);
   await flush();
   includes('没选识别器要报出来', takeToast(), '没有选择识别器');
+});
+
+//辅助函数：在上传弹窗里选好识别器与文件并确认。wasm 首次加载要读盘、编译，几轮 setImmediate 等不完，先预热
+async function upload(host, parser, file) {
+  await loadParser();
+  click(findByText(host, 'button', '上传账单文件'));
+  const modal = answerModalKeepOpen();
+  setValue(find(modal, 'select'), parser);
+  findAll(modal, 'input').find((input) => input.getAttribute('type') === 'file').files = [file];
+  takeToast();
+  answerModal(true);
+  await flush(20);
+}
+
+//识别器在浏览器里按严格口径解析：选错了就不入库，并且要提醒用户检查是不是选错了识别器
+test('明细页：上传选错识别器，不入库并提醒检查识别器', async () => {
+  const host = await renderAll();
+  const csv = `${COLUMNS.join(',')}\n,,2026-09-15,CNY,1,选错识别器用例,,,,,\n`;
+  await upload(host, 'cmb_debit', new File([csv], '选错.csv'));
+  const message = takeToast();
+  includes('报出内容对不上', message, '文件内容与所选识别器不符');
+  includes('提醒检查识别器', message, '请检查是否选错了识别器');
+  equal('没有入库', (await api.selectExpense({ counterparty_like: '选错识别器用例', deleted: 0 })).count, 0);
+
+  await upload(host, PARSER_CSV, new File([`${COLUMNS.join(',')}\n`], '只有表头.csv'));
+  const empty = takeToast();
+  includes('解析不出明细也报', empty, '没有解析到明细');
+  includes('同样提醒检查识别器', empty, '请检查是否选错了识别器');
+});
+
+//演示模式也走同一个 wasm 识别器：选对了就在浏览器里解析好，连同原文件一起入库
+test('明细页：上传选对识别器，浏览器解析后入库并进核实视图', async () => {
+  const host = await renderAll();
+  const csv = `${COLUMNS.join(',')}\n,,2026-09-15,CNY,12.30,上传用例,,,,,\n,,2026-09-16,CNY,4,上传用例,,,,,\n`;
+  await upload(host, PARSER_CSV, new File([csv], '上传用例.csv'));
+  includes('入库提示', takeToast(), '入库 2 笔');
+  const inserted = await api.selectExpense({ counterparty_like: '上传用例', deleted: 0 });
+  equal('确实入了两笔', inserted.count, 2);
+  includes('跳到了核实视图', location.hash, `#/expense?operation_id=${inserted.object[0].operation_id}&verify=1`);
 });
 
 //全量拉取之后条件全空就等于把整个库拖到浏览器里，所以支出日期区间必填，默认给最近一年
@@ -469,7 +510,7 @@ test('明细页：导出全量，且导出的 CSV 能被入库链路吃回去', 
   same('表头就是契约列名', lines[0], COLUMNS);
   equal('导出的是全量不是当前页', lines.length - 1, total);
 
-  const back = await mock.insertExpense('回灌.csv', text, 'CNY', PARSER_CSV);
+  const back = await mockInsertCsv(mock, '回灌.csv', text, 'CNY');
   equal('原样传回去能全部入库', back.count, total);
 });
 
@@ -483,13 +524,16 @@ test('明细页：新增一行等价于一份只有 1 行的 CSV，入库后进�
   setValue(field('支出金额'), '66.60');
   setValue(field('交易对手方'), '单行新增用例');
   setValue(field('摊销月数'), '2');
+  //单笔补录也过同一个 wasm 识别器，先预热，免得几轮 flush 等不完首次加载
+  await loadParser();
   click(findByText(editor, 'button', '入库'));
-  await flush();
+  await flush(20);
   includes('入库提示', takeToast(), '入库 1 笔');
 
   const inserted = await api.selectExpense({ counterparty_like: '单行新增用例', deleted: 0, sort: 'id desc' });
   equal('确实入了一笔', inserted.count, 1);
-  equal('金额按录入的来', inserted.object[0].expense_amount, '66.60');
+  //金额按十进制数值落库，跟真实后端一样不保留末尾的 0
+  equal('金额按录入的来', inserted.object[0].expense_amount, '66.6');
   equal('摊销月数按录入的来', inserted.object[0].amortization_months, 2);
   includes('跳到了核实视图', location.hash, `#/expense?operation_id=${inserted.object[0].operation_id}&verify=1`);
 });

@@ -8,9 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/cellargalaxy/go_common/util"
-	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/expense"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/ledongthuc/pdf"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
@@ -19,6 +17,8 @@ import (
 
 const (
 	bankName = "招商银行"
+
+	dateLayout = "2006-01-02"
 
 	title           = "招商银行交易流水"
 	colDate         = "记账日期"
@@ -58,7 +58,7 @@ var (
 )
 
 func init() {
-	expense.Register("cmb_debit", new(Parser))
+	parser.Register("cmb_debit", new(Parser))
 }
 
 type Parser struct {
@@ -118,7 +118,7 @@ func checkContract(text string) bool {
 	})
 }
 
-func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
+func (this *Parser) Parse(ctx context.Context, data []byte) ([]*parser.Expense, error) {
 	if !this.Support(ctx, data) {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("解析招商银行借记卡流水，表格与契约不一致")
 		return nil, errors.Errorf("解析招商银行借记卡流水，表格与契约不一致")
@@ -150,7 +150,7 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 		rows = append(rows, pageRows...)
 	}
 
-	objects := make([]*model.Expense, 0, len(rows))
+	objects := make([]*parser.Expense, 0, len(rows))
 	for i := range rows {
 		object, err := parseRow(ctx, i+1, cardLast4, rows[i])
 		if err != nil {
@@ -164,7 +164,7 @@ func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, e
 	return objects, nil
 }
 
-func parseRow(ctx context.Context, rowIndex int, cardLast4 string, row tableRow) (*model.Expense, error) {
+func parseRow(ctx context.Context, rowIndex int, cardLast4 string, row tableRow) (*parser.Expense, error) {
 	amount, err := decimal.NewFromString(strings.ReplaceAll(rowValue(row, colAmount), ",", ""))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"row": rowIndex, "err": err}).Warn("解析招商银行借记卡流水，交易金额非法")
@@ -176,13 +176,13 @@ func parseRow(ctx context.Context, rowIndex int, cardLast4 string, row tableRow)
 		return nil, nil
 	}
 
-	expenseDate, err := util.ParseStr2Time(ctx, util.DateLayout_2006_01_02, rowValue(row, colDate), nil)
+	expenseDate, err := parser.ParseTime(dateLayout, rowValue(row, colDate))
 	if err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"row": rowIndex}).Warn("解析招商银行借记卡流水，记账日期非法")
 		return nil, errors.Errorf("解析招商银行借记卡流水，第%d笔，记账日期非法", rowIndex)
 	}
 
-	object := model.Expense{
+	object := parser.Expense{
 		BankName:        bankName,
 		CardLast4:       cardLast4,
 		ExpenseDate:     expenseDate,

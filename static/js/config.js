@@ -17,11 +17,11 @@ export const PATH_IMPORT_DB = 'db/import';
 
 //上传字段名，与后端 config.ExpenseFileKey / config.ImportFileKey 一致
 export const UPLOAD_FILE_KEY = 'file';
-//明细入库所选的识别器、前端提取出的内容，与后端 config.ExpenseParserKey / config.ExpenseContentKey 一致
-export const UPLOAD_PARSER_KEY = 'parser';
-export const UPLOAD_CONTENT_KEY = 'content';
+//明细入库时浏览器解析好的明细数组（JSON），与后端 config.ExpenseObjectsKey 一致
+export const UPLOAD_EXPENSE_KEY = 'expense';
 
-//识别器的取值与后端 expense.Register 注册的名字逐字一致。用户手选，后端照样核对内容，选错了不入库
+//识别器的取值与 wasm 里 parser.Register 注册的名字逐字一致（service/expense/parsers 是生效清单）。
+//用户手选，识别器按严格口径解析，内容跟定义差一点都不解析
 export const PARSER_CSV = 'base_csv';
 export const EXPENSE_PARSERS = [
   { value: PARSER_CSV, name: '本系统标准 CSV' },

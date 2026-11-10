@@ -65,8 +65,8 @@
 
 - **CSV 批量入库与原生账单识别**：
   - 系统内置 11 列标准 CSV 契约，支持 UTF-8 与 BOM。
-  - 原生支持**招商银行借记卡**、**工商银行信用卡** PDF 账单与**云闪付交易记录截图**；上传时手选识别器，后端仍按内容核对，选错不入库。
-  - 截图在浏览器本地离线 OCR（RapidOCR 模型 + onnxruntime-web），不调用任何在线服务，服务端只解析识别结果。
+  - 原生支持**招商银行借记卡**、**工商银行信用卡** PDF 账单与**云闪付交易记录截图**；上传时手选识别器，识别器按严格口径解析，格式差一点都不入库，并提示检查是否选错了识别器。
+  - 识别器全部在浏览器本地运行（Go 识别器编译成 WebAssembly；截图先用 RapidOCR 模型 + onnxruntime-web 离线 OCR），不调用任何在线服务；服务端只接收解析好的明细，填充汇率、摊销等附加数据。
   - 入库后直通「批量核实视图」，按支出三要素（日期 + 金额 + 币种）高亮呈现本批次与库内存量明细。
 - **表格行内即时编辑与乐观锁并发保护**：
   - 列表页双击任意单元格即可原地编辑，支持多列同时编辑。
@@ -243,12 +243,17 @@ token_ban_minute: 5                  # 触发锁定后的封禁时长（分钟�
 ## 🧪 测试与质量验证
 
 ```bash
-# 运行后端单元测试与集成测试
-go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/expense/hsbc_pulse_credit ./service/expense/unionpay_screenshot ./service/repo ./tool -count=1
+# 先生成浏览器端识别器（static/wasm/，构建产物不进仓库；本地编译、跑测试前都要先执行）
+go generate ./static
 
-# 运行前端无头自动化测试套件（195 条全量用例）
+# 运行后端单元测试与集成测试
+go test ./... -count=1
+
+# 运行前端无头自动化测试套件
 sh static_test/run.sh
 ```
+
+> 识别器的 wasm 经 `go:embed` 内嵌进二进制：`build-docker.sh` 在 Dockerfile 的 builder 阶段生成 wasm 再编译，产出的二进制直接上传服务器即可，服务器上无需再编译。
 
 ---
 

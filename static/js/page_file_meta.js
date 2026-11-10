@@ -60,7 +60,9 @@ async function openPreview(row) {
     const result = await api.downloadFile(row.id);
     const object = result.object;
     const blob = object.blob instanceof Blob ? object.blob : new Blob([object.data === undefined ? '' : object.data]);
-    const file = { name: row.file_name, text: await blob.text(), blob, size: blob.size };
+    //图片要靠魔数认，而文本解码会把高位字节换成替换符，所以另带一截原始字节的开头
+    const head = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+    const file = { name: row.file_name, text: await blob.text(), head, blob, size: blob.size };
     openModal(t('预览 {name}', { name: row.file_name }), previewNode(file), [
       el('button', { class: 'btn btn-outline-primary', type: 'button', text: t('下载'), onclick: () => downloadFile(row) }),
     ]);

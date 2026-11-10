@@ -6,6 +6,7 @@ import * as api from '../static/js/api.js';
 import { defaultInquiry } from '../static/js/expense_inquiry.js';
 import { render as renderStatistic } from '../static/js/page_statistic.js';
 import { formatDate, monthOf } from '../static/js/util.js';
+import { insertCsv } from './helper/parse.js';
 
 mockSession();
 
@@ -153,7 +154,7 @@ test('统计页：筛完没有数据时给空态，不留上一屏的图', async
 //支出日期早于区间、但摊销跨进区间的那几笔，记账口径下不该出现，摊销口径下必须出现，且只算摊进来的那部分
 test('统计页：摊销口径把摊进区间的旧明细一并取回，记账口径不取', async () => {
   //2026-01 一笔 1200 摊 12 个月，每月 100，摊到 2026-12；区间卡在 2026-08~2026-09，它的支出日期在区间之外
-  const inserted = await api.insertExpense('跨期分期.csv', [
+  const inserted = await insertCsv(api, '跨期分期.csv', [
     '银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数',
     ',,2026-01-20,CNY,1200,跨期分期用例,,,,跨期分期,12',
   ].join('\r\n'));

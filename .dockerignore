@@ -5,3 +5,4 @@ doc
 static_test
 *.log
 *.test
+static/wasm

@@ -173,6 +173,33 @@
   border: 0;
 }
 
+/* 图片预览：外框封顶高度、两个方向都能滚；stage 按转后的宽高比占位，图在 stage 正中旋转 */
+.preview-image-box {
+  max-height: 70vh;
+  overflow: auto;
+  background-color: var(--bs-tertiary-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+}
+
+.preview-stage {
+  position: relative;
+  margin: 0 auto;
+}
+
+.preview-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  max-width: none;
+}
+
+.preview-scale {
+  min-width: 3.5rem;
+  text-align: center;
+}
+
 /* 文本预览：长行换行而不是撑出横向滚动；高度封顶，弹窗自己滚 */
 .preview-text {
   max-height: 70vh;

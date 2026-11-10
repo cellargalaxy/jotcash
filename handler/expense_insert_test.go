@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -17,14 +18,30 @@ import (
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/model"
 	"github.com/cellargalaxy/jotcash/rdb"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
+	_ "github.com/cellargalaxy/jotcash/service/expense/parsers"
 	"github.com/gin-gonic/gin"
 )
 
 const testCsvHeader = "银行名称,卡号后四位,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,记账币种,支出类型,摊销月数\n"
 
+// 替浏览器那一步：用同一份识别器把文件解析成明细数组，再连同原文件一起上传
+func parseInBrowser(t *testing.T, parserName string, data []byte) string {
+	t.Helper()
+	objects, err := parser.Parse(util.GenCtx(), parserName, data)
+	if err != nil {
+		t.Fatalf("浏览器端解析异常: %+v", err)
+	}
+	text, err := json.Marshal(objects)
+	if err != nil {
+		t.Fatalf("序列化明细异常: %+v", err)
+	}
+	return string(text)
+}
+
 func insertExpense(t *testing.T, engine *gin.Engine, jwt, filename, csv string) common_model.HttpResp {
 	t.Helper()
-	return postExpenseForm(t, engine, jwt, filename, csv, map[string]string{config.ExpenseParserKey: "base_csv"})
+	return postExpenseForm(t, engine, jwt, filename, csv, map[string]string{config.ExpenseObjectsKey: parseInBrowser(t, "base_csv", []byte(csv))})
 }
 
 func postExpenseForm(t *testing.T, engine *gin.Engine, jwt, filename, data string, fields map[string]string) common_model.HttpResp {
@@ -223,53 +240,30 @@ func TestInsertExpenseSameContent(t *testing.T) {
 	}
 }
 
-// 表头必须与契约一模一样，对得上才轮到可选列留空按空
-func TestInsertExpenseHeader(t *testing.T) {
-	engine, clientToken := newTestEngine(t)
-	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
-
-	headers := map[string]string{
-		"只带必填列": "支出金额,支出币种,支出日期\n100.50,CNY,2026-01-02\n",
-		"表头换顺序": "卡号后四位,银行名称,支出日期,支出币种,支出金额,交易对手方,交易备注,折算汇率,支出类型\n,,2026-01-02,CNY,1,,,,,,\n",
-	}
-	for name, csv := range headers {
-		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
-			t.Errorf("%s应报错: %+v", name, resp)
-		}
-	}
-
-	if resp := insertExpense(t, engine, jwt, "2609.csv", testCsvHeader+",,2026-01-02,CNY,100.50,,,,,,\n"); resp.Code != http.StatusOK {
-		t.Fatalf("表头对得上、可选列留空应成功: %+v", resp)
-	}
-	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
-	if list.Data.Count != 1 {
-		t.Fatalf("应入库1笔: %+v", list.Data)
-	}
-	if list.Data.Object[0].BankName != "" || list.Data.Object[0].Counterparty != "" {
-		t.Errorf("留空的可选列应为空: %+v", list.Data.Object[0])
-	}
-}
-
+// 浏览器的结果不可全信：明细数组里的每一条契约规则，服务端都得再挡一次
 func TestInsertExpenseInvalid(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
 
+	valid := `{"expense_date":"2026-01-02 00:00:00","expense_currency":"CNY","expense_amount":"1"}`
 	cases := map[string]string{
-		"表头混了未知列":    testCsvHeader[:len(testCsvHeader)-1] + ",乱七八糟\n,,2026-01-02,CNY,1,,,,x\n",
-		"表头重复列":      "支出日期,支出币种,支出金额,支出金额\n2026-01-02,CNY,1,2\n",
-		"只有表头":       testCsvHeader,
-		"支出日期非法":     testCsvHeader + ",,2026/01/02,CNY,1,,,,,,\n",
-		"支出金额非法":     testCsvHeader + ",,2026-01-02,CNY,abc,,,,,,\n",
-		"支出币种为空":     testCsvHeader + ",,2026-01-02,,1,,,,,,\n",
-		"支出币种非法":     testCsvHeader + ",,2026-01-02,XYZ,1,,,1,CNY,,\n",
-		"折算汇率非正":     testCsvHeader + ",,2026-01-02,USD,1,,,0,CNY,,\n",
-		"折算汇率非法":     testCsvHeader + ",,2026-01-02,USD,1,,,abc,CNY,,\n",
-		"填了汇率没填记账币种": testCsvHeader + ",,2026-01-02,USD,1,,,7.1234,,,\n",
-		"记账币种非法":     testCsvHeader + ",,2026-01-02,USD,1,,,1,XYZ,,\n",
-		"摊销月数非法":     testCsvHeader + ",,2026-01-02,CNY,1,,,,,,abc\n",
+		"没带明细":       "",
+		"明细不是JSON":   "招商银行,6789",
+		"明细不是数组":     valid,
+		"明细为空数组":     "[]",
+		"数组里有null":   "[" + valid + ",null]",
+		"支出日期带时区":    `[{"expense_date":"2026-01-02T00:00:00+08:00","expense_currency":"CNY","expense_amount":"1"}]`,
+		"支出日期只有日期":   `[{"expense_date":"2026-01-02","expense_currency":"CNY","expense_amount":"1"}]`,
+		"支出金额非法":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"CNY","expense_amount":"abc"}]`,
+		"支出币种为空":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"","expense_amount":"1"}]`,
+		"支出币种非法":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"XYZ","expense_amount":"1"}]`,
+		"折算汇率非正":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"USD","expense_amount":"1","exchange_rate":"-1","accounting_currency":"CNY"}]`,
+		"填了汇率没填记账币种": `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"USD","expense_amount":"1","exchange_rate":"7.1234"}]`,
+		"记账币种非法":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"USD","expense_amount":"1","accounting_currency":"XYZ"}]`,
+		"摊销月数为负":     `[{"expense_date":"2026-01-02 00:00:00","expense_currency":"CNY","expense_amount":"1","amortization_months":-1}]`,
 	}
-	for name, csv := range cases {
-		if resp := insertExpense(t, engine, jwt, "2609.csv", csv); resp.Code == http.StatusOK {
+	for name, objects := range cases {
+		if resp := postExpenseForm(t, engine, jwt, "2609.csv", "原文件", map[string]string{config.ExpenseObjectsKey: objects}); resp.Code == http.StatusOK {
 			t.Errorf("%s应报错: %+v", name, resp)
 		}
 	}
@@ -298,18 +292,10 @@ func TestInsertExpenseMissingField(t *testing.T) {
 	}
 }
 
-// 识别器必须手选；手选了也要过内容契约；前端提取好的内容走 content，原文件只留档
-func TestInsertExpenseParser(t *testing.T) {
+// 服务端只认明细数组，不看原文件内容：原文件原样留档，文件页还能看原件
+func TestInsertExpenseObjects(t *testing.T) {
 	engine, clientToken := newTestEngine(t)
 	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
-	csv := testCsvHeader + "招商银行,6789,2026-01-02,CNY,100.50,亚马逊,买书,,,购物,\n"
-
-	if resp := postExpenseForm(t, engine, jwt, "2609.csv", csv, nil); resp.Code == http.StatusOK || !strings.Contains(resp.Msg, "识别器不存在") {
-		t.Errorf("没选识别器应报识别器不存在: %+v", resp)
-	}
-	if resp := postExpenseForm(t, engine, jwt, "2609.csv", csv, map[string]string{config.ExpenseParserKey: "unionpay_screenshot"}); resp.Code == http.StatusOK || !strings.Contains(resp.Msg, "文件内容与所选识别器不符") {
-		t.Errorf("选错识别器应报内容不符: %+v", resp)
-	}
 
 	_, self, _, _ := runtime.Caller(0)
 	content, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(self)), "service", "expense", "unionpay_screenshot", "testdata", "synthetic.json"))
@@ -317,15 +303,17 @@ func TestInsertExpenseParser(t *testing.T) {
 		t.Fatalf("读取合成截图文字块异常: %+v", err)
 	}
 	screenshot := "假装是截图原文件的字节"
+	//只传原文件、不带明细，服务端不会替浏览器去解析
 	if resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, nil); resp.Code == http.StatusOK {
-		t.Errorf("截图原文件不带识别器不应入库: %+v", resp)
+		t.Errorf("没带明细不应入库: %+v", resp)
 	}
-	if resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{config.ExpenseParserKey: "unionpay_screenshot"}); resp.Code == http.StatusOK {
-		t.Errorf("截图没带前端识别结果，原文件不是文字块，不应被认领: %+v", resp)
+	//旧接口的 content 字段已经去掉，带了也不认
+	if resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{"parser": "unionpay_screenshot", "content": string(content)}); resp.Code == http.StatusOK {
+		t.Errorf("旧接口的 content 不应再被解析: %+v", resp)
 	}
-	resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{config.ExpenseParserKey: "unionpay_screenshot", config.ExpenseContentKey: string(content)})
+	resp := postExpenseForm(t, engine, jwt, "合成截图.png", screenshot, map[string]string{config.ExpenseObjectsKey: parseInBrowser(t, "unionpay_screenshot", content)})
 	if resp.Code != http.StatusOK {
-		t.Fatalf("带前端识别结果的截图应入库: %+v", resp)
+		t.Fatalf("带明细的截图应入库: %+v", resp)
 	}
 	if list := selectExpense(t, engine, jwt, model.ExpenseInquiry{}); list.Data.Count != 13 {
 		t.Errorf("合成截图应入库13笔: %+v", list.Data)
@@ -339,6 +327,28 @@ func TestInsertExpenseParser(t *testing.T) {
 	execTransaction(t, clientToken, fileBlobHandler)
 	if len(fileBlobHandler.Object) != 1 || string(fileBlobHandler.Object[0].FileData) != screenshot {
 		t.Errorf("留档内容应是截图原文件而不是识别结果: %+v", fileBlobHandler.Object)
+	}
+}
+
+// 支出日期按墙钟传、按东八区落库：浏览器在哪个时区都不该让日期漂移
+func TestInsertExpenseDate(t *testing.T) {
+	engine, clientToken := newTestEngine(t)
+	jwt := newJwt(t, config.GetConfig(util.GenCtx()).ServerToken, clientToken, time.Hour)
+
+	objects := `[{"expense_date":"2026-01-31 23:30:00","expense_currency":"CNY","expense_amount":"1"}]`
+	if resp := postExpenseForm(t, engine, jwt, "2609.csv", "原文件", map[string]string{config.ExpenseObjectsKey: objects}); resp.Code != http.StatusOK {
+		t.Fatalf("入库应成功: %+v", resp)
+	}
+	list := selectExpense(t, engine, jwt, model.ExpenseInquiry{})
+	if list.Data.Count != 1 {
+		t.Fatalf("应入库1笔: %+v", list.Data)
+	}
+	ctx := util.GenCtx()
+	if got := util.Time2Str(ctx, util.DateLayout_2006_01_02_15_04_05, list.Data.Object[0].ExpenseDate, nil); got != "2026-01-31 23:30:00" {
+		t.Errorf("支出日期不应漂移: %s", got)
+	}
+	if got := util.Time2Str(ctx, util.DateLayout_2006_01_02, list.Data.Object[0].AmortizationStartMonth, nil); got != "2026-01-01" {
+		t.Errorf("摊销起始月应按墙钟所在月: %s", got)
 	}
 }
 

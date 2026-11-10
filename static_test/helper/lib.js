@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,3 +40,19 @@ export function newStorage() {
 
 globalThis.sessionStorage = newStorage();
 globalThis.localStorage = newStorage();
+
+// ===== 静态资源 =====
+
+//页面按 import.meta.url 拼出静态资源地址（识别器的 wasm 就是这么取的），在 Node 里那是 file: 地址，
+//自带的 fetch 不认。这里替静态文件服务器那一层：file: 地址读本地文件，其余照旧交给原来的 fetch。
+//文件不存在就回 404，跟真服务器一样，好让「没先 go generate」这种情况在用例里暴露成加载失败
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const target = url instanceof URL ? url : new URL(String(url), 'http://shim.invalid/');
+  if (target.protocol !== 'file:') return nativeFetch(url, init);
+  try {
+    return new Response(await readFile(target), { status: 200 });
+  } catch (err) {
+    return new Response('', { status: 404 });
+  }
+};

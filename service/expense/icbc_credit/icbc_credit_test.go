@@ -9,6 +9,7 @@ import (
 
 	"github.com/bojanz/currency"
 	"github.com/cellargalaxy/go_common/util"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 )
 
 func TestMain(m *testing.M) {
@@ -137,10 +138,6 @@ func TestParseSamplePdf(t *testing.T) {
 			if slices.Contains(repaymentSummaries, object.Remark) {
 				t.Errorf("第%d笔还款没被丢掉: %s", i+1, object.Remark)
 			}
-			//派生字段留给上层
-			if object.Id != 0 || object.Version != 0 || !object.AccountingAmount.IsZero() || !object.AmortizationStartMonth.IsZero() {
-				t.Errorf("第%d笔派生字段不该由解析器填: id=%d version=%d", i+1, object.Id, object.Version)
-			}
 		}
 	})
 }
@@ -173,7 +170,7 @@ func TestParseChunk(t *testing.T) {
 		object.ExpenseAmount.String() != "100.5" || object.Remark != "消费" || object.Counterparty != "虚拟商户" {
 		t.Errorf("正常消费字段不符: %+v", object)
 	}
-	if object.ExpenseDate.Format(util.DateLayout_2006_01_02_15_04_05) != "2099-01-01 12:30:00" {
+	if object.ExpenseDate.Format(parser.DateLayout) != "2099-01-01 12:30:00" {
 		t.Errorf("支出日期不符: %s", object.ExpenseDate)
 	}
 
@@ -312,7 +309,7 @@ func TestParseDate(t *testing.T) {
 			t.Errorf("parseDate(%s)异常: %+v", value, err)
 			continue
 		}
-		got := object.Format(util.DateLayout_2006_01_02_15_04_05)
+		got := object.Format(parser.DateLayout)
 		if got != want {
 			t.Errorf("parseDate(%s) = %s, want %s", value, got, want)
 		}

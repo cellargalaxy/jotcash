@@ -14,10 +14,8 @@ import {
   PATH_IMPORT_DB,
   PATH_OPERATION_LOG_SELECT,
   PATH_PING,
-  PARSER_CSV,
-  UPLOAD_CONTENT_KEY,
+  UPLOAD_EXPENSE_KEY,
   UPLOAD_FILE_KEY,
-  UPLOAD_PARSER_KEY,
 } from './config.js';
 import { t } from './i18n.js';
 import * as mock from './mock.js';
@@ -166,17 +164,10 @@ export function selectExpense(inquiry) {
   return postJson(PATH_EXPENSE_SELECT, cleanInquiry(inquiry));
 }
 
-export function insertExpense(filename, csvText) {
-  if (isMock()) return mock.insertExpense(filename, csvText, getAccountingCurrency(), PARSER_CSV);
-  return postFile(PATH_EXPENSE_INSERT, new Blob([csvText], { type: 'text/csv' }), filename, { [UPLOAD_PARSER_KEY]: PARSER_CSV });
-}
-
-//content 是前端已提取好的内容，有它后端就解析它，原文件只留档
-export function insertExpenseFile(file, parser, content) {
-  if (isMock()) return file.text().then((text) => mock.insertExpense(file.name, text, getAccountingCurrency(), parser));
-  const fields = { [UPLOAD_PARSER_KEY]: parser };
-  if (content) fields[UPLOAD_CONTENT_KEY] = content;
-  return postFile(PATH_EXPENSE_INSERT, file, file.name, fields);
+//识别器在浏览器里跑，这里只管把解析好的明细数组连同原文件送过去：后端只认明细，原文件只留档
+export function insertExpense(file, filename, expenses) {
+  if (isMock()) return mock.insertExpense(filename, file, expenses, getAccountingCurrency());
+  return postFile(PATH_EXPENSE_INSERT, file, filename, { [UPLOAD_EXPENSE_KEY]: JSON.stringify(expenses) });
 }
 
 export function deleteExpense(inquiry) {

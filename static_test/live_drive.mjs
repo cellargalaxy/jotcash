@@ -58,8 +58,14 @@ const csv = [
   '招商银行,1234,2026-09-01,CNY,120.00,星巴克,乙,1,CNY,餐饮,1',
   '中国银行,5678,2026-08-11,USD,50.00,Amazon,丙,7.12,CNY,数码,6',
 ].join('\r\n');
+//跟页面一样先过 wasm 识别器再上传：后端认不认这份明细数组，只有这里证明得了。
+//fetch 已被改道到后端，wasm 直接从 static/wasm 读，加载的是同一个文件
+const { readFileSync } = await import('node:fs');
+const { createParser } = await import(`${repo}/static/js/expense_parse.js`);
+const engine = await createParser(readFileSync(`${repo}/static/wasm/parser.wasm`));
+const expenses = engine.parse('base_csv', new TextEncoder().encode(csv));
 //文件名刻意带中文与空格：Content-Disposition 的两份文件名里，只有 filename* 那份还原得回来
-const inserted = await api.insertExpense('2609-招商 账单.csv', csv);
+const inserted = await api.insertExpense(new Blob([csv], { type: 'text/csv' }), '2609-招商 账单.csv', expenses);
 check('入库笔数', inserted.count, 3);
 
 const batch = await api.selectExpense({ ...newInquiry(), operation_id: [inserted.object], deleted: 1 });

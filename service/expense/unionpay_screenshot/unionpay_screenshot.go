@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cellargalaxy/jotcash/model"
-	"github.com/cellargalaxy/jotcash/service/expense"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
@@ -64,7 +63,7 @@ var (
 )
 
 func init() {
-	expense.Register("unionpay_screenshot", new(Parser))
+	parser.Register("unionpay_screenshot", new(Parser))
 }
 
 type Parser struct {
@@ -86,7 +85,7 @@ func (this *Parser) Support(ctx context.Context, data []byte) bool {
 	return checkContract(blocks)
 }
 
-func (this *Parser) Parse(ctx context.Context, data []byte) ([]*model.Expense, error) {
+func (this *Parser) Parse(ctx context.Context, data []byte) ([]*parser.Expense, error) {
 	var blocks []OcrBlock
 	if err := json.Unmarshal(data, &blocks); err != nil {
 		logrus.WithContext(ctx).WithFields(logrus.Fields{"err": err}).Warn("解析云闪付截图明细，文字块JSON异常")
@@ -136,7 +135,7 @@ func checkContract(blocks []OcrBlock) bool {
 	return hasRecordTitle && hasUnionPay && hasFilterAll && hasFilterType
 }
 
-func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*model.Expense, error) {
+func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*parser.Expense, error) {
 	blocks := make([]OcrBlock, len(rawBlocks))
 	copy(blocks, rawBlocks)
 
@@ -153,7 +152,7 @@ func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*model.Expense, e
 		return 1
 	})
 
-	stmtYear := time.Now().Year()
+	stmtYear := time.Now().In(parser.Loc).Year()
 	for i := range blocks {
 		if blocks[i].Y > 800 {
 			break
@@ -170,7 +169,7 @@ func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*model.Expense, e
 	var curYear, curMonth, curDay int
 	curYear = stmtYear
 
-	var expenses []*model.Expense
+	var expenses []*parser.Expense
 
 	for i := 0; i < len(blocks); i++ {
 		b := blocks[i]
@@ -221,7 +220,7 @@ func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*model.Expense, e
 			logrus.WithContext(ctx).WithFields(logrus.Fields{"block": t}).Warn("解析云闪付截图明细，支出日期缺失")
 			return nil, errors.Errorf("解析云闪付截图明细，支出日期缺失")
 		}
-		expenseDate := time.Date(curYear, time.Month(curMonth), curDay, hour, minute, 0, 0, time.Local)
+		expenseDate := time.Date(curYear, time.Month(curMonth), curDay, hour, minute, 0, 0, parser.Loc)
 
 		// 检查卡行附近的状态标签（退款、冻结、解冻）
 		var tag string
@@ -334,7 +333,7 @@ func parseBlocks(ctx context.Context, rawBlocks []OcrBlock) ([]*model.Expense, e
 
 		bankName := normalizeBank(rawBank)
 
-		expenses = append(expenses, &model.Expense{
+		expenses = append(expenses, &parser.Expense{
 			BankName:        bankName,
 			CardLast4:       cardLast4,
 			ExpenseDate:     expenseDate,

@@ -65,8 +65,8 @@ The frontend contains a complete in-browser database engine (`static/js/mock.js`
 
 - **Batch CSV Import**:
   - Built-in standard 11-column CSV format with BOM detection.
-  - Parses **China Merchants Bank (CMB) debit** and **ICBC credit** card PDF statements and **UnionPay app transaction screenshots**; the parser is chosen on upload, and the server still checks the content against it.
-  - Screenshots are OCR-ed offline in the browser (RapidOCR models + onnxruntime-web); no online service is called and the server only parses the recognized text.
+  - Parses **China Merchants Bank (CMB) debit** and **ICBC credit** card PDF statements and **UnionPay app transaction screenshots**; the parser is chosen on upload and parses strictly: if the file differs from its format in any way nothing is ingested, and the page asks you to check whether you picked the wrong parser.
+  - All parsers run locally in the browser (the Go parsers are compiled to WebAssembly; screenshots are first OCR-ed offline with RapidOCR models + onnxruntime-web). No online service is called; the server only receives the parsed records and fills in exchange rates, amortization and other derived data.
   - Batch verification view highlighting newly inserted rows and matching database entries.
 - **Inline Table Editing & Optimistic Locking**:
   - Double-click any editable cell to modify directly in the table.
@@ -247,12 +247,17 @@ token_ban_minute: 5                   # Ban duration in minutes after fail limit
 ## 🧪 Testing
 
 ```bash
-# Run all Go unit & integration tests
-go test ./config ./corn ./handler ./model ./rdb ./service/expense/base_csv ./service/expense/cmb_debit ./service/expense/icbc_credit ./service/repo ./tool -count=1
+# Generate the in-browser parsers first (static/wasm/ is a build artifact, not committed; needed before local builds and tests)
+go generate ./static
 
-# Run full frontend headless test suite (195 tests)
+# Run all Go unit & integration tests
+go test ./... -count=1
+
+# Run full frontend headless test suite
 sh static_test/run.sh
 ```
+
+> The parser wasm is embedded into the binary via `go:embed`: `build-docker.sh` generates it in the Dockerfile builder stage before compiling, so the resulting binary can be uploaded to the server as-is with no compilation there.
 
 ---
 

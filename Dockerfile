@@ -9,6 +9,7 @@ RUN if [ -s jotcash ]; then \
     else \
         echo "Binary not found, building from source"; \
         go mod download && \
+        go generate ./static && \
         CGO_ENABLED=0 GOOS=linux go build -o /jotcash; \
     fi
 

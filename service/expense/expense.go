@@ -9,51 +9,67 @@ import (
 	"github.com/cellargalaxy/jotcash/config"
 	"github.com/cellargalaxy/jotcash/exchange_rate"
 	"github.com/cellargalaxy/jotcash/model"
+	"github.com/cellargalaxy/jotcash/service/expense/parser"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
 )
 
-type Parser interface {
-	Support(ctx context.Context, data []byte) bool
-	Parse(ctx context.Context, data []byte) ([]*model.Expense, error)
-}
-
-var parsers = map[string]Parser{}
-
-func Register(name string, parser Parser) {
-	parsers[name] = parser
-}
-
-// 识别器由用户手选，但手选代替不了内容契约：选错了宁可不认领，也不能按错的格式硬解
-func Parse(ctx context.Context, parserName string, data []byte, accountingCurrency string) ([]*model.Expense, error) {
+// 识别器在浏览器里跑，服务端收到的是已经解析好的明细，只负责校验与填充汇率、摊销这些附加数据。
+// 浏览器的结果不可全信：契约规则（日期、币种、汇率、摊销月数）在这里一律再挡一次
+func Fill(ctx context.Context, objects []*parser.Expense, accountingCurrency string) ([]*model.Expense, error) {
 	err := CheckCurrency(ctx, model.CsvAccountingCurrency, accountingCurrency)
 	if err != nil {
 		return nil, err
 	}
-
-	parser, ok := parsers[parserName]
-	if !ok {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"parser": parserName}).Warn("解析明细，识别器不存在")
-		return nil, errors.Errorf("解析明细，识别器不存在: %s", parserName)
-	}
-	if !parser.Support(ctx, data) {
-		logrus.WithContext(ctx).WithFields(logrus.Fields{"parser": parserName, "len": len(data)}).Warn("解析明细，文件内容与所选识别器不符")
-		return nil, errors.Errorf("解析明细，文件内容与所选识别器不符")
+	if len(objects) == 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("填充明细，明细为空")
+		return nil, errors.Errorf("填充明细，明细为空")
 	}
 
-	objects, err := parser.Parse(ctx, data)
-	if err != nil {
-		return nil, err
-	}
+	expenses := make([]*model.Expense, 0, len(objects))
 	for i := range objects {
-		err = fillExpense(ctx, objects[i], accountingCurrency)
-		if err != nil {
-			logrus.WithContext(ctx).WithFields(logrus.Fields{"index": i + 1}).Warn("解析明细，明细非法")
-			return nil, errors.Errorf("解析明细，第%d笔，%s", i+1, err)
+		object, err := toExpense(ctx, objects[i])
+		if err == nil {
+			err = fillExpense(ctx, object, accountingCurrency)
 		}
+		if err != nil {
+			logrus.WithContext(ctx).WithFields(logrus.Fields{"index": i + 1, "err": err}).Warn("填充明细，明细非法")
+			return nil, errors.Errorf("填充明细，第%d笔，%s", i+1, err)
+		}
+		expenses = append(expenses, object)
 	}
-	return objects, nil
+	return expenses, nil
+}
+
+func toExpense(ctx context.Context, object *parser.Expense) (*model.Expense, error) {
+	if object == nil {
+		return nil, errors.Errorf("明细为空")
+	}
+	if object.ExpenseDate.IsZero() {
+		return nil, errors.Errorf("支出日期为空")
+	}
+	if !object.ExchangeRate.IsZero() && object.AccountingCurrency == "" {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{}).Warn("填充明细，填了折算汇率却没填记账币种")
+		return nil, errors.Errorf("填了折算汇率就必须填记账币种")
+	}
+	if object.AmortizationMonths < 0 {
+		logrus.WithContext(ctx).WithFields(logrus.Fields{"months": object.AmortizationMonths}).Warn("填充明细，摊销月数非法")
+		return nil, errors.Errorf("摊销月数非法: %d", object.AmortizationMonths)
+	}
+	return &model.Expense{
+		BankName:           object.BankName,
+		CardLast4:          object.CardLast4,
+		ExpenseDate:        object.ExpenseDate,
+		ExpenseCurrency:    object.ExpenseCurrency,
+		ExpenseAmount:      object.ExpenseAmount,
+		Counterparty:       object.Counterparty,
+		Remark:             object.Remark,
+		ExchangeRate:       object.ExchangeRate,
+		AccountingCurrency: object.AccountingCurrency,
+		ExpenseType:        object.ExpenseType,
+		AmortizationMonths: object.AmortizationMonths,
+	}, nil
 }
 
 func fillExpense(ctx context.Context, object *model.Expense, accountingCurrency string) error {

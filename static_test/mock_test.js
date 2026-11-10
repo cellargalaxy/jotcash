@@ -1,9 +1,11 @@
 import test from 'node:test';
 import './helper/lib.js';
 import { equal, ok, rejects, same } from './helper/check.js';
-import { CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY, PARSER_CSV } from '../static/js/config.js';
+import { CSV_FIELDS, DELETED_ALL, DELETED_NO, DELETED_ONLY } from '../static/js/config.js';
 import * as mock from '../static/js/mock.js';
 import { formatDate, formatMonth } from '../static/js/util.js';
+import { csvExpenses, mockInsertCsv } from './helper/parse.js';
+import { loadParser } from '../static/js/expense_parse.js';
 
 //辅助函数：按契约列名与列顺序拼一份 CSV，缺的列留空
 function csvOf(rows) {
@@ -16,7 +18,7 @@ function csvOf(rows) {
 
 //辅助函数：入库一批并把这一批查回来，按明细ID 升序
 async function insertAndSelect(rows, accountingCurrency) {
-  const inserted = await mock.insertExpense('用例.csv', csvOf(rows), accountingCurrency || 'CNY', PARSER_CSV);
+  const inserted = await mockInsertCsv(mock, '用例.csv', csvOf(rows), accountingCurrency);
   const selected = await mock.selectExpense({ operation_id: [inserted.object], deleted: DELETED_ALL, sort: 'id asc' });
   return { operationId: inserted.object, count: inserted.count, rows: selected.object, total: selected.count };
 }
@@ -38,7 +40,8 @@ test('入库往返：按契约列名拼的 CSV 能原样查回，派生字段与
   equal('银行名称', row.bank_name, '招商银行');
   equal('卡号后四位', row.card_last_4, '8821');
   equal('支出日期', formatDate(row.expense_date), '2026-09-15');
-  equal('支出金额', row.expense_amount, '128.50');
+  //识别器按十进制数值解析，跟真实后端一样不保留末尾的 0
+  equal('支出金额', row.expense_amount, '128.5');
   equal('交易对手方', row.counterparty, '盒马鲜生');
   equal('交易备注', row.remark, '晚饭');
   equal('支出类型', row.expense_type, '餐饮');
@@ -66,24 +69,27 @@ test('入库：跨币种按汇率折算，摊销月数留空按 1 处理', async
   equal('起止月同月', formatMonth(row.amortization_start_month), formatMonth(row.amortization_end_month));
 });
 
-test('入库：表头差一个字就与所选识别器不符', async () => {
+//演示模式解析走的是页面同一个 wasm 识别器，表头差一个字就不认，不会悄悄入库
+test('入库：表头差一个字就与所选识别器不符，解析不出明细也报错', async () => {
   const good = csvOf([{ expense_date: '2026-09-15', expense_currency: 'CNY', expense_amount: '1' }]);
-  await rejects('旧表头', mock.insertExpense('旧.csv', good.replace('摊销月数', '摊分月数'), 'CNY', PARSER_CSV), '文件内容与所选识别器不符');
-  await rejects('少一列', mock.insertExpense('少.csv', good.replace(',摊销月数', ''), 'CNY', PARSER_CSV), '文件内容与所选识别器不符');
-  await rejects('顺序调换', mock.insertExpense('乱.csv', good.replace('银行名称,卡号后四位', '卡号后四位,银行名称'), 'CNY', PARSER_CSV), '文件内容与所选识别器不符');
-  await rejects('只有表头', mock.insertExpense('空.csv', csvOf([]), 'CNY', PARSER_CSV), '入库内容为空');
+  await rejects('旧表头', csvExpenses(good.replace('摊销月数', '摊分月数')), '文件内容与所选识别器不符');
+  await rejects('少一列', csvExpenses(good.replace(',摊销月数', '')), '文件内容与所选识别器不符');
+  await rejects('顺序调换', csvExpenses(good.replace('银行名称,卡号后四位', '卡号后四位,银行名称')), '文件内容与所选识别器不符');
+  await rejects('只有表头', csvExpenses(csvOf([])), '没有解析到明细');
 });
 
-//识别器跟后端一样必须选、且必须是注册过的；PDF 与截图只有后端能解析，演示模式明说不支持，不假装入库
-test('入库：识别器没选或不存在报错，演示模式只认本系统 CSV', async () => {
-  const good = csvOf([{ expense_date: '2026-09-15', expense_currency: 'CNY', expense_amount: '1' }]);
-  await rejects('没选', mock.insertExpense('a.csv', good, 'CNY', ''), '识别器不存在');
-  await rejects('不存在', mock.insertExpense('a.csv', good, 'CNY', 'no_such_parser'), '识别器不存在: no_such_parser');
-  await rejects('截图', mock.insertExpense('a.png', good, 'CNY', 'unionpay_screenshot'), '演示模式只能解析本系统标准 CSV');
+//识别器必须选、且必须是注册过的；演示模式跟真实模式用同一套识别器，CSV 选成截图识别器一样不认
+test('入库：识别器没选或不存在报错，内容对不上所选识别器也报错', async () => {
+  const good = new TextEncoder().encode(csvOf([{ expense_date: '2026-09-15', expense_currency: 'CNY', expense_amount: '1' }]));
+  const engine = await loadParser();
+  await rejects('没选', (async () => engine.parse('', good))(), '识别器不存在');
+  await rejects('不存在', (async () => engine.parse('no_such_parser', good))(), '识别器不存在: no_such_parser');
+  await rejects('选成截图', (async () => engine.parse('unionpay_screenshot', good))(), '文件内容与所选识别器不符');
+  await rejects('选成 PDF', (async () => engine.parse('cmb_debit', good))(), '文件内容与所选识别器不符');
 });
 
 test('入库：逐行校验的异常分支都报到具体行号', async () => {
-  const bad = (row) => mock.insertExpense('坏.csv', csvOf([row]), 'CNY', PARSER_CSV);
+  const bad = (row) => mockInsertCsv(mock, '坏.csv', csvOf([row]), 'CNY');
   await rejects('日期非法', bad({ expense_date: '2026/09/15', expense_currency: 'CNY', expense_amount: '1' }), '支出日期非法');
   await rejects('金额非法', bad({ expense_date: '2026-09-15', expense_currency: 'CNY', expense_amount: '一百' }), '支出金额非法');
   await rejects('摊销月数为 0', bad({ expense_date: '2026-09-15', expense_currency: 'CNY', expense_amount: '1', amortization_months: '0' }), '摊销月数非法');
@@ -93,13 +99,37 @@ test('入库：逐行校验的异常分支都报到具体行号', async () => {
   await rejects('取不到汇率', bad({ expense_date: '2026-09-15', expense_currency: 'MOP', expense_amount: '1' }), '取不到');
 });
 
+//与后端 expense.Fill 同一口径：浏览器送来的明细数组不可全信，每一条契约规则都再挡一次，报错带笔数
+test('入库：明细数组逐笔校验，报到具体笔数', async () => {
+  const file = new Blob(['原文件']);
+  const good = { expense_date: '2026-09-15 00:00:00', expense_currency: 'CNY', expense_amount: '1' };
+  const bad = (item) => mock.insertExpense('坏.csv', file, [good, item], 'CNY');
+  await rejects('空数组', mock.insertExpense('空.csv', file, [], 'CNY'), '明细为空');
+  await rejects('记账币种为空', mock.insertExpense('a.csv', file, [good], ''), '记账币种');
+  await rejects('数组里有 null', bad(null), '第2笔，明细为空');
+  await rejects('日期带时区', bad({ ...good, expense_date: '2026-09-15T00:00:00+08:00' }), '第2笔，支出日期非法');
+  await rejects('日期只有日期', bad({ ...good, expense_date: '2026-09-15' }), '第2笔，支出日期非法');
+  await rejects('金额非法', bad({ ...good, expense_amount: 'abc' }), '第2笔，支出金额非法');
+  await rejects('汇率非法', bad({ ...good, expense_currency: 'USD', exchange_rate: 'abc', accounting_currency: 'CNY' }), '第2笔，折算汇率非法');
+  await rejects('填了汇率没填记账币种', bad({ ...good, expense_currency: 'USD', exchange_rate: '7' }), '第2笔，填了折算汇率就必须填记账币种');
+  await rejects('摊销月数为负', bad({ ...good, amortization_months: -1 }), '第2笔，摊销月数非法');
+});
+
+//日期按墙钟传：识别器解析出来是几点，落下去就是几点
+test('入库：支出日期按墙钟落库，时刻不丢', async () => {
+  const inserted = await mock.insertExpense('时刻.png', new Blob(['截图']), [{ expense_date: '2026-09-15 21:05:00', expense_currency: 'CNY', expense_amount: '1' }], 'CNY');
+  const rows = (await mock.selectExpense({ operation_id: [inserted.object] })).object;
+  equal('日期', formatDate(rows[0].expense_date), '2026-09-15');
+  equal('时刻', new Date(rows[0].expense_date).getHours(), 21);
+});
+
 //分页参数由调用方决定：不传就是全量，图表统计与导出要的正是这个语义
 test('分页：非正即不限，count 始终是筛选全集', async () => {
   const rows = [];
   for (let index = 0; index < 25; index += 1) {
     rows.push({ expense_date: '2026-06-10', expense_currency: 'CNY', expense_amount: '1', counterparty: '分页用例', remark: `第${index}行` });
   }
-  const inserted = await mock.insertExpense('分页.csv', csvOf(rows), 'CNY', PARSER_CSV);
+  const inserted = await mockInsertCsv(mock, '分页.csv', csvOf(rows), 'CNY');
   const inquiry = { operation_id: [inserted.object], sort: 'id asc' };
 
   const all = await mock.selectExpense({ ...inquiry });
@@ -263,9 +293,9 @@ test('候选取值：字段白名单之外一律报错', async () => {
 });
 
 test('审计与文件：模糊匹配命中，文件内容按文件ID 取回', async () => {
-  const inserted = await mock.insertExpense('2609-模糊.csv', csvOf([
+  const inserted = await mockInsertCsv(mock, '2609-模糊.csv', csvOf([
     { expense_date: '2026-01-05', expense_currency: 'CNY', expense_amount: '9', counterparty: '文件用例' },
-  ]), 'CNY', PARSER_CSV);
+  ]), 'CNY');
   const logs = await mock.selectOperationLog({ summary_like: '2609-模糊' });
   equal('摘要模糊命中', logs.count, 1);
   equal('审计ID 对得上', logs.object[0].id, inserted.object);
@@ -274,7 +304,7 @@ test('审计与文件：模糊匹配命中，文件内容按文件ID 取回', as
   equal('文件名模糊命中', files.count, 1);
   const blob = await mock.downloadFileBlob(files.object[0].id);
   equal('取回的是入库时那份内容', blob.object.file_name, '2609-模糊.csv');
-  ok('内容里有表头', blob.object.data.includes('摊销月数'));
+  ok('内容里有表头', (await blob.object.data.text()).includes('摊销月数'));
   await rejects('文件不存在', mock.downloadFileBlob(1), '文件不存在');
 });
 

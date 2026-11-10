@@ -32,11 +32,10 @@ import {
   PARSER_CSV,
   PATH_PING,
   TOKEN_MIN_LEN,
-  UPLOAD_CONTENT_KEY,
+  UPLOAD_EXPENSE_KEY,
   UPLOAD_FILE_KEY,
-  UPLOAD_PARSER_KEY,
 } from '../static/js/config.js';
-import { EXTRACTORS } from '../static/js/expense_extract.js';
+import { loadParser, needExtract } from '../static/js/expense_parse.js';
 import { CANDIDATE_FIELDS } from '../static/js/expense_inquiry.js';
 import { LANG_EN, LANG_ZH, serverText, setLang } from '../static/js/i18n.js';
 import * as mock from '../static/js/mock.js';
@@ -66,15 +65,17 @@ function goSortKeys(path, name) {
 }
 
 test('CSV 列契约：列名与顺序与 base_csv.columns 逐字相等', () => {
-  const values = goConsts('model/expense.go', 'Csv');
+  //base_csv 跑在 wasm 里引用不了 model，列名在识别器里另写了一份，三处（前端、识别器、model）都得逐字对上
+  const values = goConsts('service/expense/base_csv/base_csv.go', 'col');
   const block = /var columns = \[\]string\{([\s\S]*?)\n\}/.exec(goSource('service/expense/base_csv/base_csv.go'));
-  ok('找得到后端列定义', block);
-  const columns = [...block[1].matchAll(/model\.(Csv\w+)/g)].map((matched) => {
+  ok('找得到识别器列定义', block);
+  const columns = [...block[1].matchAll(/\b(col\w+)/g)].map((matched) => {
     const value = values.get(matched[1]);
-    if (value === undefined) throw new Error(`后端列常量没有取值: ${matched[1]}`);
+    if (value === undefined) throw new Error(`识别器列常量没有取值: ${matched[1]}`);
     return value;
   });
   same('列名与顺序', CSV_FIELDS.map((field) => field.column), columns);
+  same('与 model 的列常量逐字一致', columns, [...goConsts('model/expense.go', 'Csv').values()]);
   equal('列数', CSV_FIELDS.length, 11);
 });
 
@@ -127,24 +128,43 @@ test('接口路径：拼出来的地址与后端注册的路由相等', () => {
   const fileKeys = goConsts('config/handler.go', '');
   equal('明细上传字段名', UPLOAD_FILE_KEY, fileKeys.get('ExpenseFileKey'));
   equal('整库导入字段名', UPLOAD_FILE_KEY, fileKeys.get('ImportFileKey'));
-  equal('明细识别器字段名', UPLOAD_PARSER_KEY, fileKeys.get('ExpenseParserKey'));
-  equal('明细提取内容字段名', UPLOAD_CONTENT_KEY, fileKeys.get('ExpenseContentKey'));
+  equal('明细数组字段名', UPLOAD_EXPENSE_KEY, fileKeys.get('ExpenseObjectsKey'));
 });
 
-//下拉里少一个是用不了，多一个是选了必报错；注册了却没被 service 引入的，等于没注册
-test('识别器：下拉取值与后端生效的注册名逐字相等，前端提取器只挂在其中', () => {
+//下拉里少一个是用不了，多一个是选了必报错；注册了却没进生效清单的，等于没注册。
+//生效清单是 service/expense/parsers，wasm 入口引用它；最终以真编出来的 wasm 自己报的为准
+test('识别器：下拉取值与 wasm 里生效的注册名逐字相等，前端提取器只挂在其中', async () => {
   const registered = [];
   for (const entry of readdirSync(join(ROOT, 'service', 'expense'), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    for (const matched of goSource(join('service', 'expense', entry.name, `${entry.name}.go`)).matchAll(/^\texpense\.Register\("(\w+)"/gm)) {
-      registered.push(matched[1]);
+    let source;
+    try {
+      source = goSource(join('service', 'expense', entry.name, `${entry.name}.go`));
+    } catch (err) {
+      continue;
     }
+    for (const matched of source.matchAll(/^\tparser\.Register\("(\w+)"/gm)) registered.push(matched[1]);
   }
-  const imports = goSource('service/expense.go');
+  const imports = goSource('service/expense/parsers/parsers.go');
   const active = registered.filter((name) => imports.includes(`service/expense/${name}"`));
   same('识别器取值', EXPENSE_PARSERS.map((parser) => parser.value).sort(), active.sort());
   ok('本系统 CSV 在其中', active.includes(PARSER_CSV));
-  for (const parser of Object.keys(EXTRACTORS)) ok(`前端提取器 ${parser} 对应一个识别器`, active.includes(parser));
+  ok('wasm 入口引用的就是生效清单', goSource('wasm/main.go').includes('service/expense/parsers"'));
+
+  const engine = await loadParser();
+  same('wasm 里真正注册的识别器', engine.names().sort(), active.sort());
+  for (const parser of EXPENSE_PARSERS) {
+    if (needExtract(parser.value)) ok(`前端提取器 ${parser.value} 对应一个识别器`, active.includes(parser.value));
+  }
+});
+
+//识别器全部在浏览器里跑：服务端一个识别器都不引用，否则 PDF 解析这些依赖又回到服务端，口径也会分出两份
+test('识别器：服务端不引用任何识别器', () => {
+  for (const path of ['service/expense.go', 'service/expense/expense.go', 'handler/expense.go', 'main.go']) {
+    const source = goSource(path);
+    ok(`${path} 不引用生效清单`, !source.includes('service/expense/parsers"'));
+    for (const parser of EXPENSE_PARSERS) ok(`${path} 不引用 ${parser.value}`, !source.includes(`service/expense/${parser.value}"`));
+  }
 });
 
 test('排序下拉：取值全部落在后端白名单内', () => {
