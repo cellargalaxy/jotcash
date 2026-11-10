@@ -7,6 +7,7 @@ import {
   EXPENSE_COLUMN_DEFAULT,
   EXPENSE_FIELDS,
   EXPENSE_PARSERS,
+  PARSER_CSV,
 } from './config.js';
 import {
   comboInput,
@@ -30,8 +31,8 @@ import {
   loadCandidate,
   newInquiry,
 } from './expense_inquiry.js';
-import { EXTRACTORS } from './expense_extract.js';
-import { getLang, t } from './i18n.js';
+import { needExtract, parseExpenseFile } from './expense_parse.js';
+import { getLang, serverText, t } from './i18n.js';
 import { getAccountingCurrency, getColumns, setColumns } from './store.js';
 import {
   addMonth,
@@ -392,8 +393,11 @@ async function saveEdit(row, draft) {
   await reload();
 }
 
+//单笔补录跟上传一样先拼成本系统 CSV、过一遍同一个 CSV 识别器，入库口径只有一套，留档的也是这份 CSV
 async function saveAdd(draft) {
-  const result = await api.insertExpense(csvFilename('single'), draftToCsv(draft));
+  const file = new Blob([draftToCsv(draft)], { type: 'text/csv' });
+  const expenses = await parseExpenseFile(file, PARSER_CSV);
+  const result = await api.insertExpense(file, csvFilename('single'), expenses);
   state.adding = false;
   state.addDraft = null;
   toastOk(t('入库 {count} 笔，进入核实视图', { count: result.count }));
@@ -430,7 +434,7 @@ function openUpload() {
   const parserSelect = select([{ value: '', name: '请选择识别器' }, ...EXPENSE_PARSERS], '', { class: 'form-select mb-2' });
   const input = el('input', { class: 'form-control', type: 'file' });
   const body = el('div', {}, [
-    el('p', { class: 'small text-secondary', text: t('识别器必须手选。选了也照样核对文件内容，内容对不上不会入库。截图类识别在浏览器本地完成，不调用任何在线服务。') }),
+    el('p', { class: 'small text-secondary', text: t('识别器必须手选，并按严格口径解析：文件跟所选识别器的格式差一点都不入库。解析全部在浏览器本地完成，不调用任何在线服务。') }),
     el('p', { class: 'small text-secondary', text: t('选本系统标准 CSV 时，表头必须与下面的契约完全一致，列名与顺序都不能差。') }),
     el('pre', { class: 'small bg-body-secondary p-2 rounded', text: csvHeader().join(',') }),
     el('ul', { class: 'small text-secondary ps-3' }, [
@@ -453,11 +457,17 @@ function openUpload() {
       toastErr(new Error(t('没有选择文件')));
       return;
     }
+    //解析与入库分开报错：解析失败多半是选错了识别器，要把这一层提示给用户；入库失败是后端的事，原样报
+    let expenses;
     try {
-      const extract = EXTRACTORS[parser];
-      if (extract) toast(t('正在浏览器本地识别，长截图可能要几十秒，请勿关闭页面'));
-      const content = extract ? await extract(file) : '';
-      const result = await api.insertExpenseFile(file, parser, content);
+      if (needExtract(parser)) toast(t('正在浏览器本地识别，长截图可能要几十秒，请勿关闭页面'));
+      expenses = await parseExpenseFile(file, parser);
+    } catch (err) {
+      toastErr(new Error(t('{reason}。请检查是否选错了识别器', { reason: serverText(err && err.message ? err.message : String(err)) })));
+      return;
+    }
+    try {
+      const result = await api.insertExpense(file, file.name, expenses);
       toastOk(t('入库 {count} 笔，进入核实视图', { count: result.count }));
       location.hash = `#/expense?operation_id=${result.object}&verify=1`;
     } catch (err) {
